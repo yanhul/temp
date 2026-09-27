@@ -115,18 +115,30 @@ def main():
         groups=[]
         for ids in comps.values():
             groups.append([meta[i] for i in ids])
+        # Build a conservative spanning set: one shortest pad/via bridge
+        # from the already-connected component set to the nearest unconnected
+        # component. This produces component_count-1 candidates rather than
+        # the old single bridge, so multi-component nets can actually converge.
         bridges=[]
-        for a in range(len(groups)):
-            best=None
-            for b in range(a+1,len(groups)):
-                for u in groups[a]:
-                    if u["kind"] not in ("pad","via"): continue
-                    for v in groups[b]:
-                        if v["kind"] not in ("pad","via"): continue
-                        dist=d(u["xy"],v["xy"])
-                        if best is None or dist<best["distance_mils"]:
-                            best={"from":u,"to":v,"distance_mils":dist}
-            if best: bridges.append(best)
+        if len(groups)>1:
+            connected={0}
+            while len(connected)<len(groups):
+                best=None
+                best_b=None
+                for a in sorted(connected):
+                    for b in range(len(groups)):
+                        if b in connected: continue
+                        for u in groups[a]:
+                            if u["kind"] not in ("pad","via"): continue
+                            for v in groups[b]:
+                                if v["kind"] not in ("pad","via"): continue
+                                dist=d(u["xy"],v["xy"])
+                                if best is None or dist<best["distance_mils"]:
+                                    best={"from":u,"to":v,"distance_mils":dist}
+                                    best_b=b
+                if best is None: break
+                bridges.append(best)
+                connected.add(best_b)
         result["nets"].append({"name":name,"component_count":len(groups),
             "components":groups,"nearest_component_bridges":bridges,
             "tracks":len(tracks),"vias":len(vias)})
