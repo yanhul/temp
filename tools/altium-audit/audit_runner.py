@@ -368,7 +368,24 @@ def main():
         add(findings,"G3-PIN-NET","BLOCKER","connectivity","UNKNOWN",
             "No normalized terminal/pad intersection was available for authoritative reconciliation.","FACT")
 
-    counts = {}\n\n    # Probe parser-owned per-net primitive API when available; retain bounded repr for schema discovery.\n    try:\n        if hasattr(pcb, "get_net_primitives"):\n            probe_nets=[]\n            for nn in list(getattr(pcb, "nets",[]) or [])[:8]:\n                nname=field(nn,"name","net_name","netname","uid")\n                try:\n                    raw=pcb.get_net_primitives(nname)\n                except Exception as e:\n                    raw={"error":repr(e)}\n                probe_nets.append({"net":nname,"repr":repr(raw)[:2000]})\n            add(findings,"G7-NET-PRIMITIVE-API","INFO","routing","VERIFIED","Parser per-net primitive API probe: "+repr(probe_nets)[:12000],"VERIFIED")\n    except Exception as e:\n        add(findings,"G7-NET-PRIMITIVE-API","INFO","routing","UNKNOWN","Per-net primitive API probe failed: "+repr(e),"FACT")\n\n    counts = {}
+    counts = {}
+
+    # Probe parser-owned per-net primitive API when available; retain bounded repr for schema discovery.
+    try:
+        if hasattr(pcb, "get_net_primitives"):
+            probe_nets=[]
+            for nn in list(getattr(pcb, "nets",[]) or [])[:8]:
+                nname=field(nn,"name","net_name","netname","uid")
+                try:
+                    raw=pcb.get_net_primitives(nname)
+                except Exception as e:
+                    raw={"error":repr(e)}
+                probe_nets.append({"net":nname,"repr":repr(raw)[:2000]})
+            add(findings,"G7-NET-PRIMITIVE-API","INFO","routing","VERIFIED","Parser per-net primitive API probe: "+repr(probe_nets)[:12000],"VERIFIED")
+    except Exception as e:
+        add(findings,"G7-NET-PRIMITIVE-API","INFO","routing","UNKNOWN","Per-net primitive API probe failed: "+repr(e),"FACT")
+
+    counts = {}
     for attr in ("components","pads","vias","tracks","arcs","fills","regions","texts","nets","rules"):
         try: counts[attr] = len(getattr(pcb, attr))
         except Exception: counts[attr] = None
@@ -758,7 +775,8 @@ def main():
         report += [f"### {f['id']} — {f['severity']} / {f['status']}",
                     f"- Domain: {f['domain']}",f"- Object: {f['object']}",
                     f"- Evidence: {f['evidence']}",f"- Confidence: {f['confidence']}",""]
-    (out/"report.md").write_text("\n".join(report),encoding="utf-8")
+    (out/"report.md").write_text("
+".join(report),encoding="utf-8")
     (out/"summary.json").write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding="utf-8")
     (out/"findings.json").write_text(json.dumps(findings,indent=2,ensure_ascii=False),encoding="utf-8")
     print(json.dumps({"status":status,"gates":gates},indent=2))
@@ -767,7 +785,9 @@ def main():
 def write_outputs(out, summary):
     out.mkdir(parents=True,exist_ok=True)
     (out/"summary.json").write_text(json.dumps(summary,indent=2),encoding="utf-8")
-    (out/"report.md").write_text("# Altium Audit Report\n\n"+json.dumps(summary,indent=2),encoding="utf-8")
+    (out/"report.md").write_text("# Altium Audit Report
+
+"+json.dumps(summary,indent=2),encoding="utf-8")
 
 if __name__ == "__main__":
     raise SystemExit(main())
