@@ -346,7 +346,7 @@ def main():
             schdoc = AltiumSchDoc(str(schs[0]))
             pcb = AltiumPcbDoc.from_file(str(pcbs[0]))
             sch_components = list(getattr(schdoc, "components", []) or [])
-            payload = {"components": sch_components, "compile": None,
+            payload = {"components": [repr(x) for x in sch_components], "compile": None,
                        "diagnostics": [], "source_mode": "SCHDOC+PCBDOC"}
             netlist = {"nets": []}
             netlist_text = json.dumps(netlist, indent=2)
