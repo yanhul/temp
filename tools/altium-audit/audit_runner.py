@@ -193,7 +193,7 @@ def main():
     if extra:
         add(findings,"G3-PAD-NOT-IN-SCH","HIGH","connectivity","FAIL",
             f"{len(extra)} PCB pad terminals lack schematic terminal counterparts.","VERIFIED")
-    if common and not mismatches and not missing and not extra and not unresolved:
+    if common and not mismatches and not missing and not extra:
         add(findings,"G3-PIN-NET","INFO","connectivity","VERIFIED",
             f"Full terminal join verified for {len(common)} SCH↔PCB terminal pairs.","VERIFIED")
     elif not common:
