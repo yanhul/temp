@@ -9,9 +9,6 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--out",required=True)
     ap.add_argument("--max-attempts",type=int,default=3)
-    ap.add_argument("--audit-cmd",action="store_true")
-    ap.add_argument("--plan-cmd",action="store_true")
-    ap.add_argument("--repair-cmd",action="store_true")
     ns,rest=ap.parse_known_args()
     def capture(flag,next_flags):
         if flag not in rest:
