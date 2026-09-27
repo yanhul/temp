@@ -72,9 +72,22 @@ def main():
         project_compile_fallback = True
         (out/"summary.json").write_text(json.dumps(direct,indent=2,ensure_ascii=False),encoding="utf-8")
     if initial is None: raise SystemExit("audit runner produced no summary.json")
+    # Planning is always part of the reusable kit lifecycle. It is non-mutating
+    # and deliberately independent from routing repair authorization.
+    planning_out = out/"placement-routing-plan.json"
+    run([HERE/"placement_routing_plan.py","--pcb",pcb,"--out",planning_out])
+    planning = json.loads(planning_out.read_text(encoding="utf-8")) if planning_out.exists() else {
+        "design_status":"BLOCKED","placement":{"status":"UNKNOWN"},"routing":{"status":"BLOCKED"}
+    }
+    initial["kit"] = {"status":"PASS","schema":"altium-audit-kit/v3"}
+    initial["planning"] = planning
+    initial["design_status"] = planning.get("design_status","BLOCKED")
+    if initial["design_status"] != "PASS":
+        initial["status"] = "BLOCKED"
+    (out/"summary.json").write_text(json.dumps(initial,indent=2,ensure_ascii=False),encoding="utf-8")
+
     if not args.repair:
-        shutil.copy2(audit_out/"summary.json",out/"summary.json")
-        return rc
+        return 0 if initial["design_status"]=="PASS" else 1
     audit_source_out = out/"audit-direct-fallback" if project_compile_fallback else audit_out
     if not (audit_source_out/"findings.json").exists() or not (audit_source_out/"g4_probe.json").exists():
         shutil.copy2(audit_source_out/"summary.json",out/"summary.json")
