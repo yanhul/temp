@@ -1,0 +1,85 @@
+name: altium-audit
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/altium-audit/**"
+      - "altium-audit.config.json"
+      - "b64parts/**"
+      - "*.zip"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load project config
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s altium-audit.config.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          c=json.loads(Path("altium-audit.config.json").read_text())
+          for k in ("project_id","source_archive","base64_parts_dir"):
+              if not c.get(k):
+                  raise SystemExit(f"missing config field: {k}")
+          print(json.dumps(c, indent=2))
+          PY
+
+      - name: Reconstruct and verify source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/project work/audit
+          ARCHIVE=$(python -c 'import json; print(json.load(open("altium-audit.config.json"))["source_archive"])')
+          PARTS=$(python -c 'import json; print(json.load(open("altium-audit.config.json"))["base64_parts_dir"])')
+          test -s "$ARCHIVE"
+          test -d "$PARTS"
+          find "$PARTS" -maxdepth 1 -name 'part_*.txt' -print | sort | xargs cat | base64 -d > work/project.zip
+          cmp -s "$ARCHIVE" work/project.zip
+          unzip -q work/project.zip -d work/project
+          sha256sum work/project.zip | awk '{print $1}' > work/source.sha256
+
+      - name: Install pinned parser
+        run: python -m pip install -r tools/altium-audit/requirements.txt
+
+      - name: Run evidence-first audit
+        shell: bash
+        run: |
+          set +e
+          python tools/altium-audit/audit_runner.py --root work/project --out work/audit --archive work/project.zip --source-sha256 "$(cat work/source.sha256)"
+          rc=$?
+          printf '%s\\n' "$rc" > work/audit/runner_exit_code.txt
+          printf 'audit_runner_exit_code=%s\\n' "$rc" > work/audit/runner_exit.txt
+          exit 0
+
+      - name: Validate required artifacts
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          for f in summary.json netlist.json design.json pcb_probe.txt g4_probe.json findings.json report.md; do
+            test -s "work/audit/$f"
+          done
+
+      - name: Upload audit artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: altium-audit-report
+          path: work/audit/
+
+      - name: Finalize strict status
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path("work/audit/summary.json").read_text())
+          if s.get("status") != "PASS":
+              raise SystemExit(f"strict audit not PASS: {s.get('status')}")
+          PY
