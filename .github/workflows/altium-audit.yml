@@ -237,6 +237,7 @@ jobs:
             work/design.json
             work/netlist.json
             work/pcb_probe.txt
+            work/g4_probe.json
             work/findings.json
             work/report.md
           if-no-files-found: error
