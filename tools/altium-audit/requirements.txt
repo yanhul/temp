@@ -1,0 +1,1 @@
+altium-monkey>=2026.9.12
