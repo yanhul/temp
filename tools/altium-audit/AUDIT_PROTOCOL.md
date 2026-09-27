@@ -1,58 +1,58 @@
 # Altium Audit Protocol
 
 ## 1. Intake
-Verify archive integrity, required files, project references and extracted paths.
+Baseline audit requires exactly the design sources needed for structural review:
+- mandatory: `*.SchDoc`, `*.PcbDoc`
+- optional: `*.PrjPcb` for authoritative project-level rules/settings
+
+Missing project file must not prevent schematic/PCB placement/routing audit.
 
 ## 2. Schematic
-Inspect:
-- ERC-like compile diagnostics
-- unconnected/single-pin nets
-- GND/VCC/power-input/output semantics
-- pin-type conflicts
-- net labels and hierarchical connectivity
-- references/values/duplicates
-- footprints
-- decoupling
-- pullups/pulldowns
-- connector pinout
-- differential/sensitive nets
+Inspect compile diagnostics, connectivity, pin semantics, references, footprints, power, decoupling, pullups/pulldowns, connector pinout and sensitive nets.
 
-Single-pin nets are SUSPECT only until context proves intentional.
+## 3. PCB / Placement
+Audit directly from PcbDoc:
+- board outline and containment
+- component geometry/bounds and overlap
+- component-to-component clearance evidence
+- mounting holes / keepouts when parser fields expose them
+- connector/switch access geometry
+- Top/Bottom and orientation
+- functional grouping when design intent is supplied
+- placement-created routing corridors and choke points
+- J6/J7 and related component congestion
 
-## 3. PCB
-Inspect:
-- component/pad/net mapping
-- tracks, vias, arcs, fills, regions
-- layer assignment
-- unrouted connectivity
-- shorts/clearance where geometry/API exposes enough evidence
-- track width and via policy
-- GND plane/pour connectivity
-- thermal relief
-- pad-to-pin mapping
-- silkscreen/mechanical conflicts
-- mounting holes and board outline
-- creepage/clearance when applicable
+A generic clearance number is never invented. If no authoritative minimum exists, report measured geometry and mark the design-rule conclusion UNKNOWN.
 
-## 4. Cross-domain
-Build a reconciliation:
-SCH component/refdes <-> PCB component/refdes
-SCH pin/net <-> PCB pad/net
-footprint expected <-> actual footprint
-missing/extra/unmatched objects
+## 4. PCB / Routing
+Audit directly from PcbDoc:
+- unrouted/ratsnest evidence
+- track/via/layer transitions
+- route topology per net
+- dangling/stub signals where evidence permits
+- width/clearance against exposed authoritative rules
+- keepout interaction
+- GND/power/clock/differential/communication net inventory
+- connector -> protection -> transceiver/MCU -> load flow when net/intent evidence supports it
+- routing choke points
 
-## 5. Functional review
-Check circuit intent independently of formal DRC/ERC:
-power sequencing, protection, level compatibility, termination, reset/boot, analog sensitivity, current paths, thermal/current capacity and connector polarity.
+## 5. Cross-domain
+Reconcile SCH refdes <-> PCB refdes and SCH pin/net <-> PCB pad/net.
 
-## 6. Evidence discipline
-Each finding must contain:
+## 6. Evidence limits
+Two files can VERIFY geometry, connectivity, placement and exposed routing facts. They do not by themselves prove:
+- 100% Altium DRC equivalence
+- full 3D mechanical collision without 3D model data
+- SI/timing
+- project-specific intent
+
+## 7. Finding contract
+Every Placement/Routing finding carries:
 - severity
 - domain
-- exact object/refdes/net/pin
-- observed evidence
-- why it matters
-- confidence: VERIFIED / INFERRED / ASSUMPTION
-- recommended verification in Altium when parser coverage is insufficient
+- status
+- exact object/refdes/net where available
+- measured/observed evidence
+- confidence label
 
-Never report a parser success as a design PASS.
+Never report parser success as design PASS.
