@@ -45,6 +45,9 @@ def main():
     plan=json.loads(args.plan.read_text())
     applied=[]
     rejected=[]
+    if plan.get("mutation_authorized") is not True:
+        args.receipt.write_text(json.dumps({"schema":"altium-repair-receipt.v1","status":"NO_SAFE_MUTATION","reason":"plan lacks explicit mutation_authorized=true from an authoritative routing evidence adapter","applied":[],"rejected":[]},indent=2))
+        return 3
     # Only one conservative bridge per disconnected-net group per pass.
     for net in plan.get("nets",[]):
         name=net.get("name")
