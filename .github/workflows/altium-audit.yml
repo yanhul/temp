@@ -76,24 +76,6 @@ jobs:
           pcb_components=list(getattr(pcb,"components",[]) or [])
           pcb_refs=[names(x) for x in pcb_components if names(x)]
 
-          # G3 probe: preserve actual parser surface so the next audit can implement
-          # pin/pad/net reconciliation from observed structures rather than guesses.
-          def shape(obj):
-              out={"type":type(obj).__name__,"module":type(obj).__module__}
-              if isinstance(obj,dict):
-                  out["keys"]=sorted(map(str,obj.keys()))[:200]
-              else:
-                  out["attrs"]=sorted(a for a in dir(obj) if not a.startswith("_"))[:300]
-              return out
-          g3_probe={
-              "schematic_component_sample":[shape(x) for x in sch_components[:3]],
-              "pcb_component_sample":[shape(x) for x in pcb_components[:3]],
-              "pcb_pad_sample":[shape(x) for x in pcb_pads[:5]],
-              "payload_top_keys":sorted(map(str,payload.keys())),
-              "payload_net_sample":[shape(x) for x in sch_nets[:5]],
-          }
-          pathlib.Path("work/g3_probe.json").write_text(json.dumps(g3_probe,indent=2,ensure_ascii=False),encoding="utf-8")
-
           findings=[]
           def add(fid,severity,domain,status,evidence,confidence="VERIFIED",object_id=None):
               findings.append({"id":fid,"severity":severity,"domain":domain,"status":status,
@@ -135,6 +117,24 @@ jobs:
 
           # G3 net/pad evidence where public typed records expose net identity.
           pcb_pads=list(getattr(pcb,"pads",[]) or [])
+          # G3 probe: preserve actual parser surface so the next audit can implement
+          # pin/pad/net reconciliation from observed structures rather than guesses.
+          def shape(obj):
+              out={"type":type(obj).__name__,"module":type(obj).__module__}
+              if isinstance(obj,dict):
+                  out["keys"]=sorted(map(str,obj.keys()))[:200]
+              else:
+                  out["attrs"]=sorted(a for a in dir(obj) if not a.startswith("_"))[:300]
+              return out
+          g3_probe={
+              "schematic_component_sample":[shape(x) for x in sch_components[:3]],
+              "pcb_component_sample":[shape(x) for x in pcb_components[:3]],
+              "pcb_pad_sample":[shape(x) for x in pcb_pads[:5]],
+              "payload_top_keys":sorted(map(str,payload.keys())),
+              "payload_net_sample":[shape(x) for x in sch_nets[:5]],
+          }
+          pathlib.Path("work/g3_probe.json").write_text(json.dumps(g3_probe,indent=2,ensure_ascii=False),encoding="utf-8")
+
           pad_nets=[]
           for pad in pcb_pads:
               v=field(pad,"net","net_name","netname")
