@@ -9,7 +9,7 @@ repair_receipt.json. The original source is never overwritten.
 from __future__ import annotations
 import argparse, hashlib, json, math
 from pathlib import Path
-from altium_monkey import AltiumPcbDoc
+from altium_monkey import AltiumPcbDoc, PcbLayer
 
 def xy(o):
     for a,b in (("x_mils","y_mils"),("x","y")):
@@ -27,6 +27,15 @@ def ep(o):
     try:return (float(o.x1),float(o.y1)),(float(o.x2),float(o.y2))
     except Exception:pass
     return None
+
+def normalize_layer(value):
+    try:
+        n=int(value)
+        if n==int(PcbLayer.TOP): return PcbLayer.TOP
+        if n==int(PcbLayer.BOTTOM): return PcbLayer.BOTTOM
+    except Exception:
+        pass
+    return value
 
 def segdist(p,a,b):
     dx,dy=b[0]-a[0],b[1]-a[1]
@@ -70,7 +79,7 @@ def main():
                 # Use the pad anchor layer when available. The previous backend
                 # always defaulted to Top Layer, which cannot connect a bridge
                 # to a Bottom-Layer SMD pad even when topology evidence is valid.
-                layer = a.get("layer") or b.get("layer") or "Top Layer"
+                layer = normalize_layer(a.get("layer") or b.get("layer") or PcbLayer.TOP)
                 if str(layer).lower() in {"multi-layer", "multilayer"}:
                     layer = "Top Layer"
                 pcb.add_track(p,q,width_mils=10,layer=layer,net=name)
