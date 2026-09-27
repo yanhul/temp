@@ -89,8 +89,13 @@ def main():
     for i,c in enumerate(comps):
         ref=f(c,"designator","refdes","reference","name")
         p=xy(c)
+        if p is None:
+            pads=[xy(x) for x in list(f(c,"pads","children") or []) if xy(x) is not None]
+            if pads:
+                p=(sum(x for x,_ in pads)/len(pads),sum(y for _,y in pads)/len(pads))
         placement.append({"component_index":i,"reference":str(ref) if ref is not None else None,
-                          "position":p,"placement_status":"VERIFIED" if p else "UNKNOWN"})
+                          "position":p,
+                          "placement_status":"VERIFIED" if p else "UNKNOWN"})
     routing=[]
     unresolved=[]
     for i,n in enumerate(nets):
