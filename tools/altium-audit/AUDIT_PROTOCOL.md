@@ -1,58 +1,56 @@
-# Altium Audit Protocol
+# Altium Audit Kit Contract
 
-## 1. Intake
-Baseline audit requires exactly the design sources needed for structural review:
-- mandatory: `*.SchDoc`, `*.PcbDoc`
-- optional: `*.PrjPcb` for authoritative project-level rules/settings
+## 1. Input contract
+`*.SchDoc` + `*.PcbDoc` are mandatory. `*.PrjPcb` is optional and is evidence for project-level rules/settings. Input discovery is extension-based; filenames and reference designators are never configuration.
 
-Missing project file must not prevent schematic/PCB placement/routing audit.
+## 2. Normalized evidence semantics
+- `VERIFIED`: authoritative parser/evidence supports the claim.
+- `UNKNOWN`: required evidence is unavailable, or only a non-authoritative fallback exists.
+- `INCOMPLETE`: evidence exists but a required closure item is missing.
+- `BLOCKED`: the policy/authority gate forbids the next action.
+- `TOPOLOGY_UNRESOLVED`: disconnected copper is observed, but the intended topology/placement decision is not established. It is never permission to bridge.
+- `PASS`: all required gates for the requested stage are verified.
+- `FAIL`: execution/verification produced a demonstrated failed condition.
+- `INCONCLUSIVE`: execution completed but evidence did not establish PASS or FAIL.
 
-## 2. Schematic
-Inspect compile diagnostics, connectivity, pin semantics, references, footprints, power, decoupling, pullups/pulldowns, connector pinout and sensitive nets.
+Parser success is not design PASS.
 
-## 3. PCB / Placement
-Audit directly from PcbDoc:
-- board outline and containment
-- component geometry/bounds and overlap
-- component-to-component clearance evidence
-- mounting holes / keepouts when parser fields expose them
-- connector/switch access geometry
-- Top/Bottom and orientation
-- functional grouping when design intent is supplied
-- placement-created routing corridors and choke points
-- connector/switch access and local congestion using generic object classes; no project-specific refdes are encoded in the kit
+## 3. Placement
+Placement evidence must come through the parser adapter/interface. Direct component geometry can support `VERIFIED` placement evidence. Pad-geometry fallback is evidence only and remains `UNKNOWN` for placement decision purposes until authoritative component placement evidence exists.
+The engine must not infer functional grouping, preferred component locations, routing corridors, or mechanical intent from a particular fixture.
 
-A generic clearance number is never invented. If no authoritative minimum exists, report measured geometry and mark the design-rule conclusion UNKNOWN.
+## 4. Routing / topology
+Audit:
+- unrouted/ratsnest evidence when exposed by the parser;
+- tracks, vias, layers and topology;
+- width/clearance only against authoritative exposed rules;
+- keepouts/copper-area interactions when evidence exists;
+- net-level graph connectivity.
 
-## 4. PCB / Routing
-Audit directly from PcbDoc:
-- unrouted/ratsnest evidence
-- track/via/layer transitions
-- route topology per net
-- dangling/stub signals where evidence permits
-- width/clearance against exposed authoritative rules
-- keepout interaction
-- GND/power/clock/differential/communication net inventory
-- connector -> protection -> transceiver/MCU -> load flow when net/intent evidence supports it
-- routing choke points
+A disconnected graph may generate a plan candidate, but the plan remains `TOPOLOGY_UNRESOLVED` and `candidate_topology=NOT_SELECTED` until an authoritative decision/evidence artifact establishes the intended topology.
 
-## 5. Cross-domain
-Reconcile SCH refdes <-> PCB refdes and SCH pin/net <-> PCB pad/net.
+## 5. Authorization and mutation
+`PLAN` is non-mutating and cannot create authority.
+`AUTHORIZE` may set `mutation_authorized=true` only when:
+1. the finding is authoritative;
+2. the candidate endpoints belong to distinct proven components of the same net;
+3. applicable clearance evidence is authoritative;
+4. the candidate passes independent geometry checks;
+5. source identity/lineage is recorded.
 
-## 6. Evidence limits
-Two files can VERIFY geometry, connectivity, placement and exposed routing facts. They do not by themselves prove:
-- 100% Altium DRC equivalence
-- full 3D mechanical collision without 3D model data
-- SI/timing
-- project-specific intent
+`APPLY` must fail closed without that authorization. The source PcbDoc is never overwritten.
 
-## 7. Finding contract
-Every Placement/Routing finding carries:
-- severity
-- domain
-- status
-- exact object/refdes/net where available
-- measured/observed evidence
-- confidence label
+## 6. Verification and retry
+Every mutation produces a receipt containing source/output identity and applied/rejected operations. Verification reparses the mutated copy. Retry operates only on the verified working copy and preserves attempt history. No retry may convert `UNKNOWN` or `TOPOLOGY_UNRESOLVED` directly into authorization.
 
-Never report parser success as design PASS.
+## 7. Terminal result
+The reusable kit always emits `summary.json` with `terminal_status` in:
+`PASS | FAIL | BLOCKED | INCONCLUSIVE | UNKNOWN`.
+
+The terminal artifact must include the input identity, planning evidence, gate results, and repair/attempt lineage when mutation was requested.
+
+## 8. Reuse gate
+Clean-room reuse is proven only when a different input directory can be supplied with renamed/different project files and the same engine reaches a terminal result without engine edits. A passing clean-room run proves execution independence; it does not imply the design itself is correct.
+
+## 9. Evidence limits
+Two files can verify parser-exposed geometry, connectivity and routing facts. They do not by themselves prove complete Altium DRC equivalence, full 3D mechanical collision, SI/timing, or undocumented project intent.
