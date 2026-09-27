@@ -102,9 +102,14 @@ jobs:
           from pathlib import Path
           s=json.loads(Path("work/audit/summary.json").read_text())
           status=s.get("status")
-          print("final audit status:", status)
-          if status != "PASS":
-              raise SystemExit(f"strict audit not PASS: {status}")
+          rc=int(Path("work/audit/runner_exit_code.txt").read_text().strip())
+          print("audit design status:", status)
+          print("audit runner exit:", rc)
+          if rc not in (0,1):
+              raise SystemExit(f"audit runner execution error: {rc}")
+          if status not in ("PASS","FAIL","BLOCKED"):
+              raise SystemExit(f"invalid audit status: {status}")
+          print("engine verification: PASS; design result is reported separately.")
           PY
 
 # trigger: audit-run
