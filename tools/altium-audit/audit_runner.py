@@ -104,12 +104,75 @@ def route_net_counts(pcb):
     return routed
 
 def extract_unrouted(pcb):
-    for attr in ("unrouted","ratsnest","rats_nest","airwires","connection_lines"):
+    # Prefer parser-owned fly-wire/ratsnest collections. Absence is UNKNOWN.
+    for attr in ("unrouted","ratsnest","rats_nest","airwires","connection_lines",
+                 "from_tos","fromtos","from_to","connections","unrouted_connections"):
         v=getattr(pcb,attr,None)
         if v is not None:
             try: return list(v)
             except Exception: pass
     return None
+
+def segment_endpoints(obj):
+    for keys in (("x1","y1","x2","y2"),("start_x_mils","start_y_mils","end_x_mils","end_y_mils")):
+        vals=[field(obj,k) for k in keys]
+        if all(v is not None for v in vals):
+            q=[num(v) for v in vals]
+            if all(v is not None for v in q):
+                return (q[0],q[1]),(q[2],q[3])
+    a,b=field(obj,"start"),field(obj,"end")
+    if a is not None and b is not None:
+        a,b=xy(a),xy(b)
+        if a is not None and b is not None: return a,b
+    return None
+
+def topology_components(pcb):
+    # Conservative endpoint graph: pads/vias/tracks only. Regions are not
+    # treated as point-to-point proof because zone fill semantics are separate.
+    nets=list(getattr(pcb,"nets",[]) or [])
+    net_by_idx={i: field(n,"name","net_name","netname","uid") for i,n in enumerate(nets)}
+    buckets={}
+    def bucket(name):
+        if name is None: return None
+        return buckets.setdefault(str(name), {"pads":[],"vias":[],"segments":[]})
+    for pad in list(getattr(pcb,"pads",[]) or []):
+        ni=field(pad,"net_index")
+        try: name=net_by_idx.get(int(ni))
+        except Exception: name=None
+        p=xy(pad)
+        if name is not None and p is not None: bucket(name)["pads"].append(p)
+    for via in list(getattr(pcb,"vias",[]) or []):
+        ni=field(via,"net_index")
+        try: name=net_by_idx.get(int(ni))
+        except Exception: name=None
+        p=xy(via)
+        if name is not None and p is not None: bucket(name)["vias"].append(p)
+    for track in list(getattr(pcb,"tracks",[]) or []):
+        name=net_name(track,net_by_idx); ep=segment_endpoints(track)
+        if name is not None and ep is not None: bucket(name)["segments"].append(ep)
+    result={}
+    for name,d in buckets.items():
+        nodes=[("pad",p) for p in d["pads"]]+[("via",p) for p in d["vias"]]
+        for a,b in d["segments"]: nodes.extend((("route",a),("route",b)))
+        if len(nodes)<2: continue
+        parent=list(range(len(nodes)))
+        def find(i):
+            while parent[i]!=i:
+                parent[i]=parent[parent[i]]; i=parent[i]
+            return i
+        def union(i,j):
+            a,b=find(i),find(j)
+            if a!=b: parent[b]=a
+        for i in range(len(nodes)):
+            for j in range(i+1,len(nodes)):
+                if distance(nodes[i][1],nodes[j][1])<=1.0: union(i,j)
+        result[name]={
+            "terminal_nodes":len(d["pads"]),
+            "graph_components":len({find(i) for i in range(len(nodes))}),
+            "route_segments":len(d["segments"]),
+            "vias":len(d["vias"]),
+        }
+    return result
 
 def sha256(path: pathlib.Path) -> str:
     h = hashlib.sha256()
@@ -563,6 +626,25 @@ def main():
         if len(layers)>1:
             add(findings,f"G7-LAYER-TRANSITION-{n}","INFO","routing","VERIFIED",
                 f"Net {n!r} is routed on {len(layers)} parsed layer identifiers: {sorted(layers)!r}.","VERIFIED",n)
+
+    topo=topology_components(pcb)
+    topo_bad=[(n,i) for n,i in sorted(topo.items()) if i["terminal_nodes"]>=2 and i["graph_components"]>1]
+    if topo_bad:
+        regions=bool(getattr(pcb,"regions",[]) or getattr(pcb,"fills",[]) or [])
+        for n,info in topo_bad[:200]:
+            add(findings,f"G7-TOPOLOGY-{n}","HIGH","routing",
+                "UNKNOWN" if regions else "FAIL",
+                f"Independent copper graph: {info['terminal_nodes']} pads, {info['route_segments']} tracks, "
+                f"{info['vias']} vias, {info['graph_components']} components."
+                + (" Regions/fills exist; plane connectivity is not proven." if regions else ""),
+                "FACT" if regions else "VERIFIED",n)
+    elif topo:
+        add(findings,"G7-TOPOLOGY","INFO","routing","VERIFIED",
+            f"Independent endpoint graph constructed for {len(topo)} named PCB nets; no disconnected multi-pad graph was proven.",
+            "VERIFIED")
+    else:
+        add(findings,"G7-TOPOLOGY","BLOCKER","routing","UNKNOWN",
+            "Insufficient pad/track/via coordinates for an independent routing topology graph.","FACT")
 
     # Width/clearance checks are intentionally separated from topology. A parser
     # field is evidence only when the corresponding authoritative rule is exposed.
