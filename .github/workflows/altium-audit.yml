@@ -242,8 +242,36 @@ jobs:
           add("G4-DRC-COVERAGE","BLOCKER","pcb","UNKNOWN",
               "Clearance, width, hole and routing rule records are present, but this runner does not claim full Altium DRC equivalence. Unsupported rule families remain UNKNOWN rather than PASS.","FACT")
 
-          add("G5-ELECTRICAL","BLOCKER","electrical","UNKNOWN",
-              "No independent electrical-intent rules are encoded; parser output alone cannot establish power, pin-type, protection, or decoupling correctness.","FACT")
+          # G5: deterministic electrical checks from compiled netlist pin semantics.
+          nl_for_g5=json.loads(netlist.to_json_text())
+          g5_nets=nl_for_g5.get("nets",[]) or []
+          single_pin_nets=[n for n in g5_nets if len(n.get("terminals",[]) or [])==1]
+          if single_pin_nets:
+              for n in single_pin_nets[:200]:
+                  add(f"G5-SINGLE-NET-{n.get('name','UNKNOWN')}", "MEDIUM","electrical","FAIL",
+                      f"Net {n.get('name')!r} has exactly one compiled terminal; this is a connectivity suspect and requires intentionality evidence.","VERIFIED",n.get("name"))
+          else:
+              add("G5-SINGLE-PIN-NETS","INFO","electrical","VERIFIED",
+                  f"Compiled netlist exposes {len(g5_nets)} nets and none has a single terminal.","VERIFIED")
+
+          output_conflicts=[]
+          for n in g5_nets:
+              outs=[t for t in (n.get("terminals",[]) or []) if str(t.get("pin_type","")).upper()=="OUTPUT"]
+              if len(outs)>1: output_conflicts.append((n,outs))
+          if output_conflicts:
+              for n,outs in output_conflicts:
+                  ids=", ".join(f"{t.get('designator')}.{t.get('pin')}" for t in outs)
+                  add(f"G5-OUTPUT-CONFLICT-{n.get('name','UNKNOWN')}","HIGH","electrical","FAIL",
+                      f"Compiled net {n.get('name')!r} contains multiple OUTPUT pins: {ids}.","VERIFIED",n.get("name"))
+          else:
+              add("G5-OUTPUT-CONFLICTS","INFO","electrical","VERIFIED",
+                  "No compiled net contains more than one pin typed OUTPUT; no definite output-output driver conflict was found.","VERIFIED")
+
+          pin_types=sorted(set(str(t.get("pin_type","UNKNOWN")).upper() for n in g5_nets for t in (n.get("terminals",[]) or [])))
+          add("G5-PIN-TYPE-COVERAGE","INFO","electrical","VERIFIED",
+              f"Compiled netlist exposes pin-type semantics across {len(pin_types)} type(s): {', '.join(pin_types)}.","VERIFIED")
+          add("G5-INTENT-COVERAGE","BLOCKER","electrical","UNKNOWN",
+              "Power-source adequacy, protection, level compatibility, pull requirements and decoupling cannot be proven from generic compiled pin types alone; no project-specific electrical intent contract is encoded yet.","FACT")
           add("G6-PHYSICAL","BLOCKER","physical","UNKNOWN",
               "G4 now evaluates selected native PCB rules, but broader mechanical/geometry checks still require additional authoritative rule coverage.","FACT")
           add("G7-FUNCTIONAL","BLOCKER","functional","UNKNOWN",
