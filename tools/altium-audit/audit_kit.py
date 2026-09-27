@@ -95,7 +95,7 @@ def main():
 
     verify_root=out/"verify-input"; verify_root.mkdir(exist_ok=True)
     shutil.copy2(sch,verify_root/sch.name); shutil.copy2(repaired,verify_root/pcb.name)
-    if prj: shutil.copy2(prj,verify_root/prj.name)
+    if prj and not project_compile_fallback: shutil.copy2(prj,verify_root/prj.name)
     verify_out=out/"audit-verify"
     rc_verify=run([RUNNER,"--root",verify_root,"--out",verify_out] +
                   (["--config",str(args.config.resolve())] if args.config else []))
@@ -103,6 +103,11 @@ def main():
         shutil.copy2(audit_out/"summary.json",out/"summary.json"); return 1
     final=summary(verify_out)
     final["repair"]=json.loads(receipt.read_text(encoding="utf-8"))
+    if project_compile_fallback and project_blocker:
+        final.setdefault("findings",[]).append(project_blocker)
+        final.setdefault("gates",{})["G2_COMPILE"]="BLOCKED"
+        final["status"]="BLOCKED"
+        final["project_compile_fallback"]=True
     (out/"summary.json").write_text(json.dumps(final,indent=2,ensure_ascii=False),encoding="utf-8")
     return rc_verify
 
