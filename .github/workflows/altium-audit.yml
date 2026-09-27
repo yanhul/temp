@@ -25,65 +25,172 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "altium-monkey>=2026.9.12"
-      - name: Parse project and audit PCB primitives
+      - name: Parse and produce evidence-first audit
         shell: bash
         run: |
           cat > work/audit.py <<'PY'
-          import json, pathlib, traceback
+          import json, pathlib, hashlib
+          from collections import Counter
           from altium_monkey import AltiumDesign
+
           root=pathlib.Path("work/project")
-          prjs=list(root.rglob("*.PrjPcb")); schs=list(root.rglob("*.SchDoc")); pcbs=list(root.rglob("*.PcbDoc"))
-          print("PROJECT_FILES", [str(x) for x in prjs], [str(x) for x in schs], [str(x) for x in pcbs])
-          missing=[]
-          if not prjs: missing.append("*.PrjPcb")
-          if not schs: missing.append("*.SchDoc")
-          if not pcbs: missing.append("*.PcbDoc")
-          if missing:
-              pathlib.Path("work/summary.json").write_text(json.dumps({"status":"BLOCKED","gate":"G0_INTAKE","missing_required_inputs":missing},indent=2),encoding="utf-8")
-              raise SystemExit("BLOCKED: missing required inputs: "+", ".join(missing))
+          prjs=sorted(root.rglob("*.PrjPcb")); schs=sorted(root.rglob("*.SchDoc")); pcbs=sorted(root.rglob("*.PcbDoc"))
+          if not prjs or not schs or not pcbs:
+              missing=[p for p,x in (("*.PrjPcb",prjs),("*.SchDoc",schs),("*.PcbDoc",pcbs)) if not x]
+              raise SystemExit("BLOCKED G0: missing "+", ".join(missing))
+
           d=AltiumDesign.from_prjpcb(str(prjs[0]))
-          print("DESIGN_LOADED")
-          pcb=d.load_pcbdoc()
-          print("PCB_LOADED")
-          for attr in ("components","pads","vias","tracks","arcs","fills","regions","texts","nets"):
-              try: print("PCB_COUNT",attr,len(getattr(pcb,attr)))
-              except Exception as e: print("PCB_ATTR_ERROR",attr,repr(e))
-          print("PCB_ATTRS",sorted(a for a in dir(pcb) if not a.startswith("_")))
-          try:
-              pathlib.Path("work/pcb_probe.txt").write_text(
-                  "counts="+repr({a:len(getattr(pcb,a)) for a in ("components","pads","vias","tracks","arcs","fills","regions","texts","nets") if hasattr(pcb,a)})+"\n"+
-                  "attrs="+repr(sorted(a for a in dir(pcb) if not a.startswith("_")))+"\n",
-                  encoding="utf-8")
-          except Exception as e: print("PCB_PROBE_WRITE_ERROR",repr(e))
           payload=d.to_json(include_pnp=True,include_compile_metadata=True,include_indexes=True)
+          pcb=d.load_pcbdoc()
+          netlist=d.to_netlist()
+
           pathlib.Path("work/design.json").write_text(json.dumps(payload,indent=2,ensure_ascii=False),encoding="utf-8")
-          n=d.to_netlist()
-          pathlib.Path("work/netlist.json").write_text(n.to_json_text(),encoding="utf-8")
-          print("NETLIST_WRITTEN")
+          pathlib.Path("work/netlist.json").write_text(netlist.to_json_text(),encoding="utf-8")
+
+          def names(obj):
+              if isinstance(obj,dict):
+                  for k in ("designator","refdes","reference","name","component","id"):
+                      if obj.get(k) is not None: return str(obj[k])
+              for k in ("designator","refdes","reference","name","component","id"):
+                  if hasattr(obj,k):
+                      try:
+                          v=getattr(obj,k)
+                          if v is not None: return str(v)
+                      except Exception: pass
+              return None
+
+          def field(obj,*keys):
+              if isinstance(obj,dict):
+                  for k in keys:
+                      if k in obj and obj[k] is not None: return obj[k]
+              for k in keys:
+                  if hasattr(obj,k):
+                      try:
+                          v=getattr(obj,k)
+                          if v is not None: return v
+                      except Exception: pass
+              return None
+
+          sch_components=payload.get("components",[]) or []
+          sch_refs=[names(x) for x in sch_components if names(x)]
+          pcb_components=list(getattr(pcb,"components",[]) or [])
+          pcb_refs=[names(x) for x in pcb_components if names(x)]
+
+          findings=[]
+          def add(fid,severity,domain,status,evidence,confidence="VERIFIED",object_id=None):
+              findings.append({"id":fid,"severity":severity,"domain":domain,"status":status,
+                               "object":object_id,"evidence":evidence,"confidence":confidence})
+
+          # G0: reconstruction is proven by successful unzip; source archive identity is UNKNOWN without an external SHA256.
+          add("G0-ARCHIVE-HASH","BLOCKER","intake","UNKNOWN",
+              "Archive reconstructed and opened, but no authoritative source SHA256 is present to prove byte identity.",
+              "FACT")
+
+          # G1/G2: parser success is distinct from clean compile.
+          diagnostics=payload.get("diagnostics") or []
           compile_data=payload.get("compile")
-          diagnostics=payload.get("diagnostics",[])
-          summary={"status":"BLOCKED","schema":payload.get("schema"),"generator":payload.get("generator"),"project":payload.get("project"),
-                   "gates":{"G0_INTAKE":"VERIFIED","G1_PARSE":"VERIFIED","G2_COMPILE":"VERIFIED" if compile_data is not None else "UNKNOWN",
-                            "G3_CONNECTIVITY":"BLOCKED","G4_PCB":"VERIFIED","G5_ELECTRICAL":"BLOCKED","G6_PHYSICAL":"BLOCKED",
-                            "G7_FUNCTIONAL":"BLOCKED","G8_REPORT":"VERIFIED"},
-                   "counts":{"sheets":len(payload.get("sheets",[])),"components":len(payload.get("components",[])),"nets":len(payload.get("nets",[])),"pnp_units":len((payload.get("pnp") or {}).get("units",[]))},
-                   "diagnostics":diagnostics,"compile":compile_data,
-                   "findings":[
-                     {"id":"G3-CONNECTIVITY","severity":"BLOCKER","domain":"connectivity","status":"BLOCKED","evidence":"No independent SCH-PCB reconciliation engine is implemented.","confidence":"FACT"},
-                     {"id":"G5-ELECTRICAL","severity":"BLOCKER","domain":"electrical","status":"BLOCKED","evidence":"No electrical rule/intent audit engine is implemented.","confidence":"FACT"},
-                     {"id":"G6-PHYSICAL","severity":"BLOCKER","domain":"physical","status":"BLOCKED","evidence":"No geometry/DRC rule engine is implemented.","confidence":"FACT"},
-                     {"id":"G7-FUNCTIONAL","severity":"BLOCKER","domain":"functional","status":"BLOCKED","evidence":"Functional intent cannot be established by parser output alone.","confidence":"FACT"}
-                   ]}
-          pathlib.Path("work/findings.json").write_text(json.dumps(summary["findings"],indent=2,ensure_ascii=False),encoding="utf-8")
-          pathlib.Path("work/report.md").write_text("# Altium Audit Report\n\n**Overall status:** BLOCKED\n\nG3/G5/G6/G7 are explicitly BLOCKED; parser success never implies design PASS.\n",encoding="utf-8")
+          if compile_data is None:
+              add("G2-COMPILE","BLOCKER","compile","UNKNOWN","No compile metadata emitted by parser.","FACT")
+          elif diagnostics:
+              add("G2-DIAGNOSTICS","HIGH","compile","FAIL",
+                  f"Parser emitted {len(diagnostics)} diagnostic record(s); clean compile cannot be claimed.",
+                  "VERIFIED")
+          else:
+              add("G2-COMPILE","INFO","compile","VERIFIED",
+                  "Compile metadata is present and diagnostics collection is empty.",
+                  "VERIFIED")
+
+          # G3: real refdes reconciliation.
+          s=set(sch_refs); p=set(pcb_refs)
+          for ref in sorted(s-p):
+              add("G3-SCH-ONLY-"+ref,"HIGH","connectivity","FAIL",
+                  "Schematic component reference is absent from parsed PCB component set.","VERIFIED",ref)
+          for ref in sorted(p-s):
+              add("G3-PCB-ONLY-"+ref,"HIGH","connectivity","FAIL",
+                  "PCB component reference is absent from parsed schematic component set.","VERIFIED",ref)
+          if not (s-p) and not (p-s):
+              add("G3-REFDES","INFO","connectivity","VERIFIED",
+                  f"Parsed schematic/PCB reference sets reconcile: {len(s)} common reference(s).","VERIFIED")
+          else:
+              add("G3-REFDES","BLOCKER","connectivity","FAIL",
+                  f"Reference mismatch: {len(s-p)} schematic-only, {len(p-s)} PCB-only.","VERIFIED")
+
+          # G3 net/pad evidence where public typed records expose net identity.
+          pcb_pads=list(getattr(pcb,"pads",[]) or [])
+          pad_nets=[]
+          for pad in pcb_pads:
+              v=field(pad,"net","net_name","netname")
+              if v is not None: pad_nets.append(str(v))
+          sch_nets=payload.get("nets",[]) or []
+          if pad_nets and sch_nets:
+              sn=set()
+              for n in sch_nets:
+                  v=field(n,"name","net_name","netname")
+                  if v is not None: sn.add(str(v))
+              pn=set(pad_nets)
+              if sn==pn:
+                  add("G3-NET-SET","INFO","connectivity","VERIFIED",
+                      f"Schematic and PCB exposed net-name sets match ({len(sn)} net(s)).","VERIFIED")
+              else:
+                  add("G3-NET-SET","BLOCKER","connectivity","FAIL",
+                      f"Net-set mismatch: schematic-only={len(sn-pn)}, PCB-only={len(pn-sn)}.","VERIFIED")
+          else:
+              add("G3-NET-PIN","BLOCKER","connectivity","UNKNOWN",
+                  "Public parsed data did not expose enough normalized schematic-pin ↔ PCB-pad net identity for full reconciliation.",
+                  "FACT")
+
+          # G4/G5/G6 are not promoted by mere object counts.
+          pcb_counts={}
+          for a in ("components","pads","vias","tracks","arcs","fills","regions","texts","nets"):
+              try: pcb_counts[a]=len(getattr(pcb,a))
+              except Exception: pcb_counts[a]=None
+          add("G4-PCB-STRUCTURE","BLOCKER","pcb","UNKNOWN",
+              "PCB primitives are parsed, but primitive presence/counts do not prove DRC/clearance/routing correctness.",
+              "FACT")
+          add("G5-ELECTRICAL","BLOCKER","electrical","UNKNOWN",
+              "No independent electrical-intent rules are encoded; parser output alone cannot establish power, pin-type, protection, or decoupling correctness.",
+              "FACT")
+          add("G6-PHYSICAL","BLOCKER","physical","UNKNOWN",
+              "No independent geometry/DRC rule evaluation is encoded in the audit runner.",
+              "FACT")
+          add("G7-FUNCTIONAL","BLOCKER","functional","UNKNOWN",
+              "Functional intent is not encoded sufficiently to establish design correctness from file structure alone.",
+              "FACT")
+
+          summary={
+            "status":"BLOCKED" if any(x["severity"]=="BLOCKER" and x["status"] in ("FAIL","UNKNOWN") for x in findings) else "PASS",
+            "schema":payload.get("schema"),"generator":payload.get("generator"),"project":payload.get("project"),
+            "gates":{
+              "G0_INTAKE":"VERIFIED",
+              "G1_PARSE":"VERIFIED",
+              "G2_COMPILE":"VERIFIED" if compile_data is not None and not diagnostics else ("FAIL" if diagnostics else "UNKNOWN"),
+              "G3_CONNECTIVITY":"VERIFIED" if not any(x["id"].startswith("G3-") and x["status"] in ("FAIL","UNKNOWN") for x in findings) else "BLOCKED",
+              "G4_PCB":"BLOCKED","G5_ELECTRICAL":"BLOCKED","G6_PHYSICAL":"BLOCKED","G7_FUNCTIONAL":"BLOCKED",
+              "G8_REPORT":"VERIFIED"},
+            "counts":{"sheets":len(payload.get("sheets",[])),"components":len(sch_components),"nets":len(sch_nets),
+                      "pcb_components":len(pcb_components),"pcb_pads":len(pcb_pads),"pcb":pcb_counts},
+            "diagnostics":diagnostics,"compile":compile_data,"findings":findings
+          }
           pathlib.Path("work/summary.json").write_text(json.dumps(summary,indent=2,ensure_ascii=False),encoding="utf-8")
-          print("SUMMARY_JSON"); print(json.dumps(summary,indent=2,ensure_ascii=False))
+          pathlib.Path("work/findings.json").write_text(json.dumps(findings,indent=2,ensure_ascii=False),encoding="utf-8")
+          pathlib.Path("work/pcb_probe.txt").write_text(
+              "counts="+repr(pcb_counts)+"\nattrs="+repr(sorted(a for a in dir(pcb) if not a.startswith("_")))+"\n",
+              encoding="utf-8")
+          report=["# Altium Audit Report","","**Overall:** "+summary["status"],"",
+                  "## Gate status"]
+          report += [f"- **{k}**: {v}" for k,v in summary["gates"].items()]
+          report += ["","## Findings"]
+          for f in findings:
+              report += [f"### {f['id']} — {f['severity']} / {f['status']}",
+                         f"- Domain: {f['domain']}",f"- Evidence: {f['evidence']}",f"- Confidence: {f['confidence']}",""]
+          pathlib.Path("work/report.md").write_text("\n".join(report),encoding="utf-8")
+          print(json.dumps(summary,indent=2,ensure_ascii=False))
           PY
           python work/audit.py
       - name: Upload audit artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: altium-audit-pcb-probe
+          name: altium-audit-report
           path: |
             work/summary.json
             work/design.json
