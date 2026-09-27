@@ -56,6 +56,18 @@ jobs:
           echo "audit_runner exit code: $rc"
           exit 0
 
+      - name: Build conservative routing repair plan
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set +e
+          python tools/altium-audit/routing_repair_plan.py \
+            --pcb "$(find work/project -type f -name '*.PcbDoc' | head -1)" \
+            --out work/audit/routing_repair_plan.json
+          rc=$?
+          echo "routing planner exit: $rc"
+          test -s work/audit/routing_repair_plan.json || printf '%s\n' '{"schema":"altium-routing-repair-plan.v1","status":"PLANNER_FAILED"}' > work/audit/routing_repair_plan.json
+
       - name: Validate required audit artifacts
         if: ${{ always() }}
         shell: bash
@@ -89,6 +101,7 @@ jobs:
             work/audit/g4_probe.json
             work/audit/findings.json
             work/audit/report.md
+            work/audit/routing_repair_plan.json
             work/audit/runner_exit.txt
             work/audit/runner_exit_code.txt
           if-no-files-found: error
