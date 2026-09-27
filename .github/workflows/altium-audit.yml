@@ -24,51 +24,51 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "altium-monkey>=2026.9.12"
-      - name: Parse project
+      - name: Parse project and audit PCB primitives
         shell: bash
         run: |
           cat > work/audit.py <<'PY'
           import json, pathlib, traceback
           from altium_monkey import AltiumDesign
           root=pathlib.Path("work/project")
-          prjs=list(root.rglob("*.PrjPcb")); schs=list(root.rglob("*.SchDoc")); pcbs=list(root.rglob("*.PcbDoc"))
-          print("PROJECT_FILES", [str(x) for x in prjs], [str(x) for x in schs], [str(x) for x in pcbs])
+          prjs=list(root.rglob("*.PrjPcb")); pcbs=list(root.rglob("*.PcbDoc"))
+          print("PROJECT_FILES", [str(x) for x in prjs], [str(x) for x in pcbs])
           if not prjs: raise SystemExit("No PrjPcb found")
           d=AltiumDesign.from_prjpcb(str(prjs[0]))
           print("DESIGN_LOADED")
+          pcb=None
           if pcbs:
+              pcb=d.load_pcbdoc()
+              print("PCB_LOADED")
+              for attr in ("components","pads","vias","tracks","arcs","fills","regions","texts","nets"):
+                  try: print("PCB_COUNT",attr,len(getattr(pcb,attr)))
+                  except Exception as e: print("PCB_ATTR_ERROR",attr,repr(e))
+              print("PCB_ATTRS",sorted(a for a in dir(pcb) if not a.startswith("_")))
               try:
-                  d.load_pcbdoc(); print("PCB_LOADED")
-              except Exception as e:
-                  print("PCB_LOAD_ERROR",repr(e)); traceback.print_exc()
+                  pathlib.Path("work/pcb_probe.txt").write_text(
+                      "counts="+repr({a:len(getattr(pcb,a)) for a in ("components","pads","vias","tracks","arcs","fills","regions","texts","nets") if hasattr(pcb,a)})+"\n"+
+                      "attrs="+repr(sorted(a for a in dir(pcb) if not a.startswith("_")))+"\n",
+                      encoding="utf-8")
+              except Exception as e: print("PCB_PROBE_WRITE_ERROR",repr(e))
           payload=d.to_json(include_pnp=True,include_compile_metadata=True,include_indexes=True)
           pathlib.Path("work/design.json").write_text(json.dumps(payload,indent=2,ensure_ascii=False),encoding="utf-8")
-          try:
-              n=d.to_netlist()
-              pathlib.Path("work/netlist.json").write_text(n.to_json_text(),encoding="utf-8")
-              print("NETLIST_WRITTEN")
-          except Exception as e:
-              print("NETLIST_ERROR",repr(e)); traceback.print_exc()
+          n=d.to_netlist()
+          pathlib.Path("work/netlist.json").write_text(n.to_json_text(),encoding="utf-8")
+          print("NETLIST_WRITTEN")
           summary={"schema":payload.get("schema"),"generator":payload.get("generator"),"project":payload.get("project"),
                    "counts":{"sheets":len(payload.get("sheets",[])),"components":len(payload.get("components",[])),"nets":len(payload.get("nets",[])),"pnp_units":len((payload.get("pnp") or {}).get("units",[]))},
                    "diagnostics":payload.get("diagnostics",[]),"compile":payload.get("compile")}
           pathlib.Path("work/summary.json").write_text(json.dumps(summary,indent=2,ensure_ascii=False),encoding="utf-8")
           print("SUMMARY_JSON"); print(json.dumps(summary,indent=2,ensure_ascii=False))
-          try:
-              pcb=d.load_pcbdoc()
-              pathlib.Path("work/pcb.json").write_text(json.dumps(pcb.to_json(),indent=2,default=str),encoding="utf-8")
-              print("PCB_JSON_WRITTEN")
-          except Exception as e:
-              print("PCB_JSON_NOTE",repr(e))
           PY
           python work/audit.py
       - name: Upload audit artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: altium-audit-${{ github.sha }}
+          name: altium-audit-pcb-probe
           path: |
             work/summary.json
             work/design.json
             work/netlist.json
-            work/pcb.json
+            work/pcb_probe.txt
           if-no-files-found: warn
