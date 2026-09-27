@@ -170,38 +170,77 @@ jobs:
               add("G3-PIN-NET","BLOCKER","connectivity","UNKNOWN",
                   f"Authoritative terminal/pad join could not be evaluated: {type(exc).__name__}: {exc}","FACT")
 
-          # G4 discovery probe: expose typed rule/board/primitive fields before implementing checks.
-          def obj_shape(obj, fields):
-              out={}
-              for k in fields:
-                  try:
-                      v=getattr(obj,k)
-                      if v is not None and not callable(v): out[k]=v
-                  except Exception: pass
-              return out
-          rule_probe=[]
-          rule_attrs=[]
-          if getattr(pcb,"rules",None): rule_attrs=sorted(a for a in dir(pcb.rules[0]) if not a.startswith("_"))
-          try:
-              for r in list(getattr(pcb,"rules",[]) or []):
-                  rule_probe.append({"shape":obj_shape(r,["name","rule_kind","kind","enabled","priority","scope1_expression","scope2_expression","value","min_width","preferred_width","max_width","minwidth","preferredwidth","maxwidth","clearance","gap"]),"raw":dict(getattr(r,"_raw_record",{}) or {}),"semantic_values":getattr(r,"semantic_values",None),"extra_fields":getattr(r,"extra_fields",None)})
-          except Exception as exc: rule_probe=[{"error":f"{type(exc).__name__}: {exc}"}]
-          board_probe=obj_shape(getattr(pcb,"board",None) if getattr(pcb,"board",None) is not None else pcb,["name","width","height","outline","bounds","layer_count","thickness"])
-          primitive_probe={}
-          for coll_name, coll in (("tracks",getattr(pcb,"tracks",[]) or []),("pads",getattr(pcb,"pads",[]) or []),("vias",getattr(pcb,"vias",[]) or []),("components",getattr(pcb,"components",[]) or [])):
-              primitive_probe[coll_name]={"shape":obj_shape(coll[0], ["x","y","start_x","start_y","end_x","end_y","width","layer","net_index","component_index","designator","hole_size","size_x","size_y","diameter","hole_diameter","rotation"]),"raw":dict(getattr(coll[0],"_raw_record",{}) or {}) if coll else {},"attrs":sorted(a for a in dir(coll[0]) if not a.startswith("_")) if coll else []}
-          pathlib.Path("work/g4_probe.json").write_text(json.dumps({"rule_attrs":rule_attrs,"rules":rule_probe,"board":board_probe,"primitive_samples":primitive_probe},default=str,indent=2,ensure_ascii=False),encoding="utf-8")
+          # G4: deterministic physical checks backed by native PCB rules.
+          # Supported here: exact circular hole-to-hole clearance. Other DRC families remain UNKNOWN
+          # until the parser exposes enough geometry/rule semantics to evaluate them without guesswork.
+          def parse_mil(v):
+              if v is None: return None
+              s=str(v).strip().lower()
+              if s.endswith("mil"): s=s[:-3].strip()
+              try: return float(s)
+              except Exception: return None
 
-          pcb_counts={}
-          for a in ("components","pads","vias","tracks","arcs","fills","regions","texts","nets"):
-              try: pcb_counts[a]=len(getattr(pcb,a))
-              except Exception: pcb_counts[a]=None
-          add("G4-PCB-STRUCTURE","BLOCKER","pcb","UNKNOWN",
-              "PCB primitives are parsed, but primitive presence/counts do not prove DRC/clearance/routing correctness.","FACT")
+          rules=list(getattr(pcb,"rules",[]) or [])
+          enabled_rules=[r for r in rules if getattr(r,"enabled",True)]
+          add("G4-RULE-INVENTORY","INFO","pcb","VERIFIED",
+              f"Parsed {len(rules)} PCB design-rule records; {len(enabled_rules)} are enabled. Rule semantics are preserved by the typed parser.","VERIFIED")
+
+          hole_rule=next((r for r in enabled_rules if str(getattr(r,"rule_kind","")).strip().lower()=="holetoholeclearance"),None)
+          hole_gap=parse_mil(getattr(hole_rule,"gap",None)) if hole_rule else None
+          hole_items=[]
+          if hole_rule is not None and hole_gap is not None:
+              for kind, coll in (("PAD",pcb_pads),("VIA",list(getattr(pcb,"vias",[]) or []))):
+                  for idx,obj in enumerate(coll):
+                      hs=parse_mil(getattr(obj,"hole_size_mils",None))
+                      if hs is None or hs <= 0: continue
+                      cxcy=getattr(obj,"hole_center_mils",None)
+                      if cxcy is None: cxcy=(getattr(obj,"x_mils",None),getattr(obj,"y_mils",None))
+                      try: cx,cy=float(cxcy[0]),float(cxcy[1])
+                      except Exception: continue
+                      hole_items.append((kind,idx,cx,cy,hs,getattr(obj,"designator",None),getattr(obj,"component_index",None)))
+              violations=[]
+              import math
+              for i,a in enumerate(hole_items):
+                  for b in hole_items[i+1:]:
+                      dx=a[2]-b[2]; dy=a[3]-b[3]
+                      center_dist=math.hypot(dx,dy)
+                      edge_clearance=center_dist-(a[4]+b[4])/2.0
+                      if edge_clearance < hole_gap:
+                          violations.append((a,b,edge_clearance))
+              if violations:
+                  for a,b,actual in violations[:200]:
+                      add(f"G4-HOLE-CLEARANCE-{a[0]}{a[1]}-{b[0]}{b[1]}","HIGH","pcb","FAIL",
+                          f"Exact circular-hole geometry: clearance={actual:.4f}mil < rule gap={hole_gap:.4f}mil; objects={a[0]}#{a[1]} and {b[0]}#{b[1]}.","VERIFIED",
+                          f"{a[0]}#{a[1]}↔{b[0]}#{b[1]}")
+              else:
+                  add("G4-HOLE-CLEARANCE","INFO","pcb","VERIFIED",
+                      f"Evaluated {len(hole_items)} drilled-hole primitives pairwise against enabled HoleToHoleClearance gap={hole_gap:g}mil; no geometric violation found.","VERIFIED")
+          else:
+              add("G4-HOLE-CLEARANCE","BLOCKER","pcb","UNKNOWN",
+                  "HoleToHoleClearance rule or its numeric gap is not exposed sufficiently for deterministic evaluation.","FACT")
+
+          width_rule=next((r for r in enabled_rules if str(getattr(r,"rule_kind","")).strip().lower()=="width"),None)
+          width_min=parse_mil(getattr(width_rule,"min_width",None)) if width_rule else None
+          if width_rule is not None and width_min is not None:
+              bad=[]
+              for i,t in enumerate(list(getattr(pcb,"tracks",[]) or [])):
+                  w=parse_mil(getattr(t,"width_mils",None))
+                  if w is not None and w < width_min: bad.append((i,w))
+              if bad:
+                  for i,w in bad[:200]: add(f"G4-TRACK-WIDTH-{i}","HIGH","pcb","FAIL",f"Track width={w:g}mil < enabled Width minimum={width_min:g}mil.","VERIFIED",f"track#{i}")
+              else: add("G4-TRACK-WIDTH","INFO","pcb","VERIFIED",f"Evaluated {len(list(getattr(pcb,'tracks',[]) or []))} tracks against Width minimum={width_min:g}mil; no violation found.","VERIFIED")
+          else:
+              pref=parse_mil(getattr(width_rule,"preferred_width",None)) if width_rule else None
+              add("G4-TRACK-WIDTH","BLOCKER","pcb","UNKNOWN",
+                  f"Width rule is present{(' with preferred width='+str(pref)+'mil') if pref is not None else ''}, but no authoritative minimum width field is exposed; preferred width cannot be treated as a minimum.","FACT")
+
+          add("G4-DRC-COVERAGE","BLOCKER","pcb","UNKNOWN",
+              "Clearance, width, hole and routing rule records are present, but this runner does not claim full Altium DRC equivalence. Unsupported rule families remain UNKNOWN rather than PASS.","FACT")
+
           add("G5-ELECTRICAL","BLOCKER","electrical","UNKNOWN",
               "No independent electrical-intent rules are encoded; parser output alone cannot establish power, pin-type, protection, or decoupling correctness.","FACT")
           add("G6-PHYSICAL","BLOCKER","physical","UNKNOWN",
-              "No independent geometry/DRC rule evaluation is encoded in the audit runner.","FACT")
+              "G4 now evaluates selected native PCB rules, but broader mechanical/geometry checks still require additional authoritative rule coverage.","FACT")
           add("G7-FUNCTIONAL","BLOCKER","functional","UNKNOWN",
               "Functional intent is not encoded sufficiently to establish design correctness from file structure alone.","FACT")
 
@@ -212,7 +251,7 @@ jobs:
               "G0_INTAKE":"VERIFIED","G1_PARSE":"VERIFIED",
               "G2_COMPILE":"VERIFIED" if compile_data is not None and not diagnostics else ("FAIL" if diagnostics else "UNKNOWN"),
               "G3_CONNECTIVITY":"VERIFIED" if not any(x["id"].startswith("G3-") and x["status"] in ("FAIL","UNKNOWN") for x in findings) else "BLOCKED",
-              "G4_PCB":"BLOCKED","G5_ELECTRICAL":"BLOCKED","G6_PHYSICAL":"BLOCKED","G7_FUNCTIONAL":"BLOCKED","G8_REPORT":"VERIFIED"},
+              "G4_PCB":"VERIFIED" if not any(x["id"].startswith("G4-") and x["status"] in ("FAIL","UNKNOWN") for x in findings) else "BLOCKED","G5_ELECTRICAL":"BLOCKED","G6_PHYSICAL":"BLOCKED","G7_FUNCTIONAL":"BLOCKED","G8_REPORT":"VERIFIED"},
             "counts":{"sheets":len(payload.get("sheets",[])),"components":len(sch_components),"nets":len(payload.get("nets",[]) or []),
                       "pcb_components":len(pcb_components),"pcb_pads":len(pcb_pads),"pcb":pcb_counts},
             "diagnostics":diagnostics,"compile":compile_data,"findings":findings}
