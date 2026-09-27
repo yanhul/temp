@@ -29,8 +29,21 @@ def field(obj: Any, *keys: str):
     return None
 
 def as_name(obj: Any):
+    """Resolve PCB references and schematic DESIGNATOR child records."""
     v = field(obj, "designator", "refdes", "reference", "name", "component", "id")
-    return str(v) if v is not None else None
+    if v is not None:
+        return str(v)
+
+    # In altium-monkey a schematic component stores its reference as an
+    # AltiumSchDesignator child, not as a scalar component attribute.
+    for child in list(field(obj, "children") or []):
+        kind = type(child).__name__.lower()
+        name = str(field(child, "name") or "").strip().lower()
+        if "designator" in kind or name == "designator":
+            text = field(child, "text", "value")
+            if text is not None and str(text).strip():
+                return str(text).strip()
+    return None
 
 def add(findings, fid, severity, domain, status, evidence, confidence="VERIFIED", obj=None):
     findings.append({
