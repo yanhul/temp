@@ -64,7 +64,7 @@ jobs:
           import json
           from pathlib import Path
           s=json.loads(Path("work/audit/summary.json").read_text())
-          required={"G0_INTAKE","G1_PARSE","G2_COMPILE","G3_CONNECTIVITY","G4_PCB","G5_ELECTRICAL","G6_PHYSICAL","G7_FUNCTIONAL","G8_REPORT"}
+          required={"G0_INTAKE","G1_PARSE","G2_COMPILE","G3_CONNECTIVITY","G4_PCB","G5_ELECTRICAL","G6_PHYSICAL","G6_PLACEMENT","G7_ROUTING","G7_FUNCTIONAL","G8_REPORT"}
           missing=required-set(s.get("gates",{}))
           if missing:
               raise SystemExit(f"missing gates: {sorted(missing)}")
