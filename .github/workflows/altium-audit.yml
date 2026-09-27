@@ -170,6 +170,11 @@ jobs:
               add("G3-PIN-NET","BLOCKER","connectivity","UNKNOWN",
                   f"Authoritative terminal/pad join could not be evaluated: {type(exc).__name__}: {exc}","FACT")
 
+          pcb_counts={}
+          for a in ("components","pads","vias","tracks","arcs","fills","regions","texts","nets"):
+              try: pcb_counts[a]=len(getattr(pcb,a))
+              except Exception: pcb_counts[a]=None
+
           # G4: deterministic physical checks backed by native PCB rules.
           # Supported here: exact circular hole-to-hole clearance. Other DRC families remain UNKNOWN
           # until the parser exposes enough geometry/rule semantics to evaluate them without guesswork.
