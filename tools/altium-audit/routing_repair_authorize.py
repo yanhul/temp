@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Independent authorization gate for conservative PCB routing repair."""
 from __future__ import annotations
-import argparse, hashlib, json, math
+import argparse, hashlib, json, math, re
 from pathlib import Path
 from altium_monkey import AltiumPcbDoc
 
@@ -45,6 +45,23 @@ def ep(o):
     return None
 
 def pd(p,a,b):
+    dx,dy=b[0]-a[0],b[1]-a[1]
+    if dx==dy==0:return math.dist(p,a)
+    t=max(0,min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/(dx*dx+dy*dy)))
+    return math.dist(p,(a[0]+t*dx,a[1]+t*dy))
+
+def sd(a,b,c,d):
+    def o(p,q,r): return (q[0]-p[0])*(r[1]-p[1])-(q[1]-p[1])*(r[0]-p[0])
+    def on(p,q,r): return abs(o(p,q,r))<1e-9 and min(p[0],r[0])<=q[0]<=max(p[0],r[0]) and min(p[1],r[1])<=q[1]<=max(p[1],r[1])
+    o1,o2,o3,o4=o(a,b,c),o(a,b,d),o(c,d,a),o(c,d,b)
+    if ((o1>0>o2) or (o2>0>o1)) and ((o3>0>o4) or (o4>0>o3)): return 0.0
+    if on(a,c,b) or on(a,d,b) or on(c,a,d) or on(c,b,d): return 0.0
+    return min(pd(a,c,d),pd(b,c,d),pd(c,a,b),pd(c,b,a))
+
+def mil(v):
+    if v is None:return None
+    m=re.search(r"[-+]?\d+(?:\.\d+)?",str(v))
+    return float(m.group(0)) if m else None
     dx,dy=b[0]-a[0],b[1]-a[1]
     if dx==dy==0:return math.dist(p,a)
     t=max(0,min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/(dx*dx+dy*dy)))
@@ -107,10 +124,18 @@ def main():
     probe=json.loads(args.probe.read_text())
     clear=[]
     for r in probe.get("rule_samples",[]) or []:
-        a=r.get("attrs",{})
-        for k in ("minimum_clearance","min_clearance","clearance"):
-            try: clear.append(float(a[k]))
-            except Exception: pass
+        a=r.get("attrs",{}) or {}
+        if str(a.get("rule_kind","")).lower()!="clearance": continue
+        scope=str(a.get("net_scope",a.get("netscope","DifferentNets"))).lower()
+        if "differentnets" not in scope and scope not in ("anynet","any"): continue
+        rawr=r.get("raw_rule",{}) or {}
+        for k in ("clearance","minimum_clearance","gap","generic_clearance","value"):
+            v=mil(a.get(k))
+            if v is not None: clear.append(v); break
+        else:
+            for k in ("CLEARANCE","MINIMUMCLEARANCE","MINCLEARANCE","GAP","GENERICCLEARANCE","VALUE"):
+                v=mil(rawr.get(k))
+                if v is not None: clear.append(v); break
     def block(reason,rejected=None):
         plan["mutation_authorized"]=False
         plan["authorization"]={"status":"BLOCKED","reason":reason,"rejected":rejected or []}
@@ -141,7 +166,7 @@ def main():
                 tn=field(tr,"net_name","netname","net")
                 if tn is not None and str(tn)==name:continue
                 z=ep(tr)
-                if z and min(pd(p,*z),pd(q,*z))<clearance:bad=True;break
+                if z and sd(p,q,*z)<clearance:bad=True;break
             if bad:rejected.append({"net":name,"reason":f"foreign-track clearance below {clearance:g} mil"});continue
             authorized.append({**bridge,"net":name,"clearance_mils":clearance,
                                "evidence":{"finding_id":finding["id"],"source_sha256":sha(args.pcb)}})
