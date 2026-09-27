@@ -263,6 +263,7 @@ def main():
                     f"- Evidence: {f['evidence']}",f"- Confidence: {f['confidence']}",""]
     (out/"report.md").write_text("\n".join(report),encoding="utf-8")
     (out/"summary.json").write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding="utf-8")
+    (out/"findings.json").write_text(json.dumps(findings,indent=2,ensure_ascii=False),encoding="utf-8")
     print(json.dumps({"status":status,"gates":gates},indent=2))
     return 0 if status=="BLOCKED" else 1
 
