@@ -45,16 +45,16 @@ jobs:
           print("DESIGN_LOADED")
           pcb=d.load_pcbdoc()
           print("PCB_LOADED")
-              for attr in ("components","pads","vias","tracks","arcs","fills","regions","texts","nets"):
-                  try: print("PCB_COUNT",attr,len(getattr(pcb,attr)))
-                  except Exception as e: print("PCB_ATTR_ERROR",attr,repr(e))
-              print("PCB_ATTRS",sorted(a for a in dir(pcb) if not a.startswith("_")))
-              try:
-                  pathlib.Path("work/pcb_probe.txt").write_text(
-                      "counts="+repr({a:len(getattr(pcb,a)) for a in ("components","pads","vias","tracks","arcs","fills","regions","texts","nets") if hasattr(pcb,a)})+"\n"+
-                      "attrs="+repr(sorted(a for a in dir(pcb) if not a.startswith("_")))+"\n",
-                      encoding="utf-8")
-              except Exception as e: print("PCB_PROBE_WRITE_ERROR",repr(e))
+          for attr in ("components","pads","vias","tracks","arcs","fills","regions","texts","nets"):
+              try: print("PCB_COUNT",attr,len(getattr(pcb,attr)))
+              except Exception as e: print("PCB_ATTR_ERROR",attr,repr(e))
+          print("PCB_ATTRS",sorted(a for a in dir(pcb) if not a.startswith("_")))
+          try:
+              pathlib.Path("work/pcb_probe.txt").write_text(
+                  "counts="+repr({a:len(getattr(pcb,a)) for a in ("components","pads","vias","tracks","arcs","fills","regions","texts","nets") if hasattr(pcb,a)})+"\n"+
+                  "attrs="+repr(sorted(a for a in dir(pcb) if not a.startswith("_")))+"\n",
+                  encoding="utf-8")
+          except Exception as e: print("PCB_PROBE_WRITE_ERROR",repr(e))
           payload=d.to_json(include_pnp=True,include_compile_metadata=True,include_indexes=True)
           pathlib.Path("work/design.json").write_text(json.dumps(payload,indent=2,ensure_ascii=False),encoding="utf-8")
           n=d.to_netlist()
