@@ -1,0 +1,53 @@
+name: altium-audit-kit-e2e
+
+on:
+  push:
+    paths:
+      - "audit-input/**"
+      - "tools/altium-audit/**"
+      - ".github/workflows/altium-audit-kit-e2e.yml"
+  workflow_dispatch:
+
+jobs:
+  kit-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install audit parser
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r tools/altium-audit/requirements.txt
+      - name: Run reusable audit kit
+        shell: bash
+        run: |
+          set +e
+          python tools/altium-audit/audit_kit.py --input audit-input --output work/kit --repair
+          rc=$?
+          printf '%s\n' "$rc" > work/kit/kit_exit_code.txt
+          echo "KIT EXIT: $rc"
+          exit 0
+      - name: Validate kit terminal artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s work/kit/intake.json
+          test -s work/kit/audit-initial/summary.json
+          test -s work/kit/audit-initial/findings.json
+          test -s work/kit/audit-initial/g4_probe.json
+          test -s work/kit/summary.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          intake=json.loads(Path('work/kit/intake.json').read_text())
+          s=json.loads(Path('work/kit/summary.json').read_text())
+          print('INPUT:', intake['input'])
+          print('FINAL STATUS:', s.get('status'))
+          print('GATES:', s.get('gates'))
+          PY
+      - name: Upload kit result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: altium-audit-kit-e2e
+          path: work/kit
+          if-no-files-found: error
