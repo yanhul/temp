@@ -168,6 +168,22 @@ def main():
     for (ref,pin),a,b in mismatches[:200]:
         add(findings,f"G3-PIN-NET-{ref}-{pin}","HIGH","connectivity","FAIL",
             f"Schematic net={a!r}, PCB pad net={b!r}.","VERIFIED",f"{ref}.{pin}")
+    unresolved_samples = []
+    if unresolved:
+        for idx, pad in enumerate(pcb_pads):
+            ci = field(pad,"component_index")
+            pin = field(pad,"designator","pad_designator","number")
+            ni = field(pad,"net_index")
+            if ci is not None and (pin is None or ni is None) and len(unresolved_samples) < 100:
+                attrs = {}
+                for name in sorted(set(["component_index","designator","pad_designator","number","net_index","net_name","netname","name","x","y","position","layer"])):
+                    try:
+                        value = getattr(pad, name)
+                        if value is not None:
+                            attrs[name] = value
+                    except Exception:
+                        pass
+                unresolved_samples.append({"index": idx, "attrs": attrs, "repr": repr(pad)[:500]})
     if missing or unresolved:
         add(findings,"G3-PIN-MISSING-ON-PCB","BLOCKER","connectivity","UNKNOWN",
             f"{len(missing)} schematic terminals lack normalized PCB pads; {unresolved} pads were structurally unresolved.","FACT")
@@ -257,8 +273,40 @@ def main():
     (out/"netlist.json").write_text(netlist_text,encoding="utf-8")
     (out/"pcb_probe.txt").write_text(json.dumps({"counts":counts,"rules":len(rules),
         "pcb_attributes":sorted(x for x in dir(pcb) if not x.startswith("_"))},indent=2),encoding="utf-8")
-    (out/"g4_probe.json").write_text(json.dumps({"rule_count":len(rules),"enabled_rule_count":len(enabled),
-        "width_rule_exposed":minw is not None,"width_rule_field":"minimum_width" if minw is not None else None,"counts":counts},indent=2),encoding="utf-8")
+    rule_samples = []
+    for i, r in enumerate(enabled):
+        if i >= 100: break
+        attrs = {}
+        for name in sorted(set(["rule_kind","name","enabled","minimum_width","min_width","maximum_width","max_width","scope","scope1","scope2","query1","query2","priority","net_name","layer"])):
+            try:
+                value = getattr(r, name)
+                if value is not None:
+                    attrs[name] = value
+            except Exception:
+                pass
+        rule_samples.append({"index": i, "attrs": attrs, "repr": repr(r)[:700]})
+    track_samples = []
+    for i, t in enumerate(list(getattr(pcb,"tracks",[]) or [])):
+        if i >= 100: break
+        attrs = {}
+        for name in sorted(set(["width_mils","width","net_index","net_name","netname","layer","x1","y1","x2","y2","start","end"])):
+            try:
+                value = getattr(t, name)
+                if value is not None:
+                    attrs[name] = value
+            except Exception:
+                pass
+        track_samples.append({"index": i, "attrs": attrs, "repr": repr(t)[:500]})
+    (out/"g4_probe.json").write_text(json.dumps({
+        "rule_count":len(rules),"enabled_rule_count":len(enabled),
+        "width_rule_exposed":minw is not None,
+        "width_rule_field":"minimum_width" if minw is not None else None,
+        "counts":counts,
+        "width_rule_repr": repr(width_rule)[:1500] if width_rule else None,
+        "rule_samples":rule_samples,
+        "track_samples":track_samples,
+        "unresolved_pad_samples":unresolved_samples
+    },indent=2,default=str),encoding="utf-8")
     report=["# Altium Audit Report","","**Overall:** "+status,"","## Gates"]
     report += [f"- **{k}**: {v}" for k,v in gates.items()]
     report += ["","## Findings"]
