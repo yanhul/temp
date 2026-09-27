@@ -34,3 +34,17 @@ The executable audit logic lives in `audit_runner.py`; the GitHub Action is only
 
 ## Reuse
 For another Altium project, replace only the project intake/archive. Do not copy project-specific findings or hard-code refdes/net names into the runner.
+
+
+## Reusable-kit boundary
+
+The kit is project-agnostic. Project-specific intake belongs in the repository-level `altium-audit.config.json`.
+
+For a new project:
+1. copy this directory unchanged;
+2. copy `PROJECT_CONFIG.example.json` to `altium-audit.config.json`;
+3. set `project_id`, `source_archive`, and `base64_parts_dir`;
+4. use `workflow-template.yml` as the CI adapter;
+5. never add project-specific refdes/net/coordinate expectations to `audit_runner.py`.
+
+See `REUSE_RUNBOOK.md` for the standard lifecycle and evidence contract.
