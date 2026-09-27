@@ -51,3 +51,4 @@ jobs:
           name: altium-audit-kit-e2e
           path: work/kit
           if-no-files-found: error
+# E2E retrigger: parser/runtime verification
