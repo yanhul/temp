@@ -47,7 +47,8 @@ def num(v):
 
 def xy(obj):
     for keys in (("x_mils","y_mils"),("location_x_mils","location_y_mils"),("x","y")):
-        x,y=field(obj,*keys)
+        x=field(obj,keys[0])
+        y=field(obj,keys[1])
         if x is not None and y is not None:
             a,b=num(x),num(y)
             if a is not None and b is not None:
@@ -57,7 +58,8 @@ def xy(obj):
         if isinstance(p,(tuple,list)) and len(p)>=2:
             a,b=num(p[0]),num(p[1])
             if a is not None and b is not None: return (a,b)
-        x,y=field(p,"x","X"),field(p,"y","Y")
+        x=field(p,"x","X")
+        y=field(p,"y","Y")
         if x is not None and y is not None:
             a,b=num(x),num(y)
             if a is not None and b is not None: return (a,b)
