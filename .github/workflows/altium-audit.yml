@@ -85,3 +85,17 @@ jobs:
             work/audit/runner_exit.txt
             work/audit/runner_exit_code.txt
           if-no-files-found: error
+
+      - name: Finalize audit status
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path("work/audit/summary.json").read_text())
+          status=s.get("status")
+          print("final audit status:", status)
+          if status != "PASS":
+              raise SystemExit(f"strict audit not PASS: {status}")
+          PY
