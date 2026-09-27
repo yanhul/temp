@@ -418,12 +418,14 @@ def main():
     pads=list(getattr(pcb,"pads",[]) or [])
     comp_boxes={}
     comp_points={}
+    comp_sides={}
     for idx,comp in enumerate(comps):
         ref=as_name(comp)
         if not ref: continue
         try: p=(float(comp.get_x_mils()),float(comp.get_y_mils()))
         except Exception: p=xy(comp)
         if p: comp_points[ref]=p
+        comp_sides[ref]=str(getattr(comp,"layer","")).upper()
         pts=[]
         for pad in pads:
             ci=field(pad,"component_index")
@@ -480,6 +482,10 @@ def main():
     clearance_pairs=[]
     for i,a in enumerate(sorted(comp_boxes)):
         for b in sorted(comp_boxes)[i+1:]:
+            # Opposite-side SMT bodies do not directly collide in 2D. Through-hole
+            # / full-stack mechanical interaction remains covered by G6_PHYSICAL.
+            if comp_sides.get(a) and comp_sides.get(b) and comp_sides[a] != comp_sides[b]:
+                continue
             ba,bb=comp_boxes[a],comp_boxes[b]
             gap_x=max(0.0,max(ba[0],bb[0])-min(ba[2],bb[2]))
             gap_y=max(0.0,max(ba[1],bb[1])-min(ba[3],bb[3]))
