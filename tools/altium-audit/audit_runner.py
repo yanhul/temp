@@ -150,6 +150,16 @@ def topology_components(pcb):
     for track in list(getattr(pcb,"tracks",[]) or []):
         name=net_name(track,net_by_idx); ep=segment_endpoints(track)
         if name is not None and ep is not None: bucket(name)["segments"].append(ep)
+    # Keep plane/fill evidence net-scoped. A global "regions exist" flag is
+    # insufficient because unrelated copper pours must not excuse a disconnected
+    # signal net.
+    copper_area_nets=set()
+    for attr in ("regions","fills"):
+        for area in list(getattr(pcb,attr,[]) or []):
+            n=net_name(area, net_by_idx)
+            if n is not None:
+                copper_area_nets.add(str(n))
+
     result={}
     for name,d in buckets.items():
         nodes=[("pad",p) for p in d["pads"]]+[("via",p) for p in d["vias"]]
@@ -171,6 +181,7 @@ def topology_components(pcb):
             "graph_components":len({find(i) for i in range(len(nodes))}),
             "route_segments":len(d["segments"]),
             "vias":len(d["vias"]),
+            "has_copper_area": name in copper_area_nets,
         }
     return result
 
@@ -630,14 +641,21 @@ def main():
     topo=topology_components(pcb)
     topo_bad=[(n,i) for n,i in sorted(topo.items()) if i["terminal_nodes"]>=2 and i["graph_components"]>1]
     if topo_bad:
-        regions=bool(getattr(pcb,"regions",[]) or getattr(pcb,"fills",[]) or [])
         for n,info in topo_bad[:200]:
-            add(findings,f"G7-TOPOLOGY-{n}","HIGH","routing",
-                "UNKNOWN" if regions else "FAIL",
+            if info.get("has_copper_area"):
+                status, confidence, suffix = (
+                    "UNKNOWN", "FACT",
+                    " Net-scoped region/fill exists; plane connectivity is not proven."
+                )
+            else:
+                status, confidence, suffix = (
+                    "FAIL", "VERIFIED",
+                    " No net-scoped region/fill was exposed to bridge the disconnected graph."
+                )
+            add(findings,f"G7-TOPOLOGY-{n}","HIGH","routing",status,
                 f"Independent copper graph: {info['terminal_nodes']} pads, {info['route_segments']} tracks, "
-                f"{info['vias']} vias, {info['graph_components']} components."
-                + (" Regions/fills exist; plane connectivity is not proven." if regions else ""),
-                "FACT" if regions else "VERIFIED",n)
+                f"{info['vias']} vias, {info['graph_components']} components.{suffix}",
+                confidence,n)
     elif topo:
         add(findings,"G7-TOPOLOGY","INFO","routing","VERIFIED",
             f"Independent endpoint graph constructed for {len(topo)} named PCB nets; no disconnected multi-pad graph was proven.",
