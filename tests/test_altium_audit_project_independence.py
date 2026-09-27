@@ -15,6 +15,13 @@ class ProjectIndependenceTests(unittest.TestCase):
         forbidden = ("QI9-2604-A01", "J6", "J7", "ESP32")
         self.assertFalse(any(token in text for token in forbidden))
 
+
+    def test_schematic_designator_child_lookup_is_present(self):
+        text = ENGINE.read_text(encoding="utf-8")
+        self.assertIn('field(obj, "children")', text)
+        self.assertIn('"designator" in kind', text)
+        self.assertIn('field(child, "text", "value")', text)
+
     def test_engine_accepts_generic_inputs(self):
         text = ENGINE.read_text(encoding="utf-8")
         self.assertIn('--root', text)
