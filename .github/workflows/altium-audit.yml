@@ -38,7 +38,7 @@ jobs:
           python -m pip install -r tools/altium-audit/requirements.txt
 
       - name: Verify project-independent audit engine
-        run: python -m unittest -v tests.test_altium_audit_project_independence
+        run: python tests/test_altium_audit_project_independence.py
 
       - name: Run evidence-first audit
         shell: bash
