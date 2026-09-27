@@ -171,13 +171,7 @@ def topology_components(pcb):
             if x!=y: parent[y]=x
         # PCB parser coordinates are floating-point mils. One mil is a
         # conservative join tolerance for coincident endpoints.
-        snapped={}
-        for i,(_,p) in enumerate(nodes):
-            snapped.setdefault(_snap_point(p,1.0),[]).append(i)
-        for ids in snapped.values():
-            for j in ids[1:]:
-                union(ids[0],j)
-        return {
+        snapped={}\n        for i,(_,p) in enumerate(nodes):\n            snapped.setdefault(_snap_point(p,1.0),[]).append(i)\n        for ids in snapped.values():\n            for j in ids[1:]:\n                union(ids[0],j)\n        # Join pads/vias/route endpoints to track interiors as well as exact\n        # endpoints; this covers legal T-junctions in PCB routing.\n        def point_segment_distance(p,a,b):\n            dx,dy=b[0]-a[0],b[1]-a[1]\n            if dx==0 and dy==0: return distance(p,a)\n            t=((p[0]-a[0])*dx+(p[1]-a[1])*dy)/(dx*dx+dy*dy)\n            t=max(0.0,min(1.0,t))\n            q=(a[0]+t*dx,a[1]+t*dy)\n            return distance(p,q)\n        route_edges=[]\n        for obj in tracks+arcs:\n            ep=segment_endpoints(obj)\n            if ep is None: continue\n            ia=next((i for i,x in enumerate(nodes) if x[0]=="route" and x[1]==ep[0]),None)\n            ib=next((i for i,x in enumerate(nodes) if x[0]=="route" and x[1]==ep[1]),None)\n            if ia is not None and ib is not None: route_edges.append((ia,ib,ep[0],ep[1]))\n        for i,(_,p) in enumerate(nodes):\n            for ia,ib,a,b in route_edges:\n                if i==ia or i==ib: continue\n                if point_segment_distance(p,a,b)<=1.0:\n                    union(i,ia); union(i,ib)\n        return {
             "terminal_nodes":len([x for x in nodes if x[0]=="pad"]),
             "graph_components":len({find(i) for i in range(len(nodes))}),
             "route_segments":len(tracks)+len(arcs),
