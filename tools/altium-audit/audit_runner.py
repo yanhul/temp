@@ -446,7 +446,9 @@ def main():
                   if sch_pin_to_net[k] is not None and pcb_pin_to_net[k] is not None
                   and sch_pin_to_net[k].strip().upper() != str(pcb_pin_to_net[k]).strip().upper()]
     missing = set(sch_pin_to_net) - set(pcb_pin_to_net)
-    extra = set(pcb_pin_to_net) - set(sch_pin_to_net)
+    # Direct two-file mode intentionally has no compiled schematic netlist;
+    # without it, PCB-pad-vs-SCH-terminal reconciliation is not authoritative.
+    extra = (set(pcb_pin_to_net) - set(sch_pin_to_net)) if nl_nets else set()
     for (ref,pin),a,b in mismatches[:200]:
         add(findings,f"G3-PIN-NET-{ref}-{pin}","HIGH","connectivity","FAIL",
             f"Schematic net={a!r}, PCB pad net={b!r}.","VERIFIED",f"{ref}.{pin}")
