@@ -181,7 +181,8 @@ jobs:
               return out
           rule_probe=[]
           rule_attrs=[]
-          if getattr(pcb,"rules",None): rule_attrs=sorted(a for a in dir(pcb.rules[0]) if not a.startswith("_"))          try:
+          if getattr(pcb,"rules",None): rule_attrs=sorted(a for a in dir(pcb.rules[0]) if not a.startswith("_"))
+          try:
               for r in list(getattr(pcb,"rules",[]) or []):
                   rule_probe.append({"shape":obj_shape(r,["name","rule_kind","kind","enabled","priority","scope1_expression","scope2_expression","value","min_width","preferred_width","max_width","minwidth","preferredwidth","maxwidth","clearance","gap"]),"raw":dict(getattr(r,"_raw_record",{}) or {})})
           except Exception as exc: rule_probe=[{"error":f"{type(exc).__name__}: {exc}"}]
