@@ -270,8 +270,36 @@ jobs:
           pin_types=sorted(set(str(t.get("pin_type","UNKNOWN")).upper() for n in g5_nets for t in (n.get("terminals",[]) or [])))
           add("G5-PIN-TYPE-COVERAGE","INFO","electrical","VERIFIED",
               f"Compiled netlist exposes pin-type semantics across {len(pin_types)} type(s): {', '.join(pin_types)}.","VERIFIED")
+          # G5b: pin-type matrix. These are conservative net-level checks, not a substitute for
+          # project-specific electrical intent. POWER pins require a source; OUTPUT↔OUTPUT is already checked.
+          source_types={"POWER","OUTPUT","IO"}
+          sink_types={"INPUT","IO","POWER"}
+          power_sinks=[]
+          floating_inputs=[]
+          for n in g5_nets:
+              terms=n.get("terminals",[]) or []
+              types=[str(t.get("pin_type","UNKNOWN")).upper() for t in terms]
+              if "POWER" in types and not any(t in source_types for t in types if t!="POWER"):
+                  power_sinks.append(n)
+              if len(terms)==1 and types and types[0]=="INPUT":
+                  floating_inputs.append(n)
+          if power_sinks:
+              for n in power_sinks[:200]:
+                  add(f"G5-POWER-NO-SOURCE-{n.get('name','UNKNOWN')}","HIGH","electrical","FAIL",
+                      f"Net {n.get('name')!r} contains POWER terminal(s) but no non-POWER source-capable terminal was found in compiled pin semantics.","VERIFIED",n.get("name"))
+          else:
+              add("G5-POWER-SOURCE-COVERAGE","INFO","electrical","VERIFIED",
+                  "No net with POWER terminals was found to be source-less under the conservative compiled pin-type rule.","VERIFIED")
+          if floating_inputs:
+              for n in floating_inputs[:200]:
+                  add(f"G5-FLOATING-INPUT-{n.get('name','UNKNOWN')}","MEDIUM","electrical","FAIL",
+                      f"Net {n.get('name')!r} consists of a single INPUT terminal; no bias/source connection is represented in the compiled connectivity.","VERIFIED",n.get("name"))
+          else:
+              add("G5-FLOATING-INPUTS","INFO","electrical","VERIFIED",
+                  "No single-terminal INPUT net was found.","VERIFIED")
+
           add("G5-INTENT-COVERAGE","BLOCKER","electrical","UNKNOWN",
-              "Power-source adequacy, protection, level compatibility, pull requirements and decoupling cannot be proven from generic compiled pin types alone; no project-specific electrical intent contract is encoded yet.","FACT")
+              "Power-source adequacy beyond conservative pin-type checks, protection, level compatibility, pull requirements and decoupling still require project-specific electrical intent.","FACT")
           add("G6-PHYSICAL","BLOCKER","physical","UNKNOWN",
               "G4 now evaluates selected native PCB rules, but broader mechanical/geometry checks still require additional authoritative rule coverage.","FACT")
           add("G7-FUNCTIONAL","BLOCKER","functional","UNKNOWN",
