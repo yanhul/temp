@@ -169,14 +169,14 @@ def topology_components(pcb):
         nodes=[]
         for p in pads:
             q=xy(p)
-            if q is not None: nodes.append(("pad",q))
+            if q is not None: nodes.append(("pad",q,p))
         for v in vias:
             q=xy(v)
-            if q is not None: nodes.append(("via",q))
+            if q is not None: nodes.append(("via",q,v))
         for obj in tracks:
             ep=segment_endpoints(obj)
             if ep is not None:
-                nodes.extend((("route",ep[0]),("route",ep[1])))
+                nodes.extend((("route",ep[0],obj),("route",ep[1],obj)))
         for obj in arcs:
             ep=segment_endpoints(obj)
             if ep is not None:
@@ -216,10 +216,18 @@ def topology_components(pcb):
             ia=next((i for i,x in enumerate(nodes) if x[0]=="route" and x[1]==ep[0]),None)
             ib=next((i for i,x in enumerate(nodes) if x[0]=="route" and x[1]==ep[1]),None)
             if ia is not None and ib is not None: route_edges.append((ia,ib,ep[0],ep[1]))
-        for i,(_,p) in enumerate(nodes):
+        for i,(kind,p,obj) in enumerate(nodes):
             for ia,ib,a,b in route_edges:
                 if i==ia or i==ib: continue
-                if point_segment_distance(p,a,b)<=1.0:
+                tolerance=1.0
+                if kind=="pad":
+                    w=num(field(obj,"width_mils","width")) or 0.0
+                    h=num(field(obj,"height_mils","height")) or 0.0
+                    tolerance=max(tolerance,math.hypot(w,h)/2.0)
+                elif kind=="via":
+                    dia=num(field(obj,"diameter_mils","diameter")) or 0.0
+                    tolerance=max(tolerance,dia/2.0)
+                if point_segment_distance(p,a,b)<=tolerance:
                     union(i,ia); union(i,ib)
         return {
             "terminal_nodes":len([x for x in nodes if x[0]=="pad"]),
