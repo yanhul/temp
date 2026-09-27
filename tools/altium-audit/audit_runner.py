@@ -35,8 +35,10 @@ def as_name(obj: Any):
     # Search both before any generic fallback; component.name is only the
     # library/symbol name (e.g. Cap2), not the reference designator.
     seen = set()
-    for container_key in ("parameters", "children"):
-        for child in list(field(obj, container_key) or []):
+    parameters = field(obj, "parameters")
+    children = field(obj, "children")
+    for container_key, container in (("parameters", parameters), ("children", children)):
+        for child in list(container or []):
             if id(child) in seen:
                 continue
             seen.add(id(child))
