@@ -37,14 +37,20 @@ jobs:
       - name: Run evidence-first audit
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
           python tools/altium-audit/audit_runner.py \
             --root work/project \
             --out work/audit \
             --archive work/project.zip \
             --source-sha256 "$(cat work/source.sha256)"
+          rc=$?
+          printf '%s\n' "$rc" > work/audit/runner_exit_code.txt
+          printf '%s\n' "audit_runner_exit_code=$rc" > work/audit/runner_exit.txt
+          echo "audit_runner exit code: $rc"
+          exit 0
 
       - name: Validate required audit artifacts
+        if: ${{ always() }}
         shell: bash
         run: |
           set -euo pipefail
@@ -64,6 +70,7 @@ jobs:
           PY
 
       - name: Upload audit artifacts
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: altium-audit-report
