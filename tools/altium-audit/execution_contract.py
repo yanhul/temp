@@ -8,19 +8,32 @@ def run(c): return subprocess.run(c,text=True,capture_output=True)
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--out",required=True)
-    ap.add_argument("--audit-cmd",required=True)
-    ap.add_argument("--plan-cmd",required=True)
-    ap.add_argument("--repair-cmd",required=True)
-    ap.add_argument("--max-attempts",type=int,default=3); args=ap.parse_args()
-    out=pathlib.Path(args.out); out.mkdir(parents=True,exist_ok=True); history=[]
-    audit_cmd=shlex.split(args.audit_cmd); plan_cmd=shlex.split(args.plan_cmd); repair_cmd=shlex.split(args.repair_cmd)
-    for attempt in range(args.max_attempts+1):
+    ap.add_argument("--max-attempts",type=int,default=3)
+    ap.add_argument("--audit-cmd",action="store_true")
+    ap.add_argument("--plan-cmd",action="store_true")
+    ap.add_argument("--repair-cmd",action="store_true")
+    ns,rest=ap.parse_known_args()
+    def capture(flag,next_flags):
+        if flag not in rest:
+            raise SystemExit(f"missing {flag}")
+        i=rest.index(flag)+1
+        j=i
+        while j<len(rest) and rest[j] not in next_flags:
+            j+=1
+        if i==j:
+            raise SystemExit(f"empty {flag}")
+        return rest[i:j]
+    audit_cmd=capture("--audit-cmd",{"--plan-cmd","--repair-cmd"})
+    plan_cmd=capture("--plan-cmd",{"--audit-cmd","--repair-cmd"})
+    repair_cmd=capture("--repair-cmd",{"--audit-cmd","--plan-cmd"})
+    out=pathlib.Path(ns.out); out.mkdir(parents=True,exist_ok=True); history=[]
+    for attempt in range(ns.max_attempts+1):
         ar=run(audit_cmd); history.append({"stage":"AUDIT","attempt":attempt,"returncode":ar.returncode})
         sp,fp=out/"summary.json",out/"findings.json"
         if not sp.exists() or not fp.exists(): save(out/"execution_result.json",{"status":"BLOCKED","reason":"audit evidence missing","history":history}); return 2
         s,fs=load(sp),load(fp); bad=[f for f in fs.get("findings",[]) if f.get("status")=="FAIL" or f.get("severity")=="BLOCKER"]
         if s.get("status")=="PASS" and not bad: save(out/"execution_result.json",{"status":"PASS","attempts":attempt,"history":history}); return 0
-        if attempt>=args.max_attempts: save(out/"execution_result.json",{"status":"UNRESOLVED","attempts":attempt,"remaining_findings":bad,"history":history}); return 1
+        if attempt>=ns.max_attempts: save(out/"execution_result.json",{"status":"UNRESOLVED","attempts":attempt,"remaining_findings":bad,"history":history}); return 1
         pr=run(plan_cmd); history.append({"stage":"PLAN","attempt":attempt,"returncode":pr.returncode})
         receipt=out/"repair_receipt.json"
         if receipt.exists(): receipt.unlink()
@@ -31,7 +44,7 @@ def main():
         src=pathlib.Path(rec["source"]); dst=pathlib.Path(rec["output"])
         if not dst.exists(): save(out/"execution_result.json",{"status":"BLOCKED","reason":"repair output missing","history":history}); return 2
         shutil.copy2(dst,src)
-        vr=run(args.audit_cmd); history.append({"stage":"VERIFY","attempt":attempt,"returncode":vr.returncode})
+        vr=run(audit_cmd); history.append({"stage":"VERIFY","attempt":attempt,"returncode":vr.returncode})
         if not (sp.exists() and fp.exists()): save(out/"execution_result.json",{"status":"BLOCKED","reason":"verification evidence missing","history":history}); return 2
         s2,fs2=load(sp),load(fp); bad2=[f for f in fs2.get("findings",[]) if f.get("status")=="FAIL" or f.get("severity")=="BLOCKER"]
         history.append({"stage":"VERIFY_RESULT","attempt":attempt,"status":s2.get("status"),"remaining_findings":len(bad2)})
