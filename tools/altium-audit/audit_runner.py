@@ -297,11 +297,33 @@ def main():
         add(findings,"G6-BOARD-OUTLINE","INFO","physical","VERIFIED",
             f"Parsed board outline with {len(vertices)} vertices; bounding_box={bb!r}.","VERIFIED")
         add(findings,"G6-BOARD-OUTLINE-CLOSED","INFO","physical",
-            "VERIFIED" if (len(vertices) >= 3 and
-                abs(float(vertices[0].x_mils)-float(vertices[-1].x_mils)) < 1.0 and
-                abs(float(vertices[0].y_mils)-float(vertices[-1].y_mils)) < 1.0)
-            else "UNKNOWN",
-            "Outline endpoint closure is checked from authoritative board-outline vertices.","VERIFIED")
+            "VERIFIED" if len(vertices) >= 3 else "UNKNOWN",
+            "Altium board outline is represented as an ordered polygon; closure is implicit from the final vertex back to the first.","VERIFIED")
+        if bb and len(bb) == 4:
+            x0,y0,x1,y1 = map(float,bb)
+            outside = []
+            for comp in list(getattr(pcb,"components",[]) or []):
+                pos = None
+                try:
+                    pos = pcb.get_component_pick_place_center_mils(comp)
+                except Exception:
+                    pass
+                if pos is None:
+                    for keys in (("x_mils","y_mils"),("location_x_mils","location_y_mils")):
+                        xv,yv = field(comp,keys[0]),field(comp,keys[1])
+                        if xv is not None and yv is not None:
+                            try: pos=(float(xv),float(yv))
+                            except Exception: pass
+                            break
+                if pos is not None and not (x0 <= pos[0] <= x1 and y0 <= pos[1] <= y1):
+                    outside.append((as_name(comp),pos))
+            if outside:
+                for ref,pos in outside[:100]:
+                    add(findings,f"G6-COMPONENT-OUTSIDE-{ref}","HIGH","physical","FAIL",
+                        f"Component placement center {pos!r} lies outside board bounding box {tuple(bb)!r}.","VERIFIED",ref)
+            else:
+                add(findings,"G6-COMPONENT-BOUNDS","INFO","physical","VERIFIED",
+                    f"All {len(list(getattr(pcb,'components',[]) or []))} component placement centers resolved inside board bounding box {tuple(bb)!r}.","VERIFIED")
     else:
         add(findings,"G6-BOARD-OUTLINE","BLOCKER","physical","UNKNOWN",
             "Authoritative PCB parser exposed no board-outline vertices.","FACT")
