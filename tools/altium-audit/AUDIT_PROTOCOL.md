@@ -20,7 +20,7 @@ Audit directly from PcbDoc:
 - Top/Bottom and orientation
 - functional grouping when design intent is supplied
 - placement-created routing corridors and choke points
-- J6/J7 and related component congestion
+- connector/switch access and local congestion using generic object classes; no project-specific refdes are encoded in the kit
 
 A generic clearance number is never invented. If no authoritative minimum exists, report measured geometry and mark the design-rule conclusion UNKNOWN.
 
