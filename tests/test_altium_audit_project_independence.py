@@ -23,6 +23,12 @@ class ProjectIndependenceTests(unittest.TestCase):
         self.assertIn('"designator" in kind', text)
         self.assertIn('field(child, "text", "value")', text)
         # The child lookup must precede generic/name fallbacks: schematic\n        # component.name is the library symbol name, not its reference.\n        self.assertLess(text.index('for child in list(field(obj, "children") or [])'),\n                        text.index('v = field(obj, "designator", "refdes", "reference", "id")'))\n
+    def test_direct_mode_preserves_live_schematic_objects_for_reconciliation(self):
+        text = ENGINE.read_text(encoding="utf-8")
+        self.assertIn('sch_components = list(getattr(schdoc, "components", []) or [])', text)
+        self.assertIn('if sch_components is None:', text)
+        self.assertIn('sch_components = payload.get("components", []) or []', text)
+
     def test_engine_accepts_generic_inputs(self):
         text = ENGINE.read_text(encoding="utf-8")
         self.assertIn('--root', text)
