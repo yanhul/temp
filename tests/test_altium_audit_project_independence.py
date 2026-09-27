@@ -18,6 +18,7 @@ class ProjectIndependenceTests(unittest.TestCase):
 
     def test_schematic_designator_child_lookup_is_present(self):
         text = ENGINE.read_text(encoding="utf-8")
+        self.assertIn('field(obj, "parameters")', text)
         self.assertIn('field(obj, "children")', text)
         self.assertIn('"designator" in kind', text)
         self.assertIn('field(child, "text", "value")', text)
