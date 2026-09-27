@@ -23,7 +23,7 @@ jobs:
       - name: Install Altium parser
         run: |
           python -m pip install --upgrade pip
-          python -m pip install altium-monkey==2026.9.11
+          python -m pip install "altium-monkey>=2026.9.12"
       - name: Parse project
         shell: bash
         run: |
@@ -49,19 +49,9 @@ jobs:
               print("NETLIST_WRITTEN")
           except Exception as e:
               print("NETLIST_ERROR",repr(e)); traceback.print_exc()
-          summary={
-            "schema":payload.get("schema"),
-            "generator":payload.get("generator"),
-            "project":payload.get("project"),
-            "counts":{
-              "sheets":len(payload.get("sheets",[])),
-              "components":len(payload.get("components",[])),
-              "nets":len(payload.get("nets",[])),
-              "pnp_units":len((payload.get("pnp") or {}).get("units",[]))
-            },
-            "diagnostics":payload.get("diagnostics",[]),
-            "compile":payload.get("compile")
-          }
+          summary={"schema":payload.get("schema"),"generator":payload.get("generator"),"project":payload.get("project"),
+                   "counts":{"sheets":len(payload.get("sheets",[])),"components":len(payload.get("components",[])),"nets":len(payload.get("nets",[])),"pnp_units":len((payload.get("pnp") or {}).get("units",[]))},
+                   "diagnostics":payload.get("diagnostics",[]),"compile":payload.get("compile")}
           pathlib.Path("work/summary.json").write_text(json.dumps(summary,indent=2,ensure_ascii=False),encoding="utf-8")
           print("SUMMARY_JSON"); print(json.dumps(summary,indent=2,ensure_ascii=False))
           try:
