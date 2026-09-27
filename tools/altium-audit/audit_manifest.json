@@ -1,13 +1,15 @@
 {
-  "kit_version": "2.0",
+  "kit_version": "2.1",
   "parser": {
     "package": "altium-monkey",
     "minimum_version": "2026.9.12"
   },
   "required_inputs": [
-    "*.PrjPcb",
     "*.SchDoc",
     "*.PcbDoc"
+  ],
+  "optional_inputs": [
+    "*.PrjPcb"
   ],
   "gates": [
     "G0_INTAKE",
@@ -17,6 +19,8 @@
     "G4_PCB",
     "G5_ELECTRICAL",
     "G6_PHYSICAL",
+    "G6_PLACEMENT",
+    "G7_ROUTING",
     "G7_FUNCTIONAL",
     "G8_REPORT"
   ],
@@ -24,7 +28,8 @@
     "PASS",
     "BLOCKED",
     "FAIL",
-    "UNKNOWN"
+    "UNKNOWN",
+    "WARN"
   ],
   "evidence_labels": [
     "FACT",
@@ -33,6 +38,7 @@
     "ASSUMPTION"
   ],
   "rule": "Parser/compile success alone never implies design PASS.",
+  "baseline": "Two-file SCH+PCB audit is mandatory; PrjPcb only upgrades project-rule evidence.",
   "architecture": [
     "kit",
     "project_config",

@@ -2,49 +2,34 @@
 
 Reusable evidence-first static/structural audit pipeline for Altium Designer projects.
 
-## Runner
-The executable audit logic lives in `audit_runner.py`; the GitHub Action is only the orchestration layer.
+## Baseline input
+- **Required:** one `*.SchDoc` and one `*.PcbDoc`
+- **Optional:** `*.PrjPcb` when project-level rules/settings are needed
 
-### Intake
-1. Supply an archive containing `*.PrjPcb`, `*.SchDoc`, and `*.PcbDoc`.
-2. If the archive cannot be committed directly, split its base64 bytes into ordered `b64parts/part_*.txt`.
-3. Reconstruct the archive in CI.
-4. Run `audit_runner.py`.
-5. Review artifacts; parser/compile success is never a design PASS.
+Placement and routing are first-class audit layers. They are not reduced to “component is inside board”.
 
-### Evidence gates
-- G0 INTAKE: required files + optional authoritative source SHA256.
-- G1 PARSE: project/schematic/PCB load.
-- G2 COMPILE: diagnostics and compile metadata.
-- G3 CONNECTIVITY: SCH↔PCB references and terminal/pad net reconciliation.
-- G4 PCB: native rule inventory plus deterministic checks that have sufficient parser fields.
-- G5 ELECTRICAL: conservative net/pin semantic checks.
-- G6 PHYSICAL: geometry/mechanical coverage; unsupported checks remain UNKNOWN.
-- G7 FUNCTIONAL: explicit design-intent review; DRC/ERC-clean is not functional correctness.
-- G8 REPORT: machine-readable and human-readable evidence.
+## Gates
+- G0 INTAKE
+- G1 PARSE
+- G2 COMPILE
+- G3 CONNECTIVITY
+- G4 PCB RULE EVIDENCE
+- G5 ELECTRICAL
+- G6 PHYSICAL
+- G6 PLACEMENT
+- G7 ROUTING
+- G7 FUNCTIONAL
+- G8 REPORT
 
-## Status semantics
-- **FAIL** = verified issue.
-- **BLOCKED** = a required gate cannot be proven with available evidence.
-- **UNKNOWN** = insufficient evidence.
-- **PASS** is intentionally reserved for a future run in which every applicable gate has authoritative evidence.
+### Placement
+The runner records board containment, component geometry, pairwise overlap/clearance evidence, connector-area congestion signals and routing-corridor/choke-point evidence where parser fields permit.
 
-## Artifacts
-`summary.json`, `netlist.json`, `design.json`, `pcb_probe.txt`, `g4_probe.json`, `findings.json`, `report.md`.
+### Routing
+The runner records authoritative unrouted/ratsnest evidence, routed primitive/net inventory, layer transitions and topology limitations. It never claims zero unrouted from missing API data.
 
-## Reuse
-For another Altium project, replace only the project intake/archive. Do not copy project-specific findings or hard-code refdes/net names into the runner.
+### Evidence boundary
+`PrjPcb` upgrades project-rule evidence. Its absence must not block the baseline SchDoc+PcbDoc placement/routing audit.
 
+Full Altium DRC equivalence, 3D collision completeness, SI/timing and design intent remain UNKNOWN/BLOCKED unless authoritative evidence is available.
 
-## Reusable-kit boundary
-
-The kit is project-agnostic. Project-specific intake belongs in the repository-level `altium-audit.config.json`.
-
-For a new project:
-1. copy this directory unchanged;
-2. copy `PROJECT_CONFIG.example.json` to `altium-audit.config.json`;
-3. set `project_id`, `source_archive`, and `base64_parts_dir`;
-4. use `workflow-template.yml` as the CI adapter;
-5. never add project-specific refdes/net/coordinate expectations to `audit_runner.py`.
-
-See `REUSE_RUNBOOK.md` for the standard lifecycle and evidence contract.
+See `AUDIT_PROTOCOL.md` and `REUSE_RUNBOOK.md`.
