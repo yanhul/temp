@@ -810,14 +810,14 @@ def main():
     for i, r in enumerate(enabled):
         if i >= 100: break
         attrs = {}
-        for name in sorted(set(["rule_kind","name","enabled","minimum_width","min_width","maximum_width","max_width","scope","scope1","scope2","query1","query2","priority","net_name","layer"])):
+        for name in sorted(set(["rule_kind","name","enabled","minimum_width","min_width","maximum_width","max_width","gap","clearance","value","generic_clearance","minimum_clearance","scope","scope1","scope2","query1","query2","priority","net_name","layer"])):
             try:
                 value = getattr(r, name)
                 if value is not None:
                     attrs[name] = value
             except Exception:
                 pass
-        rule_samples.append({"index": i, "attrs": attrs, "repr": repr(r)[:700]})
+        raw_record = getattr(r, "raw_record", None)\n        if not isinstance(raw_record, dict): raw_record = {}\n        raw_rule = {k: raw_record[k] for k in ("GAP","CLEARANCE","GENERICCLEARANCE","VALUE","MINCLEARANCE","MINIMUMCLEARANCE","OBJECTCLEARANCES") if raw_record.get(k) is not None}\n        rule_samples.append({"index": i, "attrs": attrs, "raw_rule": raw_rule, "repr": repr(r)[:700]})
     track_samples = []
     for i, t in enumerate(list(getattr(pcb,"tracks",[]) or [])):
         if i >= 100: break
