@@ -67,8 +67,14 @@ def main():
             if foreign:
                 rejected.append({"net":name,"reason":"candidate endpoint conflicts with foreign copper"}); continue
             try:
-                pcb.add_track(p,q,width_mils=10,net=name)
-                applied.append({"net":name,"from":p,"to":q,"distance_mils":bridge.get("distance_mils"),"width_mils":10})
+                # Use the pad anchor layer when available. The previous backend
+                # always defaulted to Top Layer, which cannot connect a bridge
+                # to a Bottom-Layer SMD pad even when topology evidence is valid.
+                layer = a.get("layer") or b.get("layer") or "Top Layer"
+                if str(layer).lower() in {"multi-layer", "multilayer"}:
+                    layer = "Top Layer"
+                pcb.add_track(p,q,width_mils=10,layer=layer,net=name)
+                applied.append({"net":name,"from":p,"to":q,"layer":layer,"distance_mils":bridge.get("distance_mils"),"width_mils":10})
             except Exception as exc:
                 rejected.append({"net":name,"reason":f"add_track failed: {type(exc).__name__}: {exc}"})
     if not applied:
