@@ -105,9 +105,9 @@ def main():
                           "placement_status":"VERIFIED" if pos is not None and source=="authoritative_pick_place" and inside else "UNKNOWN"})
     overlap_pairs=[]
     refs=sorted(envelopes)
-    for i,a in enumerate(refs):
-        for b in refs[i+1:]:
-            if boxes_overlap(envelopes[a],envelopes[b]): overlap_pairs.append((a,b))
+    for i,ra in enumerate(refs):
+        for rb in refs[i+1:]:
+            if boxes_overlap(envelopes[ra],envelopes[rb]): overlap_pairs.append((ra,rb))
     placement_checks={"all_positions_authoritative":all(x["placement_status"]=="VERIFIED" for x in placement),
                       "board_bounds_available":board_box is not None,"component_envelope_count":len(envelopes),
                       "overlap_count":len(overlap_pairs),"overlap_pairs":overlap_pairs[:200]}
