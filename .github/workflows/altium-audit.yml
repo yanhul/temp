@@ -1,0 +1,84 @@
+name: altium-audit
+
+on:
+  push:
+    paths:
+      - "b64parts/**"
+      - ".github/workflows/altium-audit.yml"
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct project archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work
+          cat b64parts/part_*.txt | base64 -d > work/project.zip
+          unzip -q work/project.zip -d work/project
+          find work/project -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
+      - name: Install Altium parser
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install altium-monkey==2026.9.11
+      - name: Parse project
+        shell: bash
+        run: |
+          cat > work/audit.py <<'PY'
+          import json, pathlib, traceback
+          from altium_monkey import AltiumDesign
+          root=pathlib.Path("work/project")
+          prjs=list(root.rglob("*.PrjPcb")); schs=list(root.rglob("*.SchDoc")); pcbs=list(root.rglob("*.PcbDoc"))
+          print("PROJECT_FILES", [str(x) for x in prjs], [str(x) for x in schs], [str(x) for x in pcbs])
+          if not prjs: raise SystemExit("No PrjPcb found")
+          d=AltiumDesign.from_prjpcb(str(prjs[0]))
+          print("DESIGN_LOADED")
+          if pcbs:
+              try:
+                  d.load_pcbdoc(); print("PCB_LOADED")
+              except Exception as e:
+                  print("PCB_LOAD_ERROR",repr(e)); traceback.print_exc()
+          payload=d.to_json(include_pnp=True,include_compile_metadata=True,include_indexes=True)
+          pathlib.Path("work/design.json").write_text(json.dumps(payload,indent=2,ensure_ascii=False),encoding="utf-8")
+          try:
+              n=d.to_netlist()
+              pathlib.Path("work/netlist.json").write_text(n.to_json_text(),encoding="utf-8")
+              print("NETLIST_WRITTEN")
+          except Exception as e:
+              print("NETLIST_ERROR",repr(e)); traceback.print_exc()
+          summary={
+            "schema":payload.get("schema"),
+            "generator":payload.get("generator"),
+            "project":payload.get("project"),
+            "counts":{
+              "sheets":len(payload.get("sheets",[])),
+              "components":len(payload.get("components",[])),
+              "nets":len(payload.get("nets",[])),
+              "pnp_units":len((payload.get("pnp") or {}).get("units",[]))
+            },
+            "diagnostics":payload.get("diagnostics",[]),
+            "compile":payload.get("compile")
+          }
+          pathlib.Path("work/summary.json").write_text(json.dumps(summary,indent=2,ensure_ascii=False),encoding="utf-8")
+          print("SUMMARY_JSON"); print(json.dumps(summary,indent=2,ensure_ascii=False))
+          try:
+              pcb=d.load_pcbdoc()
+              pathlib.Path("work/pcb.json").write_text(json.dumps(pcb.to_json(),indent=2,default=str),encoding="utf-8")
+              print("PCB_JSON_WRITTEN")
+          except Exception as e:
+              print("PCB_JSON_NOTE",repr(e))
+          PY
+          python work/audit.py
+      - name: Upload audit artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: altium-audit-${{ github.sha }}
+          path: |
+            work/summary.json
+            work/design.json
+            work/netlist.json
+            work/pcb.json
+          if-no-files-found: warn
