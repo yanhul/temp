@@ -1,36 +1,36 @@
 # Altium Audit Kit
 
-Reusable static/structural audit pipeline for Altium Designer projects.
+Reusable evidence-first static/structural audit pipeline for Altium Designer projects.
 
-## Intake
-1. Export/zip the project containing `*.PrjPcb`, `*.SchDoc`, and `*.PcbDoc`.
-2. Put the archive into the audit runner (or split it into `b64parts/part_*.txt` when GitHub file-size limits require it).
-3. Run the GitHub Actions audit.
-4. Do not call PASS from parser success alone.
+## Runner
+The executable audit logic lives in `audit_runner.py`; the GitHub Action is only the orchestration layer.
 
-## Evidence gates
-- G0 INTAKE: archive reconstructs byte-for-byte and expected Altium files exist.
-- G1 PARSE: project/schematic/PCB load successfully.
-- G2 COMPILE: diagnostics, component/net counts, references and connectivity are extracted.
-- G3 CONNECTIVITY: schematic netlist vs PCB connectivity/component mapping is checked.
-- G4 PCB: pads, vias, tracks, pours/regions, layers and mechanical data are inspected.
-- G5 ELECTRICAL: power, GND, single-pin nets, suspicious pins, pullups/pulldowns, decoupling and connector pinout are reviewed.
-- G6 PHYSICAL: shorts, unrouted items, clearances, widths, vias, copper/pad overlaps, silkscreen and mounting constraints are checked where parser evidence permits.
-- G7 FUNCTIONAL: design-intent review; DRC/ERC-clean is never treated as functional correctness.
-- G8 REPORT: every finding is FACT / VERIFIED / INFERRED / ASSUMPTION with source evidence.
+### Intake
+1. Supply an archive containing `*.PrjPcb`, `*.SchDoc`, and `*.PcbDoc`.
+2. If the archive cannot be committed directly, split its base64 bytes into ordered `b64parts/part_*.txt`.
+3. Reconstruct the archive in CI.
+4. Run `audit_runner.py`.
+5. Review artifacts; parser/compile success is never a design PASS.
 
-## Status
-- PASS = all applicable gates have evidence.
-- BLOCKED = parser/data/API coverage prevents a required gate.
-- FAIL = verified design issue.
-- UNKNOWN = insufficient evidence; never silently convert to PASS.
+### Evidence gates
+- G0 INTAKE: required files + optional authoritative source SHA256.
+- G1 PARSE: project/schematic/PCB load.
+- G2 COMPILE: diagnostics and compile metadata.
+- G3 CONNECTIVITY: SCH↔PCB references and terminal/pad net reconciliation.
+- G4 PCB: native rule inventory plus deterministic checks that have sufficient parser fields.
+- G5 ELECTRICAL: conservative net/pin semantic checks.
+- G6 PHYSICAL: geometry/mechanical coverage; unsupported checks remain UNKNOWN.
+- G7 FUNCTIONAL: explicit design-intent review; DRC/ERC-clean is not functional correctness.
+- G8 REPORT: machine-readable and human-readable evidence.
 
-## Output
-Produce:
-- `summary.json`
-- `netlist.json`
-- `design.json`
-- `pcb_probe.txt`
-- human-readable findings report
+## Status semantics
+- **FAIL** = verified issue.
+- **BLOCKED** = a required gate cannot be proven with available evidence.
+- **UNKNOWN** = insufficient evidence.
+- **PASS** is intentionally reserved for a future run in which every applicable gate has authoritative evidence.
 
-This kit is intentionally evidence-first and reusable across projects.
+## Artifacts
+`summary.json`, `netlist.json`, `design.json`, `pcb_probe.txt`, `g4_probe.json`, `findings.json`, `report.md`.
+
+## Reuse
+For another Altium project, replace only the project intake/archive. Do not copy project-specific findings or hard-code refdes/net names into the runner.
