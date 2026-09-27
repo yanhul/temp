@@ -42,7 +42,7 @@ def write_connectivity_manifest(out,audit_out,initial,sch,pcb):
     path.write_text(json.dumps(manifest,indent=2,ensure_ascii=False),encoding="utf-8")
     return path
 
-def audit(root,out,config=None)
+def audit(root,out,config=None):
     cmd=[RUNNER,"--root",root,"--out",out]
     if config: cmd+=["--config",config.resolve()]
     rc=run(cmd); return rc,json.loads((out/"summary.json").read_text()) if (out/"summary.json").exists() else None
