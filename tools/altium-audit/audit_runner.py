@@ -817,7 +817,10 @@ def main():
                     attrs[name] = value
             except Exception:
                 pass
-        raw_record = getattr(r, "raw_record", None)\n        if not isinstance(raw_record, dict): raw_record = {}\n        raw_rule = {k: raw_record[k] for k in ("GAP","CLEARANCE","GENERICCLEARANCE","VALUE","MINCLEARANCE","MINIMUMCLEARANCE","OBJECTCLEARANCES") if raw_record.get(k) is not None}\n        rule_samples.append({"index": i, "attrs": attrs, "raw_rule": raw_rule, "repr": repr(r)[:700]})
+        raw_record = getattr(r, "raw_record", None)
+        if not isinstance(raw_record, dict): raw_record = {}
+        raw_rule = {k: raw_record[k] for k in ("GAP","CLEARANCE","GENERICCLEARANCE","VALUE","MINCLEARANCE","MINIMUMCLEARANCE","OBJECTCLEARANCES") if raw_record.get(k) is not None}
+        rule_samples.append({"index": i, "attrs": attrs, "raw_rule": raw_rule, "repr": repr(r)[:700]})
     track_samples = []
     for i, t in enumerate(list(getattr(pcb,"tracks",[]) or [])):
         if i >= 100: break
@@ -847,7 +850,8 @@ def main():
         report += [f"### {f['id']} — {f['severity']} / {f['status']}",
                     f"- Domain: {f['domain']}",f"- Object: {f['object']}",
                     f"- Evidence: {f['evidence']}",f"- Confidence: {f['confidence']}",""]
-    (out/"report.md").write_text("\n".join(report),encoding="utf-8")
+    (out/"report.md").write_text("
+".join(report),encoding="utf-8")
     (out/"summary.json").write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding="utf-8")
     (out/"findings.json").write_text(json.dumps(findings,indent=2,ensure_ascii=False),encoding="utf-8")
     print(json.dumps({"status":status,"gates":gates},indent=2))
@@ -856,7 +860,9 @@ def main():
 def write_outputs(out, summary):
     out.mkdir(parents=True,exist_ok=True)
     (out/"summary.json").write_text(json.dumps(summary,indent=2),encoding="utf-8")
-    (out/"report.md").write_text("# Altium Audit Report\n\n"+json.dumps(summary,indent=2),encoding="utf-8")
+    (out/"report.md").write_text("# Altium Audit Report
+
+"+json.dumps(summary,indent=2),encoding="utf-8")
 
 if __name__ == "__main__":
     raise SystemExit(main())
