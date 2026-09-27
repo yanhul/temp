@@ -436,7 +436,20 @@ def main():
             except Exception: wx=wy=0.0
             if wx>0 and wy>0:
                 pts.append((px-wx/2,py-wy/2,px+wx/2,py+wy/2))
-        if pts:
+        # Prefer actual component-body projection geometry over pad envelopes.
+        body_pts=[]
+        for body in list(getattr(pcb,"component_bodies",[]) or []) + list(getattr(pcb,"shapebased_component_bodies",[]) or []):
+            ci=field(body,"component_index")
+            try:
+                if ci is None or int(ci)!=idx: continue
+            except Exception: continue
+            for v in list(getattr(body,"outline",[]) or []):
+                q=xy(v)
+                if q: body_pts.append(q)
+        if body_pts:
+            comp_boxes[ref]=(min(x for x,y in body_pts),min(y for x,y in body_pts),
+                            max(x for x,y in body_pts),max(y for x,y in body_pts))
+        elif pts:
             comp_boxes[ref]=(min(p[0] for p in pts),min(p[1] for p in pts),
                             max(p[2] for p in pts),max(p[3] for p in pts))
         if ref not in comp_boxes:
