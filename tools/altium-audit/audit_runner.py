@@ -373,7 +373,27 @@ def main():
         try: counts[attr] = len(getattr(pcb, attr))
         except Exception: counts[attr] = None
 
-    # Probe parser-owned per-net primitive API when available.\n    net_primitive_probe = []\n    try:\n        if hasattr(pcb, "get_net_primitives"):\n            for nn in list(getattr(pcb, "nets", []) or [])[:8]:\n                nname = field(nn, "name", "net_name", "netname", "uid")\n                try:\n                    raw = pcb.get_net_primitives(nname)\n                    net_primitive_probe.append({"net": nname, "repr": repr(raw)[:2000]})\n                except Exception as exc:\n                    net_primitive_probe.append({"net": nname, "error": repr(exc)})\n            add(findings, "G7-NET-PRIMITIVE-API", "INFO", "routing", "VERIFIED",\n                "Parser per-net primitive API probe captured.", "VERIFIED")\n        else:\n            add(findings, "G7-NET-PRIMITIVE-API", "INFO", "routing", "UNKNOWN",\n                "Parser does not expose get_net_primitives.", "FACT")\n    except Exception as exc:\n        add(findings, "G7-NET-PRIMITIVE-API", "INFO", "routing", "UNKNOWN",\n            f"Per-net primitive API probe failed: {type(exc).__name__}: {exc}", "FACT")\n\n    # Deterministic subset of PCB rule checks.
+    # Probe parser-owned per-net primitive API when available.
+    net_primitive_probe = []
+    try:
+        if hasattr(pcb, "get_net_primitives"):
+            for nn in list(getattr(pcb, "nets", []) or [])[:8]:
+                nname = field(nn, "name", "net_name", "netname", "uid")
+                try:
+                    raw = pcb.get_net_primitives(nname)
+                    net_primitive_probe.append({"net": nname, "repr": repr(raw)[:2000]})
+                except Exception as exc:
+                    net_primitive_probe.append({"net": nname, "error": repr(exc)})
+            add(findings, "G7-NET-PRIMITIVE-API", "INFO", "routing", "VERIFIED",
+                "Parser per-net primitive API probe captured.", "VERIFIED")
+        else:
+            add(findings, "G7-NET-PRIMITIVE-API", "INFO", "routing", "UNKNOWN",
+                "Parser does not expose get_net_primitives.", "FACT")
+    except Exception as exc:
+        add(findings, "G7-NET-PRIMITIVE-API", "INFO", "routing", "UNKNOWN",
+            f"Per-net primitive API probe failed: {type(exc).__name__}: {exc}", "FACT")
+
+    # Deterministic subset of PCB rule checks.
     rules = list(getattr(pcb,"rules",[]) or [])
     enabled = [r for r in rules if getattr(r,"enabled",True)]
     add(findings,"G4-RULE-INVENTORY","INFO","pcb","VERIFIED",
@@ -749,7 +769,8 @@ def main():
         "width_rule_repr": repr(width_rule)[:1500] if width_rule else None,
         "rule_samples":rule_samples,
         "track_samples":track_samples,
-        "unresolved_pad_samples":unresolved_samples
+        "unresolved_pad_samples":unresolved_samples,
+        "net_primitive_probe":net_primitive_probe
     },indent=2,default=str),encoding="utf-8")
     report=["# Altium Audit Report","","**Overall:** "+status,"","## Gates"]
     report += [f"- **{k}**: {v}" for k,v in gates.items()]
