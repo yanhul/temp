@@ -166,7 +166,6 @@ def main():
             if bad:rejected.append({"net":name,"reason":f"foreign-track clearance below {clearance:g} mil"});continue
             authorized.append({**bridge,"net":name,"clearance_mils":clearance,
                                "evidence":{"finding_id":finding["id"],"source_sha256":sha(args.pcb)}})
-            break
     if not authorized:return block("no candidate passed independent evidence and geometry validation",rejected)
     bynet={}
     for x in authorized:bynet.setdefault(x["net"],[]).append(x)
