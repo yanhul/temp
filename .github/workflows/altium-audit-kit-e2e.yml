@@ -31,9 +31,6 @@ jobs:
         run: |
           set -euo pipefail
           test -s work/kit/intake.json
-          test -s work/kit/audit-initial/summary.json
-          test -s work/kit/audit-initial/findings.json
-          test -s work/kit/audit-initial/g4_probe.json
           test -s work/kit/summary.json
           python - <<'PY'
           import json
@@ -43,9 +40,12 @@ jobs:
           print('INPUT:', intake['input'])
           print('FINAL STATUS:', s.get('status'))
           print('GATES:', s.get('gates'))
+          print('PROJECT FALLBACK:', s.get('project_compile_fallback', False))
+          if s.get('status') not in ('PASS','FAIL','BLOCKED'): raise SystemExit('invalid terminal audit status')
+          if s.get('project_compile_fallback') and not any(f.get('id')=='G2-PROJECT-COMPILE' for f in s.get('findings',[])): raise SystemExit('project fallback missing blocker evidence')
           PY
       - name: Upload kit result
-        if: ${{ always() }}
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: altium-audit-kit-e2e
