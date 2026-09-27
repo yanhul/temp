@@ -46,8 +46,10 @@ def main():
              (["--config",str(args.config.resolve())] if args.config else []))
     initial = summary(audit_out) if (audit_out/"summary.json").exists() else None
 
-    # If an optional project file has stale/external references, preserve the
-    # project compile blocker but still audit the supplied SCH+PCB directly.
+    project_compile_fallback = False
+    project_blocker = None
+
+    # Preserve a project compile blocker, but continue the supplied SCH+PCB audit.
     if prj and initial and initial.get("gates",{}).get("G1_PARSE") == "UNKNOWN":
         direct_root = out / "direct-input"
         direct_root.mkdir(exist_ok=True)
@@ -57,17 +59,18 @@ def main():
         run([RUNNER,"--root",direct_root,"--out",direct_out] +
             (["--config",str(args.config.resolve())] if args.config else []))
         direct = summary(direct_out)
-        direct.setdefault("findings",[]).append({
+        project_blocker = {
             "id":"G2-PROJECT-COMPILE","severity":"BLOCKER","domain":"compile",
             "status":"BLOCKED","object":prj.name,
             "evidence":"Project compile failed for its referenced source set; structural SCH+PCB audit was executed directly instead.",
-            "confidence":"FACT"})
+            "confidence":"FACT"}
+        direct.setdefault("findings",[]).append(project_blocker)
         direct.setdefault("gates",{})["G2_COMPILE"]="BLOCKED"
         direct["status"]="BLOCKED"
         direct["project_compile_fallback"]=True
+        initial = direct
+        project_compile_fallback = True
         (out/"summary.json").write_text(json.dumps(direct,indent=2,ensure_ascii=False),encoding="utf-8")
-        return 1
-
     if initial is None: raise SystemExit("audit runner produced no summary.json")
     if not args.repair:
         shutil.copy2(audit_out/"summary.json",out/"summary.json")
