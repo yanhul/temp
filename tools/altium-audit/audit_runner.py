@@ -83,16 +83,23 @@ def object_bbox(obj):
 def distance(a,b):
     return math.hypot(a[0]-b[0],a[1]-b[1])
 
-def net_name(obj):
+def net_name(obj, net_by_idx=None):
     v=field(obj,"net_name","netname","net")
     if isinstance(v,dict): v=field(v,"name","uid")
+    if v is None:
+        ni=field(obj,"net_index")
+        try:
+            if ni is not None and net_by_idx is not None: v=net_by_idx.get(int(ni))
+        except Exception:
+            pass
     return str(v) if v is not None else None
 
 def route_net_counts(pcb):
+    net_by_idx={i: field(n,"name","net_name","netname","uid") for i,n in enumerate(list(getattr(pcb,"nets",[]) or []))}
     routed={}
     for attr in ("tracks","arcs","vias","regions"):
         for item in list(getattr(pcb,attr,[]) or []):
-            n=net_name(item)
+            n=net_name(item, net_by_idx)
             if n: routed[n]=routed.get(n,0)+1
     return routed
 
