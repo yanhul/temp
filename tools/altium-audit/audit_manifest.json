@@ -26,6 +26,7 @@
   ],
   "statuses": [
     "PASS",
+    "PARTIAL",
     "BLOCKED",
     "FAIL",
     "UNKNOWN",
@@ -37,7 +38,7 @@
     "INFERRED",
     "ASSUMPTION"
   ],
-  "rule": "Parser/compile success alone never implies design PASS.",
+  "rule": "Parser/compile success alone never implies design PASS; unsupported required evidence remains PARTIAL/BLOCKED.",
   "baseline": "Two-file SCH+PCB audit is mandatory; PrjPcb only upgrades project-rule evidence.",
   "architecture": [
     "kit",
