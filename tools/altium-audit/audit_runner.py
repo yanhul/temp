@@ -368,7 +368,7 @@ def main():
         add(findings,"G3-PIN-NET","BLOCKER","connectivity","UNKNOWN",
             "No normalized terminal/pad intersection was available for authoritative reconciliation.","FACT")
 
-    counts = {}
+    # Probe parser-owned per-net primitive API when available; retain bounded repr for schema discovery.\n    try:\n        if hasattr(pcb, "get_net_primitives"):\n            probe_nets=[]\n            for nn in list(getattr(pcb, "nets",[]) or [])[:8]:\n                nname=field(nn,"name","net_name","netname","uid")\n                try:\n                    raw=pcb.get_net_primitives(nname)\n                except Exception as e:\n                    raw={"error":repr(e)}\n                probe_nets.append({"net":nname,"repr":repr(raw)[:2000]})\n            add(findings,"G7-NET-PRIMITIVE-API","INFO","routing","VERIFIED","Parser per-net primitive API probe: "+repr(probe_nets)[:12000],"VERIFIED")\n    except Exception as e:\n        add(findings,"G7-NET-PRIMITIVE-API","INFO","routing","UNKNOWN","Per-net primitive API probe failed: "+repr(e),"FACT")\n\n    counts = {}
     for attr in ("components","pads","vias","tracks","arcs","fills","regions","texts","nets","rules"):
         try: counts[attr] = len(getattr(pcb, attr))
         except Exception: counts[attr] = None
