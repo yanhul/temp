@@ -21,7 +21,7 @@ class ProjectIndependenceTests(unittest.TestCase):
         self.assertIn('field(obj, "children")', text)
         self.assertIn('"designator" in kind', text)
         self.assertIn('field(child, "text", "value")', text)
-
+        # The child lookup must precede generic/name fallbacks: schematic\n        # component.name is the library symbol name, not its reference.\n        self.assertLess(text.index('for child in list(field(obj, "children") or [])'),\n                        text.index('v = field(obj, "designator", "refdes", "reference", "id")'))\n
     def test_engine_accepts_generic_inputs(self):
         text = ENGINE.read_text(encoding="utf-8")
         self.assertIn('--root', text)
