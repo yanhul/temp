@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "b64parts/**"
+      - "QI9-2604-A01.zip"
       - ".github/workflows/altium-audit.yml"
       - "tools/altium-audit/**"
   workflow_dispatch:
@@ -13,333 +14,65 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Reconstruct project archive
+
+      - name: Reconstruct archive from ordered base64 parts
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p work
-          cat b64parts/part_*.txt | base64 -d > work/project.zip
+          mkdir -p work/project work/audit
+          test -n "$(find b64parts -maxdepth 1 -name 'part_*.txt' -print -quit)"
+          cat $(find b64parts -maxdepth 1 -name 'part_*.txt' | sort) | base64 -d > work/project.zip
+          test -s work/project.zip
           unzip -q work/project.zip -d work/project
-          find work/project -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
-      - name: Install Altium parser
+          sha256sum QI9-2604-A01.zip | awk '{print $1}' > work/source.sha256
+          echo "reference archive sha256: $(cat work/source.sha256)"
+          echo "reconstructed archive sha256: $(sha256sum work/project.zip | awk '{print $1}')"
+          cmp -s QI9-2604-A01.zip work/project.zip
+
+      - name: Install audit parser
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "altium-monkey>=2026.9.12"
-      - name: Parse and produce evidence-first audit
+          python -m pip install -r tools/altium-audit/requirements.txt
+
+      - name: Run evidence-first audit
         shell: bash
         run: |
-          cat > work/audit.py <<'PY'
-          import json, pathlib
-          from altium_monkey import AltiumDesign
+          set -euo pipefail
+          python tools/altium-audit/audit_runner.py \
+            --root work/project \
+            --out work/audit \
+            --archive work/project.zip \
+            --source-sha256 "$(cat work/source.sha256)"
 
-          root=pathlib.Path("work/project")
-          prjs=sorted(root.rglob("*.PrjPcb")); schs=sorted(root.rglob("*.SchDoc")); pcbs=sorted(root.rglob("*.PcbDoc"))
-          if not prjs or not schs or not pcbs:
-              missing=[p for p,x in (("*.PrjPcb",prjs),("*.SchDoc",schs),("*.PcbDoc",pcbs)) if not x]
-              raise SystemExit("BLOCKED G0: missing "+", ".join(missing))
-
-          d=AltiumDesign.from_prjpcb(str(prjs[0]))
-          payload=d.to_json(include_pnp=True,include_compile_metadata=True,include_indexes=True)
-          pcb=d.load_pcbdoc()
-          netlist=d.to_netlist()
-
-          pathlib.Path("work/design.json").write_text(json.dumps(payload,indent=2,ensure_ascii=False),encoding="utf-8")
-          pathlib.Path("work/netlist.json").write_text(netlist.to_json_text(),encoding="utf-8")
-
-          def field(obj,*keys):
-              if isinstance(obj,dict):
-                  for k in keys:
-                      if k in obj and obj[k] is not None: return obj[k]
-              for k in keys:
-                  if hasattr(obj,k):
-                      try:
-                          v=getattr(obj,k)
-                          if v is not None: return v
-                      except Exception: pass
-              return None
-
-          def names(obj):
-              v=field(obj,"designator","refdes","reference","name","component","id")
-              return str(v) if v is not None else None
-
-          sch_components=payload.get("components",[]) or []
-          sch_refs=[names(x) for x in sch_components if names(x)]
-          pcb_components=list(getattr(pcb,"components",[]) or [])
-          pcb_refs=[names(x) for x in pcb_components if names(x)]
-          pcb_pads=list(getattr(pcb,"pads",[]) or [])
-          pcb_nets=list(getattr(pcb,"nets",[]) or [])
-
-          findings=[]
-          def add(fid,severity,domain,status,evidence,confidence="VERIFIED",object_id=None):
-              findings.append({"id":fid,"severity":severity,"domain":domain,"status":status,
-                               "object":object_id,"evidence":evidence,"confidence":confidence})
-
-          add("G0-ARCHIVE-HASH","BLOCKER","intake","UNKNOWN",
-              "Archive reconstructed and opened, but no authoritative source SHA256 is present to prove byte identity.","FACT")
-
-          diagnostics=payload.get("diagnostics") or []
-          compile_data=payload.get("compile")
-          if compile_data is None:
-              add("G2-COMPILE","BLOCKER","compile","UNKNOWN","No compile metadata emitted by parser.","FACT")
-          elif diagnostics:
-              add("G2-DIAGNOSTICS","HIGH","compile","FAIL",
-                  f"Parser emitted {len(diagnostics)} diagnostic record(s); clean compile cannot be claimed.","VERIFIED")
-          else:
-              add("G2-COMPILE","INFO","compile","VERIFIED",
-                  "Compile metadata is present and diagnostics collection is empty.","VERIFIED")
-
-          s=set(sch_refs); p=set(pcb_refs)
-          for ref in sorted(s-p):
-              add("G3-SCH-ONLY-"+ref,"HIGH","connectivity","FAIL",
-                  "Schematic component reference is absent from parsed PCB component set.","VERIFIED",ref)
-          for ref in sorted(p-s):
-              add("G3-PCB-ONLY-"+ref,"HIGH","connectivity","FAIL",
-                  "PCB component reference is absent from parsed schematic component set.","VERIFIED",ref)
-          if not (s-p) and not (p-s):
-              add("G3-REFDES","INFO","connectivity","VERIFIED",
-                  f"Parsed schematic/PCB reference sets reconcile: {len(s)} common reference(s).","VERIFIED")
-          else:
-              add("G3-REFDES","BLOCKER","connectivity","FAIL",
-                  f"Reference mismatch: {len(s-p)} schematic-only, {len(p-s)} PCB-only.","VERIFIED")
-
-          # G3 authoritative join:
-          # schematic netlist terminals = (designator,pin)->net uid/name;
-          # PCB pads = (component_index, pad designator)->net_index->PCB net name.
-          try:
-              nl=json.loads(netlist.to_json_text())
-              nl_nets=nl.get("nets",[]) or []
-              sch_pin_to_net={}
-              for n in nl_nets:
-                  net_name=field(n,"name","uid")
-                  for t in (field(n,"terminals") or []):
-                      ref=field(t,"designator","refdes","reference")
-                      pin=field(t,"pin","pin_designator","number")
-                      if ref is not None and pin is not None:
-                          sch_pin_to_net[(str(ref),str(pin))]=str(net_name) if net_name is not None else None
-
-              pcb_ref_by_index={}
-              for i,comp in enumerate(pcb_components):
-                  ref=names(comp)
-                  if ref is not None: pcb_ref_by_index[i]=ref
-
-              pcb_net_by_index={}
-              for i,n in enumerate(pcb_nets):
-                  nname=field(n,"name","net_name","netname","uid")
-                  if nname is not None: pcb_net_by_index[i]=str(nname)
-
-              pcb_pin_to_net={}
-              unresolved_pads=0
-              for pad in pcb_pads:
-                  ci=field(pad,"component_index")
-                  pin=field(pad,"designator","pad_designator","number")
-                  ni=field(pad,"net_index")
-                  if ci is None or pin is None or ni is None:
-                      unresolved_pads+=1
-                      continue
-                  ref=pcb_ref_by_index.get(int(ci))
-                  net_name=pcb_net_by_index.get(int(ni))
-                  if ref is not None:
-                      pcb_pin_to_net[(str(ref),str(pin))]=net_name
-
-              common=set(sch_pin_to_net) & set(pcb_pin_to_net)
-              mismatches=[]
-              for key in sorted(common):
-                  a=sch_pin_to_net[key]; b=pcb_pin_to_net[key]
-                  if a is not None and b is not None and a.strip().upper()!=b.strip().upper():
-                      mismatches.append((key,a,b))
-
-              missing_pcb=sorted(set(sch_pin_to_net)-set(pcb_pin_to_net))
-              extra_pcb=sorted(set(pcb_pin_to_net)-set(sch_pin_to_net))
-              if mismatches:
-                  for (ref,pin),a,b in mismatches[:200]:
-                      add(f"G3-PIN-NET-{ref}-{pin}","HIGH","connectivity","FAIL",
-                          f"Schematic terminal net={a!r}, PCB pad net={b!r}.","VERIFIED",f"{ref}.{pin}")
-              if missing_pcb:
-                  add("G3-PIN-MISSING-ON-PCB","BLOCKER","connectivity","UNKNOWN",
-                      f"{len(missing_pcb)} schematic terminal(s) had no normalized PCB pad counterpart.","FACT")
-              if extra_pcb:
-                  add("G3-PAD-NOT-IN-SCH","HIGH","connectivity","FAIL",
-                      f"{len(extra_pcb)} PCB pad terminal(s) had no schematic terminal counterpart.","VERIFIED")
-              if not mismatches and not missing_pcb and not extra_pcb and common:
-                  add("G3-PIN-NET","INFO","connectivity","VERIFIED",
-                      f"Full terminal join verified for {len(common)} SCH terminal ↔ PCB pad pairs.","VERIFIED")
-              elif not common:
-                  add("G3-PIN-NET","BLOCKER","connectivity","UNKNOWN",
-                      "Parser did not expose enough normalized terminal/pad identity to perform the authoritative join.","FACT")
-          except Exception as exc:
-              add("G3-PIN-NET","BLOCKER","connectivity","UNKNOWN",
-                  f"Authoritative terminal/pad join could not be evaluated: {type(exc).__name__}: {exc}","FACT")
-
-          pcb_counts={}
-          for a in ("components","pads","vias","tracks","arcs","fills","regions","texts","nets"):
-              try: pcb_counts[a]=len(getattr(pcb,a))
-              except Exception: pcb_counts[a]=None
-
-          # G4: deterministic physical checks backed by native PCB rules.
-          # Supported here: exact circular hole-to-hole clearance. Other DRC families remain UNKNOWN
-          # until the parser exposes enough geometry/rule semantics to evaluate them without guesswork.
-          def parse_mil(v):
-              if v is None: return None
-              s=str(v).strip().lower()
-              if s.endswith("mil"): s=s[:-3].strip()
-              try: return float(s)
-              except Exception: return None
-
-          rules=list(getattr(pcb,"rules",[]) or [])
-          enabled_rules=[r for r in rules if getattr(r,"enabled",True)]
-          add("G4-RULE-INVENTORY","INFO","pcb","VERIFIED",
-              f"Parsed {len(rules)} PCB design-rule records; {len(enabled_rules)} are enabled. Rule semantics are preserved by the typed parser.","VERIFIED")
-
-          hole_rule=next((r for r in enabled_rules if str(getattr(r,"rule_kind","")).strip().lower()=="holetoholeclearance"),None)
-          hole_gap=parse_mil(getattr(hole_rule,"gap",None)) if hole_rule else None
-          hole_items=[]
-          if hole_rule is not None and hole_gap is not None:
-              for kind, coll in (("PAD",pcb_pads),("VIA",list(getattr(pcb,"vias",[]) or []))):
-                  for idx,obj in enumerate(coll):
-                      hs=parse_mil(getattr(obj,"hole_size_mils",None))
-                      if hs is None or hs <= 0: continue
-                      cxcy=getattr(obj,"hole_center_mils",None)
-                      if cxcy is None: cxcy=(getattr(obj,"x_mils",None),getattr(obj,"y_mils",None))
-                      try: cx,cy=float(cxcy[0]),float(cxcy[1])
-                      except Exception: continue
-                      hole_items.append((kind,idx,cx,cy,hs,getattr(obj,"designator",None),getattr(obj,"component_index",None)))
-              violations=[]
-              import math
-              for i,a in enumerate(hole_items):
-                  for b in hole_items[i+1:]:
-                      dx=a[2]-b[2]; dy=a[3]-b[3]
-                      center_dist=math.hypot(dx,dy)
-                      edge_clearance=center_dist-(a[4]+b[4])/2.0
-                      if edge_clearance < hole_gap:
-                          violations.append((a,b,edge_clearance))
-              if violations:
-                  for a,b,actual in violations[:200]:
-                      add(f"G4-HOLE-CLEARANCE-{a[0]}{a[1]}-{b[0]}{b[1]}","HIGH","pcb","FAIL",
-                          f"Exact circular-hole geometry: clearance={actual:.4f}mil < rule gap={hole_gap:.4f}mil; objects={a[0]}#{a[1]} and {b[0]}#{b[1]}.","VERIFIED",
-                          f"{a[0]}#{a[1]}↔{b[0]}#{b[1]}")
-              else:
-                  add("G4-HOLE-CLEARANCE","INFO","pcb","VERIFIED",
-                      f"Evaluated {len(hole_items)} drilled-hole primitives pairwise against enabled HoleToHoleClearance gap={hole_gap:g}mil; no geometric violation found.","VERIFIED")
-          else:
-              add("G4-HOLE-CLEARANCE","BLOCKER","pcb","UNKNOWN",
-                  "HoleToHoleClearance rule or its numeric gap is not exposed sufficiently for deterministic evaluation.","FACT")
-
-          width_rule=next((r for r in enabled_rules if str(getattr(r,"rule_kind","")).strip().lower()=="width"),None)
-          width_min=parse_mil(getattr(width_rule,"min_width",None)) if width_rule else None
-          if width_rule is not None and width_min is not None:
-              bad=[]
-              for i,t in enumerate(list(getattr(pcb,"tracks",[]) or [])):
-                  w=parse_mil(getattr(t,"width_mils",None))
-                  if w is not None and w < width_min: bad.append((i,w))
-              if bad:
-                  for i,w in bad[:200]: add(f"G4-TRACK-WIDTH-{i}","HIGH","pcb","FAIL",f"Track width={w:g}mil < enabled Width minimum={width_min:g}mil.","VERIFIED",f"track#{i}")
-              else: add("G4-TRACK-WIDTH","INFO","pcb","VERIFIED",f"Evaluated {len(list(getattr(pcb,'tracks',[]) or []))} tracks against Width minimum={width_min:g}mil; no violation found.","VERIFIED")
-          else:
-              pref=parse_mil(getattr(width_rule,"preferred_width",None)) if width_rule else None
-              add("G4-TRACK-WIDTH","BLOCKER","pcb","UNKNOWN",
-                  f"Width rule is present{(' with preferred width='+str(pref)+'mil') if pref is not None else ''}, but no authoritative minimum width field is exposed; preferred width cannot be treated as a minimum.","FACT")
-
-          add("G4-DRC-COVERAGE","BLOCKER","pcb","UNKNOWN",
-              "Clearance, width, hole and routing rule records are present, but this runner does not claim full Altium DRC equivalence. Unsupported rule families remain UNKNOWN rather than PASS.","FACT")
-
-          # G5: deterministic electrical checks from compiled netlist pin semantics.
-          nl_for_g5=json.loads(netlist.to_json_text())
-          g5_nets=nl_for_g5.get("nets",[]) or []
-          single_pin_nets=[n for n in g5_nets if len(n.get("terminals",[]) or [])==1]
-          if single_pin_nets:
-              for n in single_pin_nets[:200]:
-                  add(f"G5-SINGLE-NET-{n.get('name','UNKNOWN')}", "MEDIUM","electrical","FAIL",
-                      f"Net {n.get('name')!r} has exactly one compiled terminal; this is a connectivity suspect and requires intentionality evidence.","VERIFIED",n.get("name"))
-          else:
-              add("G5-SINGLE-PIN-NETS","INFO","electrical","VERIFIED",
-                  f"Compiled netlist exposes {len(g5_nets)} nets and none has a single terminal.","VERIFIED")
-
-          output_conflicts=[]
-          for n in g5_nets:
-              outs=[t for t in (n.get("terminals",[]) or []) if str(t.get("pin_type","")).upper()=="OUTPUT"]
-              if len(outs)>1: output_conflicts.append((n,outs))
-          if output_conflicts:
-              for n,outs in output_conflicts:
-                  ids=", ".join(f"{t.get('designator')}.{t.get('pin')}" for t in outs)
-                  add(f"G5-OUTPUT-CONFLICT-{n.get('name','UNKNOWN')}","HIGH","electrical","FAIL",
-                      f"Compiled net {n.get('name')!r} contains multiple OUTPUT pins: {ids}.","VERIFIED",n.get("name"))
-          else:
-              add("G5-OUTPUT-CONFLICTS","INFO","electrical","VERIFIED",
-                  "No compiled net contains more than one pin typed OUTPUT; no definite output-output driver conflict was found.","VERIFIED")
-
-          pin_types=sorted(set(str(t.get("pin_type","UNKNOWN")).upper() for n in g5_nets for t in (n.get("terminals",[]) or [])))
-          add("G5-PIN-TYPE-COVERAGE","INFO","electrical","VERIFIED",
-              f"Compiled netlist exposes pin-type semantics across {len(pin_types)} type(s): {', '.join(pin_types)}.","VERIFIED")
-          # G5b: pin-type matrix. These are conservative net-level checks, not a substitute for
-          # project-specific electrical intent. POWER pins require a source; OUTPUT↔OUTPUT is already checked.
-          source_types={"POWER","OUTPUT","IO"}
-          sink_types={"INPUT","IO","POWER"}
-          power_sinks=[]
-          floating_inputs=[]
-          for n in g5_nets:
-              terms=n.get("terminals",[]) or []
-              types=[str(t.get("pin_type","UNKNOWN")).upper() for t in terms]
-              if "POWER" in types and not any(t in source_types for t in types if t!="POWER"):
-                  power_sinks.append(n)
-              if len(terms)==1 and types and types[0]=="INPUT":
-                  floating_inputs.append(n)
-          if power_sinks:
-              for n in power_sinks[:200]:
-                  add(f"G5-POWER-NO-SOURCE-{n.get('name','UNKNOWN')}","HIGH","electrical","FAIL",
-                      f"Net {n.get('name')!r} contains POWER terminal(s) but no non-POWER source-capable terminal was found in compiled pin semantics.","VERIFIED",n.get("name"))
-          else:
-              add("G5-POWER-SOURCE-COVERAGE","INFO","electrical","VERIFIED",
-                  "No net with POWER terminals was found to be source-less under the conservative compiled pin-type rule.","VERIFIED")
-          if floating_inputs:
-              for n in floating_inputs[:200]:
-                  add(f"G5-FLOATING-INPUT-{n.get('name','UNKNOWN')}","MEDIUM","electrical","FAIL",
-                      f"Net {n.get('name')!r} consists of a single INPUT terminal; no bias/source connection is represented in the compiled connectivity.","VERIFIED",n.get("name"))
-          else:
-              add("G5-FLOATING-INPUTS","INFO","electrical","VERIFIED",
-                  "No single-terminal INPUT net was found.","VERIFIED")
-
-          add("G5-INTENT-COVERAGE","BLOCKER","electrical","UNKNOWN",
-              "Power-source adequacy beyond conservative pin-type checks, protection, level compatibility, pull requirements and decoupling still require project-specific electrical intent.","FACT")
-          add("G6-PHYSICAL","BLOCKER","physical","UNKNOWN",
-              "G4 now evaluates selected native PCB rules, but broader mechanical/geometry checks still require additional authoritative rule coverage.","FACT")
-          add("G7-FUNCTIONAL","BLOCKER","functional","UNKNOWN",
-              "Functional intent is not encoded sufficiently to establish design correctness from file structure alone.","FACT")
-
-          summary={
-            "status":"BLOCKED" if any(x["severity"]=="BLOCKER" and x["status"] in ("FAIL","UNKNOWN") for x in findings) else "PASS",
-            "schema":payload.get("schema"),"generator":payload.get("generator"),"project":payload.get("project"),
-            "gates":{
-              "G0_INTAKE":"VERIFIED","G1_PARSE":"VERIFIED",
-              "G2_COMPILE":"VERIFIED" if compile_data is not None and not diagnostics else ("FAIL" if diagnostics else "UNKNOWN"),
-              "G3_CONNECTIVITY":"VERIFIED" if not any(x["id"].startswith("G3-") and x["status"] in ("FAIL","UNKNOWN") for x in findings) else "BLOCKED",
-              "G4_PCB":"VERIFIED" if not any(x["id"].startswith("G4-") and x["status"] in ("FAIL","UNKNOWN") for x in findings) else "BLOCKED","G5_ELECTRICAL":"BLOCKED","G6_PHYSICAL":"BLOCKED","G7_FUNCTIONAL":"BLOCKED","G8_REPORT":"VERIFIED"},
-            "counts":{"sheets":len(payload.get("sheets",[])),"components":len(sch_components),"nets":len(payload.get("nets",[]) or []),
-                      "pcb_components":len(pcb_components),"pcb_pads":len(pcb_pads),"pcb":pcb_counts},
-            "diagnostics":diagnostics,"compile":compile_data,"findings":findings}
-          pathlib.Path("work/summary.json").write_text(json.dumps(summary,indent=2,ensure_ascii=False),encoding="utf-8")
-          pathlib.Path("work/findings.json").write_text(json.dumps(findings,indent=2,ensure_ascii=False),encoding="utf-8")
-          pathlib.Path("work/pcb_probe.txt").write_text(
-              "counts="+repr(pcb_counts)+"\nattrs="+repr(sorted(a for a in dir(pcb) if not a.startswith("_")))+"\n",
-              encoding="utf-8")
-          report=["# Altium Audit Report","","**Overall:** "+summary["status"],"","## Gate status"]
-          report += [f"- **{k}**: {v}" for k,v in summary["gates"].items()]
-          report += ["","## Findings"]
-          for f in findings:
-              report += [f"### {f['id']} — {f['severity']} / {f['status']}",f"- Domain: {f['domain']}",f"- Evidence: {f['evidence']}",f"- Confidence: {f['confidence']}",""]
-          pathlib.Path("work/report.md").write_text("\n".join(report),encoding="utf-8")
-          print(json.dumps(summary,indent=2,ensure_ascii=False))
+      - name: Validate required audit artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in summary.json netlist.json design.json pcb_probe.txt g4_probe.json findings.json report.md; do
+            test -s "work/audit/$f"
+          done
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path("work/audit/summary.json").read_text())
+          required={"G0_INTAKE","G1_PARSE","G2_COMPILE","G3_CONNECTIVITY","G4_PCB","G5_ELECTRICAL","G6_PHYSICAL","G7_FUNCTIONAL","G8_REPORT"}
+          missing=required-set(s.get("gates",{}))
+          if missing:
+              raise SystemExit(f"missing gates: {sorted(missing)}")
+          print("audit status:",s.get("status"))
+          print("gates:",s.get("gates"))
           PY
-          python work/audit.py
+
       - name: Upload audit artifacts
         uses: actions/upload-artifact@v4
         with:
           name: altium-audit-report
           path: |
-            work/summary.json
-            work/design.json
-            work/netlist.json
-            work/pcb_probe.txt
-            work/g4_probe.json
-            work/findings.json
-            work/report.md
+            work/audit/summary.json
+            work/audit/design.json
+            work/audit/netlist.json
+            work/audit/pcb_probe.txt
+            work/audit/g4_probe.json
+            work/audit/findings.json
+            work/audit/report.md
           if-no-files-found: error
