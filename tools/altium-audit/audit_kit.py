@@ -75,8 +75,9 @@ def main():
     if not args.repair:
         shutil.copy2(audit_out/"summary.json",out/"summary.json")
         return rc
-    if not (audit_out/"findings.json").exists() or not (audit_out/"g4_probe.json").exists():
-        shutil.copy2(audit_out/"summary.json",out/"summary.json")
+    audit_source_out = out/"audit-direct-fallback" if project_compile_fallback else audit_out
+    if not (audit_source_out/"findings.json").exists() or not (audit_source_out/"g4_probe.json").exists():
+        shutil.copy2(audit_source_out/"summary.json",out/"summary.json")
         return rc or 1
 
     work = out/"working"; work.mkdir(exist_ok=True)
@@ -85,7 +86,7 @@ def main():
     if run([PLAN,"--pcb",work_pcb,"--out",plan]) != 0:
         shutil.copy2(audit_out/"summary.json",out/"summary.json"); return 1
     if run([AUTHORIZE,"--pcb",work_pcb,"--plan",plan,
-            "--findings",audit_out/"findings.json","--probe",audit_out/"g4_probe.json"]) != 0:
+            "--findings",audit_source_out/"findings.json","--probe",audit_source_out/"g4_probe.json"]) != 0:
         shutil.copy2(audit_out/"summary.json",out/"summary.json"); return 1
 
     repaired = work/("repaired_"+pcb.name); receipt=out/"repair_receipt.json"
