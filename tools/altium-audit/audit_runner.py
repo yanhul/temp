@@ -850,8 +850,7 @@ def main():
         report += [f"### {f['id']} — {f['severity']} / {f['status']}",
                     f"- Domain: {f['domain']}",f"- Object: {f['object']}",
                     f"- Evidence: {f['evidence']}",f"- Confidence: {f['confidence']}",""]
-    (out/"report.md").write_text("
-".join(report),encoding="utf-8")
+    (out/"report.md").write_text("\n".join(report),encoding="utf-8")
     (out/"summary.json").write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding="utf-8")
     (out/"findings.json").write_text(json.dumps(findings,indent=2,ensure_ascii=False),encoding="utf-8")
     print(json.dumps({"status":status,"gates":gates},indent=2))
