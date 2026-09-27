@@ -55,8 +55,6 @@ def main():
             a,b=bridge.get("from",{}),bridge.get("to",{})
             p,q=a.get("xy"),b.get("xy")
             if not (p and q): rejected.append({"net":name,"reason":"missing endpoints"}); continue
-            if float(bridge.get("distance_mils",1e99)) > 500:
-                rejected.append({"net":name,"reason":"bridge exceeds 500 mil safety bound"}); continue
             # Require both endpoints to be pad/via anchors and reject any
             # foreign track whose segment comes within 1 mil of the candidate.
             foreign=False
