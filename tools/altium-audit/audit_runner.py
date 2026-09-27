@@ -180,7 +180,7 @@ def topology_components(pcb):
         for obj in arcs:
             ep=segment_endpoints(obj)
             if ep is not None:
-                nodes.extend((("route",ep[0]),("route",ep[1])))
+                nodes.extend((("route",ep[0],obj),("route",ep[1],obj)))
         if len(nodes)<2:
             return None
         parent=list(range(len(nodes)))
@@ -195,7 +195,7 @@ def topology_components(pcb):
         # PCB parser coordinates are floating-point mils. One mil is a
         # conservative join tolerance for coincident endpoints.
         snapped={}
-        for i,(_,p) in enumerate(nodes):
+        for i,(_,p,_) in enumerate(nodes):
             snapped.setdefault(_snap_point(p,1.0),[]).append(i)
         for ids in snapped.values():
             for j in ids[1:]:
