@@ -56,16 +56,12 @@ def sd(a,b,c,d):
     o1,o2,o3,o4=o(a,b,c),o(a,b,d),o(c,d,a),o(c,d,b)
     if ((o1>0>o2) or (o2>0>o1)) and ((o3>0>o4) or (o4>0>o3)): return 0.0
     if on(a,c,b) or on(a,d,b) or on(c,a,d) or on(c,b,d): return 0.0
-    return min(pd(a,c,d),pd(b,c,d),pd(c,a,b),pd(c,b,a))
+    return min(pd(a,c,d),pd(b,c,d),pd(c,a,b),pd(d,a,b))
 
 def mil(v):
     if v is None:return None
     m=re.search(r"[-+]?\d+(?:\.\d+)?",str(v))
     return float(m.group(0)) if m else None
-    dx,dy=b[0]-a[0],b[1]-a[1]
-    if dx==dy==0:return math.dist(p,a)
-    t=max(0,min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/(dx*dx+dy*dy)))
-    return math.dist(p,(a[0]+t*dx,a[1]+t*dy))
 
 def sha(p):
     h=hashlib.sha256()
