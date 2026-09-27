@@ -106,8 +106,15 @@ def components_for_net(data):
                 if ib is not None: union(i,ib)
     return len(nodes),len({find(i) for i in range(len(nodes))})
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument("--pcb",required=True,type=Path); ap.add_argument("--out",required=True,type=Path); a=ap.parse_args()
+    ap=argparse.ArgumentParser(); ap.add_argument("--pcb",required=True,type=Path); ap.add_argument("--out",required=True,type=Path); ap.add_argument("--findings",type=Path); a=ap.parse_args()
     pcb=AltiumPcbDoc.from_file(a.pcb); comps=list(getattr(pcb,"components",[]) or []); nets=list(getattr(pcb,"nets",[]) or [])
+    verified_topology_fail_nets=set()
+    if a.findings and a.findings.exists():
+        raw=json.loads(a.findings.read_text(encoding="utf-8"))
+        fs=raw if isinstance(raw,list) else raw.get("findings",[])
+        for finding in fs:
+            if finding.get("id","").startswith("G7-TOPOLOGY-") and finding.get("status")=="FAIL" and finding.get("object") is not None:
+                verified_topology_fail_nets.add(str(finding["object"]))
     placement=[]
     envelopes={}
     outline=getattr(getattr(pcb,"board",None),"outline",None)
