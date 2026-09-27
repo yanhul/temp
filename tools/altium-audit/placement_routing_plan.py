@@ -32,6 +32,37 @@ def xy(o):
         x,y=f(p,"x","X"),f(p,"y","Y")
         if x is not None and y is not None:return num(x),num(y)
     return None
+def component_center(pcb, comp):
+    try:
+        q=pcb.get_component_pick_place_center_mils(comp)
+        if q is not None:
+            return (float(q[0]), float(q[1])), "authoritative_pick_place"
+    except Exception:
+        pass
+    q=xy(comp)
+    if q is not None:
+        return q, "component_geometry"
+    return None, "unresolved"
+
+def component_envelope(pcb, comp_index):
+    pts=[]
+    for pad in list(getattr(pcb,"pads",[]) or []):
+        ci=f(pad,"component_index")
+        try:
+            if ci is None or int(ci)!=comp_index: continue
+        except Exception:
+            continue
+        q=xy(pad)
+        w=num(f(pad,"width_mils","width")); h=num(f(pad,"height_mils","height"))
+        if q and w and h:
+            pts.append((q[0]-w/2,q[1]-h/2,q[0]+w/2,q[1]+h/2))
+    if not pts:return None
+    return (min(x[0] for x in pts),min(x[1] for x in pts),
+            max(x[2] for x in pts),max(x[3] for x in pts))
+
+def boxes_overlap(a,b):
+    return not (a[2] < b[0] or b[2] < a[0] or a[3] < b[1] or b[3] < a[1])
+
 def endpoint(o):
     q=[num(f(o,k)) for k in ("x1","y1","x2","y2")]
     return ((q[0],q[1]),(q[2],q[3])) if all(x is not None for x in q) else None
@@ -59,13 +90,32 @@ def main():
     ap=argparse.ArgumentParser(); ap.add_argument("--pcb",required=True,type=Path); ap.add_argument("--out",required=True,type=Path); a=ap.parse_args()
     pcb=AltiumPcbDoc.from_file(a.pcb); comps=list(getattr(pcb,"components",[]) or []); nets=list(getattr(pcb,"nets",[]) or [])
     placement=[]
+    envelopes={}
+    outline=getattr(getattr(pcb,"board",None),"outline",None)
+    bb=getattr(outline,"bounding_box",None) if outline else None
+    board_box=tuple(float(x) for x in bb) if bb and len(bb)==4 else None
     for i,c in enumerate(comps):
-        ref=f(c,"designator","refdes","reference"); p=xy(c); source="component_geometry"
-        if p is None:
-            pads=[xy(x) for x in list(f(c,"pads","children") or []) if xy(x) is not None]
-            if pads:p=(sum(x for x,_ in pads)/len(pads),sum(y for _,y in pads)/len(pads)); source="pad_geometry_fallback"
-        placement.append({"component_index":i,"reference":str(ref) if ref is not None else None,"position":p,"evidence_source":source,
-                          "placement_status":"VERIFIED" if p is not None and source=="component_geometry" else "UNKNOWN"})
+        ref=f(c,"designator","refdes","reference")
+        pos,source=component_center(pcb,c)
+        env=component_envelope(pcb,i)
+        if ref is not None and env is not None: envelopes[str(ref)]=env
+        inside=bool(pos is not None and (board_box is None or (board_box[0]<=pos[0]<=board_box[2] and board_box[1]<=pos[1]<=board_box[3])))
+        placement.append({"component_index":i,"reference":str(ref) if ref is not None else None,"position":pos,
+                          "evidence_source":source,"inside_board":inside,
+                          "placement_status":"VERIFIED" if pos is not None and source=="authoritative_pick_place" and inside else "UNKNOWN"})
+    overlap_pairs=[]
+    refs=sorted(envelopes)
+    for i,a in enumerate(refs):
+        for b in refs[i+1:]:
+            if boxes_overlap(envelopes[a],envelopes[b]): overlap_pairs.append((a,b))
+    placement_checks={"all_positions_authoritative":all(x["placement_status"]=="VERIFIED" for x in placement),
+                      "board_bounds_available":board_box is not None,"component_envelope_count":len(envelopes),
+                      "overlap_count":len(overlap_pairs),"overlap_pairs":overlap_pairs[:200]}
+    placement_status="VERIFIED" if placement_checks["all_positions_authoritative"] and placement_checks["overlap_count"]==0 else "UNKNOWN"
+    placement_lock={"schema":"altium-placement-lock.v1","status":"LOCKED" if placement_status=="VERIFIED" else "BLOCKED",
+                    "basis":"authoritative_pick_place + board_bounds + pad_envelope_overlap",
+                    "checks":placement_checks,
+                    "locked_references":sorted(x["reference"] for x in placement if x["placement_status"]=="VERIFIED")}
     routing=[]; unresolved=[]
     for i,n in enumerate(nets):
         name=f(n,"name","net_name","netname","uid")
@@ -81,14 +131,13 @@ def main():
                             "placement_dependency":"REVIEW","candidate_topology":"NOT_SELECTED",
                             "reason":"Disconnected copper is evidence only; no authoritative topology decision permits automatic bridging."})
         else:routing.append({"net":str(name),"status":"CONNECTED","graph_components":cc,"node_count":node_count})
-    pu=any(x["placement_status"]!="VERIFIED" for x in placement); placement_status="UNKNOWN" if pu else "VERIFIED"
     routing_status="UNKNOWN" if unresolved else ("INCOMPLETE" if any(x["status"]=="TOPOLOGY_UNRESOLVED" for x in routing) else "VERIFIED")
-    result={"schema":"altium-placement-routing-plan.v2","mode":"PLAN_ONLY_NO_MUTATION",
+    result={"schema":"altium-placement-routing-plan.v3","mode":"PLAN_ONLY_NO_MUTATION",
             "status_semantics":{"VERIFIED":"authoritative evidence supports the claim","UNKNOWN":"evidence unavailable or fallback-only","INCOMPLETE":"known evidence exists but required closure is missing","BLOCKED":"policy prevents the next mutation stage"},
-            "placement":{"status":placement_status,"components":placement},
+            "placement":{"status":placement_status,"components":placement,"checks":placement_checks,"lock":placement_lock},
             "routing":{"status":routing_status,"nets":routing,"unresolved_nets":unresolved},
             "design_status":"PASS" if placement_status=="VERIFIED" and routing_status=="VERIFIED" else "BLOCKED",
-            "next_stage":"ROUTE_AND_VERIFY" if placement_status=="VERIFIED" and routing_status=="VERIFIED" else "PLACEMENT_OR_TOPOLOGY_REVIEW"}
-    a.out.parent.mkdir(parents=True,exist_ok=True); a.out.write_text(json.dumps(result,indent=2,ensure_ascii=False)); print(json.dumps({"placement_status":placement_status,"routing_status":routing_status,"unresolved_topologies":sum(x["status"]=="TOPOLOGY_UNRESOLVED" for x in routing),"parser_unresolved":len(unresolved)}))
+            "next_stage":"ROUTE_AND_VERIFY" if placement_status=="VERIFIED" and routing_status=="VERIFIED" else ("ROUTING_REPAIR" if placement_status=="VERIFIED" and routing_status=="INCOMPLETE" else "PLACEMENT_REVIEW")}
+    a.out.parent.mkdir(parents=True,exist_ok=True); a.out.write_text(json.dumps(result,indent=2,ensure_ascii=False)); print(json.dumps({"placement_status":placement_status,"placement_lock":placement_lock["status"],"routing_status":routing_status,"unresolved_topologies":sum(x["status"]=="TOPOLOGY_UNRESOLVED" for x in routing),"parser_unresolved":len(unresolved)}))
     return 0 if result["design_status"]=="PASS" else 1
 if __name__=="__main__":raise SystemExit(main())
