@@ -838,8 +838,7 @@ def main():
         "width_rule_repr": repr(width_rule)[:1500] if width_rule else None,
         "rule_samples":rule_samples,
         "track_samples":track_samples,
-        "unresolved_pad_samples":unresolved_samples,
-        "net_primitive_probe":net_primitive_probe
+        "unresolved_pad_samples":unresolved_samples
     },indent=2,default=str),encoding="utf-8")
     report=["# Altium Audit Report","","**Overall:** "+status,"","## Gates"]
     report += [f"- **{k}**: {v}" for k,v in gates.items()]
