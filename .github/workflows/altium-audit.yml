@@ -102,3 +102,5 @@ jobs:
           if status != "PASS":
               raise SystemExit(f"strict audit not PASS: {status}")
           PY
+
+# trigger: audit-run
