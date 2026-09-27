@@ -33,3 +33,6 @@ The runner records authoritative unrouted/ratsnest evidence, routed primitive/ne
 Full Altium DRC equivalence, 3D collision completeness, SI/timing and design intent remain UNKNOWN/BLOCKED unless authoritative evidence is available.
 
 See `AUDIT_PROTOCOL.md` and `REUSE_RUNBOOK.md`.
+
+
+<!-- strict-verification-retry-2026-09-27 -->
