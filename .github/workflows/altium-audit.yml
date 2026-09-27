@@ -37,6 +37,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r tools/altium-audit/requirements.txt
 
+      - name: Verify project-independent audit engine
+        run: python -m pytest -q tests/test_altium_audit_project_independence.py
+
       - name: Run evidence-first audit
         shell: bash
         run: |
@@ -45,7 +48,8 @@ jobs:
             --root work/project \
             --out work/audit \
             --archive work/project.zip \
-            --source-sha256 "$(cat work/source.sha256)"
+            --source-sha256 "$(cat work/source.sha256)" \
+            --config altium-audit.config.json
           rc=$?
           printf '%s\n' "$rc" > work/audit/runner_exit_code.txt
           printf '%s\n' "audit_runner_exit_code=$rc" > work/audit/runner_exit.txt
