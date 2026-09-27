@@ -90,6 +90,20 @@ def components_for_net(data):
     for a,b in routes:
         ia=next((i for i,p in enumerate(nodes) if p==a),None); ib=next((i for i,p in enumerate(nodes) if p==b),None)
         if ia is not None and ib is not None:union(ia,ib)
+    def point_segment_distance(p,a,b):
+        dx,dy=b[0]-a[0],b[1]-a[1]
+        if dx==dy==0:return math.dist(p,a)
+        t=max(0,min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/(dx*dx+dy*dy)))
+        q=(a[0]+t*dx,a[1]+t*dy)
+        return math.dist(p,q)
+    for i,p in enumerate(nodes):
+        for a,b in routes:
+            if p==a or p==b: continue
+            if point_segment_distance(p,a,b)<=1.0:
+                ia=next((j for j,x in enumerate(nodes) if x==a),None)
+                ib=next((j for j,x in enumerate(nodes) if x==b),None)
+                if ia is not None: union(i,ia)
+                if ib is not None: union(i,ib)
     return len(nodes),len({find(i) for i in range(len(nodes))})
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument("--pcb",required=True,type=Path); ap.add_argument("--out",required=True,type=Path); a=ap.parse_args()
