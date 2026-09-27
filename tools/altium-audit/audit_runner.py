@@ -352,6 +352,7 @@ def main():
         add(findings,"G0-ARCHIVE-HASH","INFO","intake","UNKNOWN",
             "No authoritative source SHA256 was supplied; archive byte identity cannot be proven. Hash verification is optional for direct/manual engine use.","FACT")
 
+    sch_components = None
     try:
         if prjs:
             design = AltiumDesign.from_prjpcb(str(prjs[0]))
@@ -392,7 +393,10 @@ def main():
         add(findings,"G2-COMPILE","INFO","compile","VERIFIED",
             "Compile metadata is present and diagnostics are empty.","VERIFIED")
 
-    sch_components = payload.get("components", []) or []
+    # In direct SCH+PCB mode keep the live parser objects for reference
+    # reconciliation; payload["components"] is intentionally repr-only JSON.
+    if sch_components is None:
+        sch_components = payload.get("components", []) or []
     pcb_components = list(getattr(pcb, "components", []) or [])
     srefs = {as_name(x) for x in sch_components if as_name(x)}
     prefs = {as_name(x) for x in pcb_components if as_name(x)}
