@@ -68,6 +68,22 @@ jobs:
           echo "routing planner exit: $rc"
           test -s work/audit/routing_repair_plan.json || printf '%s\n' '{"schema":"altium-routing-repair-plan.v1","status":"PLANNER_FAILED"}' > work/audit/routing_repair_plan.json
 
+      - name: Execute audit repair verify retry contract
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set +e
+          PCB="$(find work/project -type f -name "*.PcbDoc" | head -1)"
+          python tools/altium-audit/execution_contract.py \
+            --out work/audit \
+            --max-attempts 3 \
+            --audit-cmd python tools/altium-audit/audit_runner.py --root work/project --out work/audit --archive work/project.zip --source-sha256 "$(cat work/source.sha256)" --config altium-audit.config.json \
+            --plan-cmd python tools/altium-audit/routing_repair_plan.py --pcb "$PCB" --out work/audit/routing_repair_plan.json \
+            --repair-cmd python tools/altium-audit/routing_repair_apply.py --pcb "$PCB" --plan work/audit/routing_repair_plan.json --out work/audit/repaired.PcbDoc --receipt work/audit/repair_receipt.json
+          rc=$?
+          printf '%s\n' "$rc" > work/audit/execution_contract_exit_code.txt
+          echo "execution contract exit: $rc"
+
       - name: Validate required audit artifacts
         if: ${{ always() }}
         shell: bash
@@ -104,6 +120,9 @@ jobs:
             work/audit/routing_repair_plan.json
             work/audit/runner_exit.txt
             work/audit/runner_exit_code.txt
+            work/audit/execution_result.json
+            work/audit/execution_contract_exit_code.txt
+            work/audit/repair_receipt.json
           if-no-files-found: error
 
       - name: Finalize audit status
@@ -120,9 +139,11 @@ jobs:
           print("audit runner exit:", rc)
           if rc not in (0,1):
               raise SystemExit(f"audit runner execution error: {rc}")
-          if status not in ("PASS","FAIL","BLOCKED"):
-              raise SystemExit(f"invalid audit status: {status}")
-          print("engine verification: PASS; design result is reported separately.")
+          execution = json.loads(Path("work/audit/execution_result.json").read_text())
+          final_status = execution.get("status")
+          if final_status not in ("PASS","BLOCKED","UNRESOLVED"):
+              raise SystemExit(f"invalid final execution status: {final_status}")
+          print("FINAL DESIGN STATUS:", final_status)
           PY
 
 # trigger: audit-run
