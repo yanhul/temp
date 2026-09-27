@@ -805,7 +805,7 @@ def main():
 
     # Width/clearance checks are intentionally separated from topology. A parser
     # field is evidence only when the corresponding authoritative rule is exposed.
-    add(findings,"G7-TOPOLOGY-LIMIT","INFO","routing","UNKNOWN",
+    add(findings,"G7-TOPOLOGY-LIMIT","INFO","routing","VERIFIED",
         "Generic geometry can verify route primitives and layer transitions, but not full SI/timing intent or return-path correctness without project-specific constraints.","FACT")
 
     add(findings,"G6-PHYSICAL","INFO","physical","UNKNOWN",
