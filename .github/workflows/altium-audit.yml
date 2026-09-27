@@ -77,9 +77,9 @@ jobs:
           python tools/altium-audit/execution_contract.py \
             --out work/audit \
             --max-attempts 3 \
-            --audit-cmd python tools/altium-audit/audit_runner.py --root work/project --out work/audit --archive work/project.zip --source-sha256 "$(cat work/source.sha256)" --config altium-audit.config.json \
-            --plan-cmd python tools/altium-audit/routing_repair_plan.py --pcb "$PCB" --out work/audit/routing_repair_plan.json \
-            --repair-cmd python tools/altium-audit/routing_repair_apply.py --pcb "$PCB" --plan work/audit/routing_repair_plan.json --out work/audit/repaired.PcbDoc --receipt work/audit/repair_receipt.json
+            --audit-cmd "python tools/altium-audit/audit_runner.py --root work/project --out work/audit --archive work/project.zip --source-sha256 $(cat work/source.sha256) --config altium-audit.config.json" \
+            --plan-cmd "python tools/altium-audit/routing_repair_plan.py --pcb $PCB --out work/audit/routing_repair_plan.json" \
+            --repair-cmd "python tools/altium-audit/routing_repair_apply.py --pcb $PCB --plan work/audit/routing_repair_plan.json --out work/audit/repaired.PcbDoc --receipt work/audit/repair_receipt.json"
           rc=$?
           printf '%s\n' "$rc" > work/audit/execution_contract_exit_code.txt
           echo "execution contract exit: $rc"
