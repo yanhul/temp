@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse,json,pathlib,shutil,subprocess,shlex
 def load(p): return json.loads(pathlib.Path(p).read_text(encoding="utf-8"))
 def save(p,o): pathlib.Path(p).write_text(json.dumps(o,indent=2,sort_keys=True),encoding="utf-8")
-def run(c): return subprocess.run(c,text=True,capture_output=True)
+def run(c):
+    argv=shlex.split(c[0]) if len(c)==1 else c
+    return subprocess.run(argv,text=True,capture_output=True)
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--out",required=True)
