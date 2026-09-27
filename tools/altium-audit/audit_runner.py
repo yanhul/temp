@@ -343,7 +343,7 @@ def main():
         else:
             # Two-file baseline: parse each source directly. This intentionally
             # does not synthesize a compiled project/netlist.
-            schdoc = AltiumSchDoc.from_file(str(schs[0]))
+            schdoc = AltiumSchDoc(str(schs[0]))
             pcb = AltiumPcbDoc.from_file(str(pcbs[0]))
             sch_components = list(getattr(schdoc, "components", []) or [])
             payload = {"components": sch_components, "compile": None,
