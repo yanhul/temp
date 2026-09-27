@@ -799,7 +799,7 @@ def main():
         "schema":"altium-audit/v2","status":status,"project":project_id or (prjs[0].name if prjs else "SCHDOC+PCBDOC"),
         "source_sha256":archive_hash,"gates":gates,"counts":counts,
         "findings":findings,"diagnostics":diagnostics,
-        "lineage":{"project":str(prjs[0]),"schematic_files":[str(x) for x in schs],
+        "lineage":{"project":str(prjs[0]) if prjs else None,"schematic_files":[str(x) for x in schs],
                    "pcb_files":[str(x) for x in pcbs]}
     }
     (out/"design.json").write_text(json.dumps(payload,indent=2,ensure_ascii=False),encoding="utf-8")
