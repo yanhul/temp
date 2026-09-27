@@ -4,7 +4,8 @@ on:
   push:
     paths:
       - "b64parts/**"
-      - "QI9-2604-A01.zip"
+      - "*.zip"
+      - "altium-audit.config.json"
       - ".github/workflows/altium-audit.yml"
       - "tools/altium-audit/**"
   workflow_dispatch:
@@ -24,10 +25,12 @@ jobs:
           cat $(find b64parts -maxdepth 1 -name 'part_*.txt' | sort) | base64 -d > work/project.zip
           test -s work/project.zip
           unzip -q work/project.zip -d work/project
-          sha256sum QI9-2604-A01.zip | awk '{print $1}' > work/source.sha256
+          ARCHIVE=$(python -c 'import json; print(json.load(open("altium-audit.config.json"))["source_archive"])')
+          test -s "$ARCHIVE"
+          sha256sum "$ARCHIVE" | awk '{print $1}' > work/source.sha256
           echo "reference archive sha256: $(cat work/source.sha256)"
           echo "reconstructed archive sha256: $(sha256sum work/project.zip | awk '{print $1}')"
-          cmp -s QI9-2604-A01.zip work/project.zip
+          cmp -s "$ARCHIVE" work/project.zip
 
       - name: Install audit parser
         run: |
