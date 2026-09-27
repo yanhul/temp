@@ -112,9 +112,13 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--pcb",required=True,type=Path);ap.add_argument("--plan",required=True,type=Path)
     ap.add_argument("--findings",required=True,type=Path);ap.add_argument("--probe",required=True,type=Path)
+    ap.add_argument("--placement-lock",required=True,type=Path)
+    ap.add_argument("--connectivity-manifest",required=True,type=Path)
     args=ap.parse_args()
     plan=json.loads(args.plan.read_text()); raw=json.loads(args.findings.read_text())
     findings=raw if isinstance(raw,list) else raw.get("findings",[])
+    lock=json.loads(args.placement_lock.read_text())
+    manifest=json.loads(args.connectivity_manifest.read_text())
     pcb=AltiumPcbDoc.from_file(args.pcb)
     topo={str(f.get("object")):f for f in findings if f.get("id","").startswith("G7-TOPOLOGY-")}
     probe=json.loads(args.probe.read_text())
@@ -137,6 +141,10 @@ def main():
         plan["authorization"]={"status":"BLOCKED","reason":reason,"rejected":rejected or []}
         args.plan.write_text(json.dumps(plan,indent=2,sort_keys=True))
         return 3
+    if lock.get("placement",{}).get("lock",{}).get("status")!="LOCKED" and lock.get("status")!="LOCKED":
+        return block("placement lock is not VERIFIED/LOCKED")
+    if manifest.get("status")!="VERIFIED":
+        return block("connectivity manifest is not VERIFIED")
     if not topo:return block("no authoritative G7 topology finding")
     if not clear:return block("authoritative clearance rule is not exposed; no clearance value is guessed")
     clearance=max(clear);authorized=[];rejected=[]
