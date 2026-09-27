@@ -29,13 +29,10 @@ def field(obj: Any, *keys: str):
     return None
 
 def as_name(obj: Any):
-    """Resolve PCB references and schematic DESIGNATOR child records."""
-    v = field(obj, "designator", "refdes", "reference", "name", "component", "id")
-    if v is not None:
-        return str(v)
-
-    # In altium-monkey a schematic component stores its reference as an
-    # AltiumSchDesignator child, not as a scalar component attribute.
+    """Resolve a real reference designator from PCB or schematic objects."""
+    # Schematic components expose the authoritative reference as an
+    # AltiumSchDesignator child. Check this before generic/name fallbacks:
+    # AltiumSchComponent.name is the library/symbol name (e.g. Cap2), not RefDes.
     for child in list(field(obj, "children") or []):
         kind = type(child).__name__.lower()
         name = str(field(child, "name") or "").strip().lower()
@@ -43,6 +40,12 @@ def as_name(obj: Any):
             text = field(child, "text", "value")
             if text is not None and str(text).strip():
                 return str(text).strip()
+
+    # PCB components normally expose designator/refdes directly. Keep legacy
+    # fallbacks only after the authoritative schematic child lookup.
+    v = field(obj, "designator", "refdes", "reference", "id")
+    if v is not None:
+        return str(v)
     return None
 
 def add(findings, fid, severity, domain, status, evidence, confidence="VERIFIED", obj=None):
