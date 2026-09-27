@@ -462,28 +462,6 @@ def main():
         try: counts[attr] = len(getattr(pcb, attr))
         except Exception: counts[attr] = None
 
-    # Probe parser-owned per-net primitive API when available.
-    net_primitive_probe = []
-    try:
-        if hasattr(pcb, "get_net_primitives"):
-            for nn in list(getattr(pcb, "nets", []) or [])[:8]:
-                nname = field(nn, "name", "net_name", "netname", "uid")
-                try:
-                    raw_name = pcb.get_net_primitives(nname)
-                    raw_index = pcb.get_net_primitives(list(getattr(pcb, "nets", []) or []).index(nn))
-                    raw = {"by_name": raw_name, "by_index": raw_index}
-                    net_primitive_probe.append({"net": nname, "repr": repr(raw)[:2000]})
-                except Exception as exc:
-                    net_primitive_probe.append({"net": nname, "error": repr(exc)})
-            add(findings, "G7-NET-PRIMITIVE-API", "INFO", "routing", "VERIFIED",
-                "Parser per-net primitive API probe captured.", "VERIFIED")
-        else:
-            add(findings, "G7-NET-PRIMITIVE-API", "INFO", "routing", "UNKNOWN",
-                "Parser does not expose get_net_primitives.", "FACT")
-    except Exception as exc:
-        add(findings, "G7-NET-PRIMITIVE-API", "INFO", "routing", "UNKNOWN",
-            f"Per-net primitive API probe failed: {type(exc).__name__}: {exc}", "FACT")
-
     # Deterministic subset of PCB rule checks.
     rules = list(getattr(pcb,"rules",[]) or [])
     enabled = [r for r in rules if getattr(r,"enabled",True)]
