@@ -84,7 +84,7 @@ def main():
             if q: nodes.append(q); meta.append({"kind":"pad","designator":f(p,"designator","component","refdes"),"pin":f(p,"designator","pin","pad_name"),"xy":q,"layer":f(p,"layer","layer_name")})
         for v in vias:
             q=xy(v)
-            if q: nodes.append(q); meta.append({"kind":"via","xy":q})
+            if q: nodes.append(q); meta.append({"kind":"via","xy":q,"layer_start":f(v,"layer_start"),"layer_end":f(v,"layer_end")})
         for typ,items in (("track",tracks),("arc",arcs)):
             for obj in items:
                 z=ep(obj)
