@@ -2,37 +2,54 @@
 
 Reusable evidence-first static/structural audit pipeline for Altium Designer projects.
 
-## Baseline input
-- **Required:** one `*.SchDoc` and one `*.PcbDoc`
-- **Optional:** `*.PrjPcb` when project-level rules/settings are needed
+## Single entrypoint
 
-Placement and routing are first-class audit layers. They are not reduced to “component is inside board”.
+`python audit_kit.py --input <project-folder> --output <output-folder>`
 
-## Gates
-- G0 INTAKE
-- G1 PARSE
-- G2 COMPILE
-- G3 CONNECTIVITY
-- G4 PCB RULE EVIDENCE
-- G5 ELECTRICAL
-- G6 PHYSICAL
-- G6 PLACEMENT
-- G7 ROUTING
-- G7 FUNCTIONAL
-- G8 REPORT
+Optional repair/verify loop:
 
-### Placement
-The runner records board containment, component geometry, pairwise overlap/clearance evidence, connector-area congestion signals and routing-corridor/choke-point evidence where parser fields permit.
+`python audit_kit.py --input <project-folder> --output <output-folder> --repair`
 
-### Routing
-The runner records authoritative unrouted/ratsnest evidence, routed primitive/net inventory, layer transitions and topology limitations. It never claims zero unrouted from missing API data.
+### Input contract
+- exactly one `*.SchDoc`
+- exactly one `*.PcbDoc`
+- optional one `*.PrjPcb`
 
-### Evidence boundary
-`PrjPcb` upgrades project-rule evidence. Its absence must not block the baseline SchDoc+PcbDoc placement/routing audit.
+The kit discovers the files itself. Project name, refdes, net names and blocker IDs are not hard-coded.
 
-Full Altium DRC equivalence, 3D collision completeness, SI/timing and design intent remain UNKNOWN/BLOCKED unless authoritative evidence is available.
+### Lifecycle
+
+`INTAKE -> AUDIT -> EVIDENCE -> [PLAN -> AUTHORIZE -> APPLY] -> VERIFY`
+
+Repair is fail-closed: no authoritative authorization means no mutation; the source PcbDoc is never overwritten; repair happens only on a working copy; the repaired board is re-audited by the same runner.
+
+### Outputs
+- `intake.json`
+- `audit-initial/`
+- `routing_repair_plan.json` when repair is requested
+- `repair_receipt.json` when a mutation is applied
+- `audit-verify/` after repair
+- `summary.json` final machine-readable result
+
+Placement and routing are first-class audit layers. Unsupported evidence remains UNKNOWN/BLOCKED/PARTIAL; parser success alone never means design PASS.
+
+## Reuse layout
+
+```
+temp/
+  tools/altium-audit/       # reusable kit
+    audit_kit.py            # single entrypoint
+    audit_runner.py
+    execution_contract.py
+    routing_repair_plan.py
+    routing_repair_authorize.py
+    routing_repair_apply.py
+    audit_manifest.json
+    ...
+  <project-to-audit>/       # input fixture only
+    board.SchDoc
+    board.PcbDoc
+    board.PrjPcb             # optional
+```
 
 See `AUDIT_PROTOCOL.md` and `REUSE_RUNBOOK.md`.
-
-
-<!-- strict-verification-retry-2026-09-27 -->
