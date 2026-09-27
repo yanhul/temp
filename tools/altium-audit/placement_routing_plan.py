@@ -2,6 +2,7 @@
 """Evidence-first placement/routing planner. Planning only; never mutates a PCB."""
 from __future__ import annotations
 import argparse,json,math
+from pathlib import Path
 from collections import defaultdict
 from altium_monkey import AltiumPcbDoc
 def f(o,*ks):
