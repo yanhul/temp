@@ -1,12 +1,44 @@
 {
-  "kit_version": "1.0",
+  "kit_version": "2.0",
   "parser": {
     "package": "altium-monkey",
     "minimum_version": "2026.9.12"
   },
-  "required_inputs": ["*.PrjPcb", "*.SchDoc", "*.PcbDoc"],
-  "gates": ["G0_INTAKE","G1_PARSE","G2_COMPILE","G3_CONNECTIVITY","G4_PCB","G5_ELECTRICAL","G6_PHYSICAL","G7_FUNCTIONAL","G8_REPORT"],
-  "statuses": ["PASS","BLOCKED","FAIL","UNKNOWN"],
-  "evidence_labels": ["FACT","VERIFIED","INFERRED","ASSUMPTION"],
-  "rule": "Parser/compile success alone never implies design PASS."
+  "required_inputs": [
+    "*.PrjPcb",
+    "*.SchDoc",
+    "*.PcbDoc"
+  ],
+  "gates": [
+    "G0_INTAKE",
+    "G1_PARSE",
+    "G2_COMPILE",
+    "G3_CONNECTIVITY",
+    "G4_PCB",
+    "G5_ELECTRICAL",
+    "G6_PHYSICAL",
+    "G7_FUNCTIONAL",
+    "G8_REPORT"
+  ],
+  "statuses": [
+    "PASS",
+    "BLOCKED",
+    "FAIL",
+    "UNKNOWN"
+  ],
+  "evidence_labels": [
+    "FACT",
+    "VERIFIED",
+    "INFERRED",
+    "ASSUMPTION"
+  ],
+  "rule": "Parser/compile success alone never implies design PASS.",
+  "architecture": [
+    "kit",
+    "project_config",
+    "ci_adapter"
+  ],
+  "required_project_config": "altium-audit.config.json",
+  "workflow_template": "tools/altium-audit/workflow-template.yml",
+  "runbook": "tools/altium-audit/REUSE_RUNBOOK.md"
 }
