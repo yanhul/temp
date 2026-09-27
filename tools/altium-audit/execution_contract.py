@@ -1,27 +1,30 @@
 #!/usr/bin/env python3
 """Reusable audit execution contract: AUDIT -> PLAN -> REPAIR -> VERIFY -> RETRY -> FINALIZE."""
 from __future__ import annotations
-import argparse,json,pathlib,shutil,subprocess
+import argparse,json,pathlib,shutil,subprocess,shlex
 def load(p): return json.loads(pathlib.Path(p).read_text(encoding="utf-8"))
 def save(p,o): pathlib.Path(p).write_text(json.dumps(o,indent=2,sort_keys=True),encoding="utf-8")
 def run(c): return subprocess.run(c,text=True,capture_output=True)
 def main():
     ap=argparse.ArgumentParser()
-    ap.add_argument("--out",required=True); ap.add_argument("--audit-cmd",nargs="+",required=True)
-    ap.add_argument("--plan-cmd",nargs="+",required=True); ap.add_argument("--repair-cmd",nargs="+",required=True)
+    ap.add_argument("--out",required=True)
+    ap.add_argument("--audit-cmd",required=True)
+    ap.add_argument("--plan-cmd",required=True)
+    ap.add_argument("--repair-cmd",required=True)
     ap.add_argument("--max-attempts",type=int,default=3); args=ap.parse_args()
     out=pathlib.Path(args.out); out.mkdir(parents=True,exist_ok=True); history=[]
+    audit_cmd=shlex.split(args.audit_cmd); plan_cmd=shlex.split(args.plan_cmd); repair_cmd=shlex.split(args.repair_cmd)
     for attempt in range(args.max_attempts+1):
-        ar=run(args.audit_cmd); history.append({"stage":"AUDIT","attempt":attempt,"returncode":ar.returncode})
+        ar=run(audit_cmd); history.append({"stage":"AUDIT","attempt":attempt,"returncode":ar.returncode})
         sp,fp=out/"summary.json",out/"findings.json"
         if not sp.exists() or not fp.exists(): save(out/"execution_result.json",{"status":"BLOCKED","reason":"audit evidence missing","history":history}); return 2
         s,fs=load(sp),load(fp); bad=[f for f in fs.get("findings",[]) if f.get("status")=="FAIL" or f.get("severity")=="BLOCKER"]
         if s.get("status")=="PASS" and not bad: save(out/"execution_result.json",{"status":"PASS","attempts":attempt,"history":history}); return 0
         if attempt>=args.max_attempts: save(out/"execution_result.json",{"status":"UNRESOLVED","attempts":attempt,"remaining_findings":bad,"history":history}); return 1
-        pr=run(args.plan_cmd); history.append({"stage":"PLAN","attempt":attempt,"returncode":pr.returncode})
+        pr=run(plan_cmd); history.append({"stage":"PLAN","attempt":attempt,"returncode":pr.returncode})
         receipt=out/"repair_receipt.json"
         if receipt.exists(): receipt.unlink()
-        rr=run(args.repair_cmd); history.append({"stage":"REPAIR","attempt":attempt,"returncode":rr.returncode})
+        rr=run(repair_cmd); history.append({"stage":"REPAIR","attempt":attempt,"returncode":rr.returncode})
         if not receipt.exists(): save(out/"execution_result.json",{"status":"BLOCKED","reason":"repair backend produced no receipt","history":history}); return 2
         rec=load(receipt)
         if rec.get("status")!="MUTATED": save(out/"execution_result.json",{"status":"BLOCKED","reason":"no safe mutation available","repair_receipt":rec,"history":history}); return 2
