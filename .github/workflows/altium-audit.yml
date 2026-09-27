@@ -75,4 +75,6 @@ jobs:
             work/audit/g4_probe.json
             work/audit/findings.json
             work/audit/report.md
+            work/audit/runner_exit.txt
+            work/audit/runner_exit_code.txt
           if-no-files-found: error
