@@ -11,7 +11,7 @@ def run(c):
 
 def main():
     ap=argparse.ArgumentParser()
-    ap.add_argument("--out",required=True); ap.add_argument("--max-attempts",type=int,default=3)
+    ap.add_argument("--out",required=True); ap.add_argument("--max-attempts",type=int,default=3); ap.add_argument("--topology-cmd",default=None)
     ns,rest=ap.parse_known_args()
     def capture(flag,next_flags):
         if flag not in rest: raise SystemExit(f"missing {flag}")
@@ -23,6 +23,7 @@ def main():
     plan_cmd=capture("--plan-cmd",{"--audit-cmd","--authorize-cmd","--repair-cmd"})
     auth_cmd=capture("--authorize-cmd",{"--audit-cmd","--plan-cmd","--repair-cmd"})
     repair_cmd=capture("--repair-cmd",{"--audit-cmd","--plan-cmd","--authorize-cmd"})
+    topology_cmd=shlex.split(ns.topology_cmd) if ns.topology_cmd else None
     out=pathlib.Path(ns.out); out.mkdir(parents=True,exist_ok=True); history=[]
     for attempt in range(ns.max_attempts+1):
         ar=run(audit_cmd); history.append({"stage":"AUDIT","attempt":attempt,"returncode":ar.returncode})
@@ -33,6 +34,15 @@ def main():
         if not sp.exists() or not fp.exists():
             save(out/"execution_result.json",{"status":"BLOCKED","reason":"audit evidence missing","history":history});return 2
         s,fs=load(sp),load(fp); items=fs if isinstance(fs,list) else fs.get("findings",[])
+        if topology_cmd:
+            tr=run(topology_cmd); history.append({"stage":"TOPOLOGY","attempt":attempt,"returncode":tr.returncode})
+            tp=out/"placement-routing-plan.json"
+            if not tp.exists():
+                save(out/"execution_result.json",{"status":"BLOCKED","reason":"topology planning evidence missing","history":history}); return 2
+            topology=load(tp)
+            if topology.get("design_status")=="BLOCKED":
+                save(out/"execution_result.json",{"status":"BLOCKED","reason":"placement or routing topology unresolved; automatic copper mutation is not authorized","topology":topology,"history":history}); return 2
+
         bad=[f for f in items if f.get("status")=="FAIL" or f.get("severity")=="BLOCKER"]
         if s.get("status")=="PASS" and not bad:
             save(out/"execution_result.json",{"status":"PASS","attempts":attempt,"history":history});return 0
