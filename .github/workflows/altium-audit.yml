@@ -47,6 +47,7 @@ jobs:
           python tools/altium-audit/execution_contract.py \
             --out work/audit \
             --max-attempts 3 \
+            --topology-cmd "python tools/altium-audit/placement_routing_plan.py --pcb $PCB --out work/audit/placement-routing-plan.json" \
             --audit-cmd "python tools/altium-audit/audit_runner.py --root work/project --out work/audit --archive work/project.zip --source-sha256 $(cat work/source.sha256) --config altium-audit.config.json" \
             --plan-cmd "python tools/altium-audit/routing_repair_plan.py --pcb $PCB --out work/audit/routing_repair_plan.json" \
             --authorize-cmd "python tools/altium-audit/routing_repair_authorize.py --pcb $PCB --plan work/audit/routing_repair_plan.json --findings work/audit/findings.json --probe work/audit/g4_probe.json" \
@@ -60,7 +61,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in summary.json netlist.json design.json pcb_probe.txt g4_probe.json findings.json report.md routing_repair_plan.json execution_result.json execution_contract_exit_code.txt; do
+          for f in summary.json netlist.json design.json pcb_probe.txt g4_probe.json findings.json report.md placement-routing-plan.json execution_result.json execution_contract_exit_code.txt; do
             test -s "work/audit/$f"
           done
           python - <<'PY'
@@ -71,9 +72,13 @@ jobs:
           missing=required-set(s.get("gates",{}))
           if missing: raise SystemExit(f"missing gates: {sorted(missing)}")
           e=json.loads(Path("work/audit/execution_result.json").read_text())
-          if e.get("status") not in ("PASS","BLOCKED","UNRESOLVED"): raise SystemExit("invalid execution terminal status")
+          status=e.get("status")
+          if status not in ("PASS","BLOCKED","UNRESOLVED"): raise SystemExit("invalid execution terminal status")
+          if status=="PASS":
+              for f in ("routing_repair_plan.json","repair_receipt.json"):
+                  if not Path("work/audit",f).is_file(): raise SystemExit(f"missing PASS artifact: {f}")
           print("AUDIT STATUS:",s.get("status"))
-          print("FINAL EXECUTION STATUS:",e.get("status"))
+          print("FINAL EXECUTION STATUS:",status)
           PY
 
       - name: Upload audit artifacts
@@ -81,18 +86,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: altium-audit-report
-          path: |
-            work/audit/summary.json
-            work/audit/design.json
-            work/audit/netlist.json
-            work/audit/pcb_probe.txt
-            work/audit/g4_probe.json
-            work/audit/findings.json
-            work/audit/report.md
-            work/audit/routing_repair_plan.json
-            work/audit/repair_receipt.json
-            work/audit/execution_result.json
-            work/audit/execution_contract_exit_code.txt
+          path: work/audit/
           if-no-files-found: error
 
       - name: Finalize audit status
