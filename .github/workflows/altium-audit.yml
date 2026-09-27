@@ -28,8 +28,6 @@ jobs:
           ARCHIVE=$(python -c 'import json; print(json.load(open("altium-audit.config.json"))["source_archive"])')
           test -s "$ARCHIVE"
           sha256sum "$ARCHIVE" | awk '{print $1}' > work/source.sha256
-          echo "reference archive sha256: $(cat work/source.sha256)"
-          echo "reconstructed archive sha256: $(sha256sum work/project.zip | awk '{print $1}')"
           cmp -s "$ARCHIVE" work/project.zip
 
       - name: Install audit parser
@@ -40,45 +38,18 @@ jobs:
       - name: Verify project-independent audit engine
         run: python tests/test_altium_audit_project_independence.py
 
-      - name: Run evidence-first audit
-        shell: bash
-        run: |
-          set +e
-          python tools/altium-audit/audit_runner.py \
-            --root work/project \
-            --out work/audit \
-            --archive work/project.zip \
-            --source-sha256 "$(cat work/source.sha256)" \
-            --config altium-audit.config.json
-          rc=$?
-          printf '%s\n' "$rc" > work/audit/runner_exit_code.txt
-          printf '%s\n' "audit_runner_exit_code=$rc" > work/audit/runner_exit.txt
-          echo "audit_runner exit code: $rc"
-          exit 0
-
-      - name: Build conservative routing repair plan
-        if: ${{ always() }}
-        shell: bash
-        run: |
-          set +e
-          python tools/altium-audit/routing_repair_plan.py \
-            --pcb "$(find work/project -type f -name '*.PcbDoc' | head -1)" \
-            --out work/audit/routing_repair_plan.json
-          rc=$?
-          echo "routing planner exit: $rc"
-          test -s work/audit/routing_repair_plan.json || printf '%s\n' '{"schema":"altium-routing-repair-plan.v1","status":"PLANNER_FAILED"}' > work/audit/routing_repair_plan.json
-
       - name: Execute audit repair verify retry contract
         if: ${{ always() }}
         shell: bash
         run: |
           set +e
-          PCB="$(find work/project -type f -name "*.PcbDoc" | head -1)"
+          PCB="$(find work/project -type f -name '*.PcbDoc' | head -1)"
           python tools/altium-audit/execution_contract.py \
             --out work/audit \
             --max-attempts 3 \
             --audit-cmd "python tools/altium-audit/audit_runner.py --root work/project --out work/audit --archive work/project.zip --source-sha256 $(cat work/source.sha256) --config altium-audit.config.json" \
             --plan-cmd "python tools/altium-audit/routing_repair_plan.py --pcb $PCB --out work/audit/routing_repair_plan.json" \
+            --authorize-cmd "python tools/altium-audit/routing_repair_authorize.py --pcb $PCB --plan work/audit/routing_repair_plan.json --findings work/audit/findings.json --probe work/audit/g4_probe.json" \
             --repair-cmd "python tools/altium-audit/routing_repair_apply.py --pcb $PCB --plan work/audit/routing_repair_plan.json --out work/audit/repaired.PcbDoc --receipt work/audit/repair_receipt.json"
           rc=$?
           printf '%s\n' "$rc" > work/audit/execution_contract_exit_code.txt
@@ -89,7 +60,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in summary.json netlist.json design.json pcb_probe.txt g4_probe.json findings.json report.md; do
+          for f in summary.json netlist.json design.json pcb_probe.txt g4_probe.json findings.json report.md routing_repair_plan.json execution_result.json execution_contract_exit_code.txt; do
             test -s "work/audit/$f"
           done
           python - <<'PY'
@@ -98,10 +69,11 @@ jobs:
           s=json.loads(Path("work/audit/summary.json").read_text())
           required={"G0_INTAKE","G1_PARSE","G2_COMPILE","G3_CONNECTIVITY","G4_PCB","G5_ELECTRICAL","G6_PHYSICAL","G6_PLACEMENT","G7_ROUTING","G7_FUNCTIONAL","G8_REPORT"}
           missing=required-set(s.get("gates",{}))
-          if missing:
-              raise SystemExit(f"missing gates: {sorted(missing)}")
-          print("audit status:",s.get("status"))
-          print("gates:",s.get("gates"))
+          if missing: raise SystemExit(f"missing gates: {sorted(missing)}")
+          e=json.loads(Path("work/audit/execution_result.json").read_text())
+          if e.get("status") not in ("PASS","BLOCKED","UNRESOLVED"): raise SystemExit("invalid execution terminal status")
+          print("AUDIT STATUS:",s.get("status"))
+          print("FINAL EXECUTION STATUS:",e.get("status"))
           PY
 
       - name: Upload audit artifacts
@@ -118,11 +90,9 @@ jobs:
             work/audit/findings.json
             work/audit/report.md
             work/audit/routing_repair_plan.json
-            work/audit/runner_exit.txt
-            work/audit/runner_exit_code.txt
+            work/audit/repair_receipt.json
             work/audit/execution_result.json
             work/audit/execution_contract_exit_code.txt
-            work/audit/repair_receipt.json
           if-no-files-found: error
 
       - name: Finalize audit status
@@ -132,21 +102,13 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          s=json.loads(Path("work/audit/summary.json").read_text())
-          status=s.get("status")
-          rc=int(Path("work/audit/runner_exit_code.txt").read_text().strip())
-          print("audit design status:", status)
-          print("audit runner exit:", rc)
-          if rc not in (0,1):
-              raise SystemExit(f"audit runner execution error: {rc}")
-          execution = json.loads(Path("work/audit/execution_result.json").read_text())
-          final_status = execution.get("status")
-          if final_status not in ("PASS","BLOCKED","UNRESOLVED"):
-              raise SystemExit(f"invalid final execution status: {final_status}")
-          print("FINAL DESIGN STATUS:", final_status)
+          e=json.loads(Path("work/audit/execution_result.json").read_text())
+          status=e.get("status")
+          print("FINAL DESIGN STATUS:",status)
+          if status=="UNRESOLVED": raise SystemExit("repair/retry budget exhausted without terminal PASS or safety BLOCK")
+          if status not in ("PASS","BLOCKED"): raise SystemExit(f"invalid terminal status: {status}")
           PY
 
-# trigger: audit-run
-# strict-evidence-engine v3-project-independent
-
-# execution-contract-runtime-trigger
+# strict-evidence-engine v4
+# independent-routing-authorization
+# execution-contract-runtime
