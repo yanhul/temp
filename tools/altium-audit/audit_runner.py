@@ -148,7 +148,12 @@ def main():
     unresolved = 0
     for pad in pcb_pads:
         ci, pin, ni = field(pad,"component_index"), field(pad,"designator","pad_designator","number"), field(pad,"net_index")
-        if ci is None or pin is None or ni is None:
+        # Board-level / component-less pads (e.g. mechanical or standalone pads)
+        # cannot correspond to a schematic terminal and must not poison SCH↔PCB
+        # terminal reconciliation.
+        if ci is None:
+            continue
+        if pin is None or ni is None:
             unresolved += 1
             continue
         ref = ref_by_idx.get(int(ci))
@@ -193,7 +198,7 @@ def main():
         except Exception:
             return None
     width_rule = next((r for r in enabled if str(getattr(r,"rule_kind","")).lower()=="width"),None)
-    minw = mil(getattr(width_rule,"min_width",None)) if width_rule else None
+    minw = mil(field(width_rule,"minimum_width","min_width")) if width_rule else None
     if minw is not None:
         bad=[]
         for i,t in enumerate(list(getattr(pcb,"tracks",[]) or [])):
@@ -253,7 +258,7 @@ def main():
     (out/"pcb_probe.txt").write_text(json.dumps({"counts":counts,"rules":len(rules),
         "pcb_attributes":sorted(x for x in dir(pcb) if not x.startswith("_"))},indent=2),encoding="utf-8")
     (out/"g4_probe.json").write_text(json.dumps({"rule_count":len(rules),"enabled_rule_count":len(enabled),
-        "width_rule_exposed":minw is not None,"counts":counts},indent=2),encoding="utf-8")
+        "width_rule_exposed":minw is not None,"width_rule_field":"minimum_width" if minw is not None else None,"counts":counts},indent=2),encoding="utf-8")
     report=["# Altium Audit Report","","**Overall:** "+status,"","## Gates"]
     report += [f"- **{k}**: {v}" for k,v in gates.items()]
     report += ["","## Findings"]
