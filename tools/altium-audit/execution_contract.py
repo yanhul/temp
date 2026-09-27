@@ -30,7 +30,7 @@ def main():
         ar=run(audit_cmd); history.append({"stage":"AUDIT","attempt":attempt,"returncode":ar.returncode})
         sp,fp=out/"summary.json",out/"findings.json"
         if not sp.exists() or not fp.exists(): save(out/"execution_result.json",{"status":"BLOCKED","reason":"audit evidence missing","history":history}); return 2
-        s,fs=load(sp),load(fp); bad=[f for f in fs.get("findings",[]) if f.get("status")=="FAIL" or f.get("severity")=="BLOCKER"]
+        s,fs=load(sp),load(fp); items=fs if isinstance(fs,list) else fs.get("findings",[]); bad=[f for f in items if f.get("status")=="FAIL" or f.get("severity")=="BLOCKER"]
         if s.get("status")=="PASS" and not bad: save(out/"execution_result.json",{"status":"PASS","attempts":attempt,"history":history}); return 0
         if attempt>=ns.max_attempts: save(out/"execution_result.json",{"status":"UNRESOLVED","attempts":attempt,"remaining_findings":bad,"history":history}); return 1
         pr=run(plan_cmd); history.append({"stage":"PLAN","attempt":attempt,"returncode":pr.returncode})
@@ -45,7 +45,7 @@ def main():
         shutil.copy2(dst,src)
         vr=run(audit_cmd); history.append({"stage":"VERIFY","attempt":attempt,"returncode":vr.returncode})
         if not (sp.exists() and fp.exists()): save(out/"execution_result.json",{"status":"BLOCKED","reason":"verification evidence missing","history":history}); return 2
-        s2,fs2=load(sp),load(fp); bad2=[f for f in fs2.get("findings",[]) if f.get("status")=="FAIL" or f.get("severity")=="BLOCKER"]
+        s2,fs2=load(sp),load(fp); items2=fs2 if isinstance(fs2,list) else fs2.get("findings",[]); bad2=[f for f in items2 if f.get("status")=="FAIL" or f.get("severity")=="BLOCKER"]
         history.append({"stage":"VERIFY_RESULT","attempt":attempt,"status":s2.get("status"),"remaining_findings":len(bad2)})
     save(out/"execution_result.json",{"status":"UNRESOLVED","history":history}); return 1
 if __name__=="__main__": raise SystemExit(main())
