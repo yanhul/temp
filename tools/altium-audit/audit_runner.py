@@ -439,6 +439,30 @@ def main():
         if pts:
             comp_boxes[ref]=(min(p[0] for p in pts),min(p[1] for p in pts),
                             max(p[2] for p in pts),max(p[3] for p in pts))
+        if ref not in comp_boxes:
+            # Fallback: extract the placed footprint geometry from the PcbDoc.
+            # This gives a footprint-local envelope that can be transformed by
+            # the component placement without requiring a separate PcbLib file.
+            try:
+                fp_lib=pcb.extract_footprint(getattr(comp,"footprint"))
+                fp=list(getattr(fp_lib,"footprints",[]) or [None])[0]
+                local=[]
+                for attr in ("pads","tracks","arcs","regions","component_bodies"):
+                    for obj in list(getattr(fp,attr,[]) or []):
+                        q=xy(obj)
+                        if q: local.append(q)
+                if local and p:
+                    try: rot=math.radians(float(getattr(comp,"rotation",0) or 0))
+                    except Exception: rot=0.0
+                    cr,sr=math.cos(rot),math.sin(rot)
+                    transformed=[]
+                    for lx,ly in local:
+                        tx=lx*cr-ly*sr+p[0]; ty=lx*sr+ly*cr+p[1]
+                        transformed.append((tx,ty))
+                    comp_boxes[ref]=(min(x for x,y in transformed),min(y for x,y in transformed),
+                                    max(x for x,y in transformed),max(y for x,y in transformed))
+            except Exception:
+                pass
 
     clearance_pairs=[]
     for i,a in enumerate(sorted(comp_boxes)):
@@ -488,6 +512,15 @@ def main():
             "Authoritative PCB unrouted/ratsnest collection is empty.","VERIFIED")
 
     routed_counts=route_net_counts(pcb)
+    pcb_net_names={str(field(n,"name","net_name","netname","uid")) for n in list(getattr(pcb,"nets",[]) or []) if field(n,"name","net_name","netname","uid") is not None}
+    unrouted_candidates=sorted(pcb_net_names-set(routed_counts))
+    if unrouted_candidates:
+        add(findings,"G7-NETS-WITHOUT-ROUTE-PRIMITIVE","MEDIUM","routing","WARN",
+            f"{len(unrouted_candidates)} PCB nets have no parsed track/arc/via/region primitive; these may be unrouted, pad-only, or plane-connected and require connectivity proof.",
+            "INFERRED",unrouted_candidates[:100])
+    else:
+        add(findings,"G7-NETS-WITHOUT-ROUTE-PRIMITIVE","INFO","routing","VERIFIED",
+            "Every named PCB net has at least one parsed routing/copper primitive.","VERIFIED")
     if routed_counts:
         add(findings,"G7-ROUTED-NET-INVENTORY","INFO","routing","VERIFIED",
             f"Routing primitives expose {len(routed_counts)} named nets; primitive counts are retained as route evidence.","VERIFIED")
