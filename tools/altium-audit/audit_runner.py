@@ -380,7 +380,9 @@ def main():
             for nn in list(getattr(pcb, "nets", []) or [])[:8]:
                 nname = field(nn, "name", "net_name", "netname", "uid")
                 try:
-                    raw_name = pcb.get_net_primitives(nname)\n                    raw_index = pcb.get_net_primitives(list(getattr(pcb, "nets", []) or []).index(nn))\n                    raw = {"by_name": raw_name, "by_index": raw_index}
+                    raw_name = pcb.get_net_primitives(nname)
+                    raw_index = pcb.get_net_primitives(list(getattr(pcb, "nets", []) or []).index(nn))
+                    raw = {"by_name": raw_name, "by_index": raw_index}
                     net_primitive_probe.append({"net": nname, "repr": repr(raw)[:2000]})
                 except Exception as exc:
                     net_primitive_probe.append({"net": nname, "error": repr(exc)})
