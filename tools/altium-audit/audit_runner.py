@@ -859,9 +859,7 @@ def main():
 def write_outputs(out, summary):
     out.mkdir(parents=True,exist_ok=True)
     (out/"summary.json").write_text(json.dumps(summary,indent=2),encoding="utf-8")
-    (out/"report.md").write_text("# Altium Audit Report
-
-"+json.dumps(summary,indent=2),encoding="utf-8")
+    (out/"report.md").write_text("# Altium Audit Report\n\n"+json.dumps(summary,indent=2),encoding="utf-8")
 
 if __name__ == "__main__":
     raise SystemExit(main())
