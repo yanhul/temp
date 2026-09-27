@@ -109,6 +109,21 @@ def main():
             ia=next((i for i,p in enumerate(nodes) if p==z[0]),None)
             ib=next((i for i,p in enumerate(nodes) if p==z[1]),None)
             if ia is not None and ib is not None: union(ia,ib)
+        def point_segment_distance(p,a,b):
+            dx,dy=b[0]-a[0],b[1]-a[1]
+            if dx==dy==0:return d(p,a)
+            t=max(0,min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/(dx*dx+dy*dy)))
+            q=(a[0]+t*dx,a[1]+t*dy)
+            return d(p,q)
+        for i,p in enumerate(nodes):
+            for obj in tracks+arcs:
+                z=ep(obj)
+                if not z or p==z[0] or p==z[1]: continue
+                if point_segment_distance(p,z[0],z[1])<=1.0:
+                    ia=next((j for j,x in enumerate(nodes) if x==z[0]),None)
+                    ib=next((j for j,x in enumerate(nodes) if x==z[1]),None)
+                    if ia is not None: union(i,ia)
+                    if ib is not None: union(i,ib)
         comps=defaultdict(list)
         for i in range(len(nodes)): comps[find(i)].append(i)
         if len(comps)<=1: continue
