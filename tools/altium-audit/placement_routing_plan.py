@@ -150,14 +150,18 @@ def main():
         except Exception:data=None
         if not isinstance(data,dict): unresolved.append(str(name)); continue
         node_count,cc=components_for_net(data)
-        if cc>1:
+        if cc>1 and str(name) in verified_topology_fail_nets:
             pads=data.get("pads",[]) or []
             routing.append({"net":str(name),"status":"TOPOLOGY_UNRESOLVED","graph_components":cc,"node_count":node_count,
                             "endpoints":[{"xy":xy(p),"designator":f(p,"designator","pad_designator","number")} for p in pads if xy(p) is not None],
-                            "placement_dependency":"REVIEW","candidate_topology":"NOT_SELECTED",
+                            "placement_dependency":"LOCKED","candidate_topology":"NOT_SELECTED",
                             "reason":"Disconnected copper is evidence only; no authoritative topology decision permits automatic bridging."})
+        elif cc>1:
+            routing.append({"net":str(name),"status":"OBSERVED_DISCONNECTED_UNCONFIRMED","graph_components":cc,"node_count":node_count,
+                            "placement_dependency":"REVIEW","candidate_topology":"NOT_SELECTED",
+                            "reason":"Geometry graph is disconnected but authoritative routing evidence did not classify it as a repairable failure."})
         else:routing.append({"net":str(name),"status":"CONNECTED","graph_components":cc,"node_count":node_count})
-    routing_status="UNKNOWN" if unresolved else ("INCOMPLETE" if any(x["status"]=="TOPOLOGY_UNRESOLVED" for x in routing) else "VERIFIED")
+    routing_status="UNKNOWN" if unresolved else ("INCOMPLETE" if any(x["status"]=="TOPOLOGY_UNRESOLVED" for x in routing) else ("UNKNOWN" if any(x["status"]=="OBSERVED_DISCONNECTED_UNCONFIRMED" for x in routing) else "VERIFIED"))
     result={"schema":"altium-placement-routing-plan.v3","mode":"PLAN_ONLY_NO_MUTATION",
             "status_semantics":{"VERIFIED":"authoritative evidence supports the claim","UNKNOWN":"evidence unavailable or fallback-only","INCOMPLETE":"known evidence exists but required closure is missing","BLOCKED":"policy prevents the next mutation stage"},
             "placement":{"status":placement_status,"components":placement,"checks":placement_checks,"lock":placement_lock},
