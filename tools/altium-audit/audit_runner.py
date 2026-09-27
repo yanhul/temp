@@ -29,20 +29,25 @@ def field(obj: Any, *keys: str):
     return None
 
 def as_name(obj: Any):
-    """Resolve a real reference designator from PCB or schematic objects."""
-    # Schematic components expose the authoritative reference as an
-    # AltiumSchDesignator child. Check this before generic/name fallbacks:
-    # AltiumSchComponent.name is the library/symbol name (e.g. Cap2), not RefDes.
-    for child in list(field(obj, "children") or []):
-        kind = type(child).__name__.lower()
-        name = str(field(child, "name") or "").strip().lower()
-        if "designator" in kind or name == "designator":
-            text = field(child, "text", "value")
-            if text is not None and str(text).strip():
-                return str(text).strip()
+    """Resolve the authoritative reference designator from a design object."""
+    # altium-monkey keeps schematic designators as AltiumSchDesignator
+    # parameter records. Some object projections also expose them via children.
+    # Search both before any generic fallback; component.name is only the
+    # library/symbol name (e.g. Cap2), not the reference designator.
+    seen = set()
+    for container_key in ("parameters", "children"):
+        for child in list(field(obj, container_key) or []):
+            if id(child) in seen:
+                continue
+            seen.add(id(child))
+            kind = type(child).__name__.lower()
+            name = str(field(child, "name") or "").strip().lower()
+            if "designator" in kind or name == "designator":
+                text = field(child, "text", "value")
+                if text is not None and str(text).strip():
+                    return str(text).strip()
 
-    # PCB components normally expose designator/refdes directly. Keep legacy
-    # fallbacks only after the authoritative schematic child lookup.
+    # PCB components normally expose designator/refdes directly.
     v = field(obj, "designator", "refdes", "reference", "id")
     if v is not None:
         return str(v)
