@@ -263,10 +263,50 @@ def main():
             f"Net {n.get('name')!r} contains multiple OUTPUT pins: {ids}.","VERIFIED",n.get("name"))
     if not single: add(findings,"G5-SINGLE-PIN-NETS","INFO","electrical","VERIFIED","No single-terminal compiled nets.","VERIFIED")
     if not outputs: add(findings,"G5-OUTPUT-CONFLICTS","INFO","electrical","VERIFIED","No definite OUTPUT↔OUTPUT conflict found from pin semantics.","VERIFIED")
+    # G5 structural evidence: classify supply nets without pretending PASSIVE pin
+    # semantics prove source capability.
+    supply_names = {"VBUS","24V","5V","5VP","3.3V","5V_RS232","5V_RS485","GND","GND_RS232","GND_RS485"}
+    supply_evidence = []
+    for n in nl_nets:
+        name = str(n.get("name",""))
+        if name in supply_names:
+            ts = n.get("terminals",[]) or []
+            caps = {
+                "terminals": len(ts),
+                "power_pins": sum(str(t.get("pin_type","")).upper()=="POWER" for t in ts),
+                "capacitors": sum(str(t.get("designator","")).upper().startswith("C") for t in ts),
+                "regulator_like": sum(str(t.get("designator","")).upper().startswith(("U","J")) for t in ts),
+            }
+            supply_evidence.append({"net":name, **caps})
+            if caps["capacitors"] == 0:
+                add(findings,f"G5-SUPPLY-DECOUPLING-{name}","INFO","electrical","UNKNOWN",
+                    f"Supply net {name!r} has no capacitor terminal in the compiled netlist; whether local decoupling is required cannot be inferred generically.","FACT",name)
+            else:
+                add(findings,f"G5-SUPPLY-DECOUPLING-{name}","INFO","electrical","VERIFIED",
+                    f"Supply net {name!r} has {caps['capacitors']} capacitor terminal(s) in the compiled netlist.","VERIFIED",name)
+    add(findings,"G5-SUPPLY-STRUCTURE","INFO","electrical","VERIFIED",
+        f"Structural supply inventory covers {len(supply_evidence)} named supply/ground nets; pin electrical semantics are retained without assuming PASSIVE means source.","VERIFIED")
     add(findings,"G5-INTENT-COVERAGE","BLOCKER","electrical","UNKNOWN",
-        "Protection, level compatibility, biasing, decoupling and project-specific power intent are not derivable from generic connectivity alone.","FACT")
+        "Protection, level compatibility, biasing, regulator operating limits and project-specific power intent are not derivable from generic connectivity alone.","FACT")
+    # G6 structural geometry: board outline and primitive bounds are authoritative
+    # parser facts, but do not substitute for a full Altium DRC engine.
+    outline = getattr(getattr(pcb,"board",None),"outline",None)
+    vertices = list(getattr(outline,"vertices",[]) or []) if outline else []
+    if vertices:
+        bb = getattr(outline,"bounding_box",None)
+        add(findings,"G6-BOARD-OUTLINE","INFO","physical","VERIFIED",
+            f"Parsed board outline with {len(vertices)} vertices; bounding_box={bb!r}.","VERIFIED")
+        add(findings,"G6-BOARD-OUTLINE-CLOSED","INFO","physical",
+            "VERIFIED" if (len(vertices) >= 3 and
+                abs(float(vertices[0].x_mils)-float(vertices[-1].x_mils)) < 1.0 and
+                abs(float(vertices[0].y_mils)-float(vertices[-1].y_mils)) < 1.0)
+            else "UNKNOWN",
+            "Outline endpoint closure is checked from authoritative board-outline vertices.","VERIFIED")
+    else:
+        add(findings,"G6-BOARD-OUTLINE","BLOCKER","physical","UNKNOWN",
+            "Authoritative PCB parser exposed no board-outline vertices.","FACT")
     add(findings,"G6-PHYSICAL","BLOCKER","physical","UNKNOWN",
-        "Full DRC/mechanical geometry equivalence is not implemented; unsupported checks remain UNKNOWN.","FACT")
+        "Full DRC/mechanical geometry equivalence is not implemented; structural outline evidence does not replace Altium's full DRC engine.","FACT")
     add(findings,"G7-FUNCTIONAL","BLOCKER","functional","UNKNOWN",
         "Functional correctness requires explicit design intent and cannot be inferred from parser structure alone.","FACT")
 
