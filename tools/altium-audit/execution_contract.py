@@ -26,6 +26,9 @@ def main():
     out=pathlib.Path(ns.out); out.mkdir(parents=True,exist_ok=True); history=[]
     for attempt in range(ns.max_attempts+1):
         ar=run(audit_cmd); history.append({"stage":"AUDIT","attempt":attempt,"returncode":ar.returncode})
+        if ar.returncode != 0:
+            print("AUDIT STDERR:", ar.stderr[-12000:])
+            print("AUDIT STDOUT:", ar.stdout[-4000:])
         sp,fp=out/"summary.json",out/"findings.json"
         if not sp.exists() or not fp.exists():
             save(out/"execution_result.json",{"status":"BLOCKED","reason":"audit evidence missing","history":history});return 2
