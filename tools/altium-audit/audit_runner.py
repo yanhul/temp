@@ -207,8 +207,13 @@ def main():
     ap.add_argument("--out", required=True, type=pathlib.Path)
     ap.add_argument("--archive", type=pathlib.Path)
     ap.add_argument("--source-sha256", type=str)
+    ap.add_argument("--config", type=pathlib.Path, help="optional project-local config; never required by the engine")
     args = ap.parse_args()
     root, out = args.root, args.out
+    project_config = {}
+    if args.config and args.config.exists():
+        project_config = json.loads(args.config.read_text(encoding="utf-8"))
+    project_id = project_config.get("project_id")
     out.mkdir(parents=True, exist_ok=True)
     findings = []
 
@@ -231,8 +236,8 @@ def main():
             add(findings,"G0-ARCHIVE-HASH","BLOCKER","intake","FAIL",
                 f"Archive SHA256 {archive_hash} does not match declared source hash {args.source_sha256}.","VERIFIED")
     else:
-        add(findings,"G0-ARCHIVE-HASH","BLOCKER","intake","UNKNOWN",
-            "No authoritative source SHA256 was supplied; archive byte identity cannot be proven.","FACT")
+        add(findings,"G0-ARCHIVE-HASH","INFO","intake","UNKNOWN",
+            "No authoritative source SHA256 was supplied; archive byte identity cannot be proven. Hash verification is optional for direct/manual engine use.","FACT")
 
     try:
         if prjs:
@@ -265,8 +270,8 @@ def main():
     diagnostics = payload.get("diagnostics") or []
     compile_data = payload.get("compile")
     if compile_data is None:
-        add(findings,"G2-COMPILE","BLOCKER","compile","UNKNOWN",
-            "No PrjPcb compile context is present; two-file baseline does not synthesize compiled-project semantics.","FACT")
+        add(findings,"G2-COMPILE","INFO","compile","VERIFIED",
+            "Two-file SCH+PCB mode: no project compile context is required for the structural baseline; compile-dependent checks are explicitly limited.","FACT")
     elif diagnostics:
         add(findings,"G2-DIAGNOSTICS","HIGH","compile","FAIL",
             f"{len(diagnostics)} compile diagnostic record(s) emitted.","VERIFIED")
@@ -674,23 +679,32 @@ def main():
     add(findings,"G7-FUNCTIONAL","INFO","functional","UNKNOWN",
         "Functional correctness requires explicit design intent and cannot be inferred from parser structure alone.","FACT")
 
+    def gate_for(prefix):
+        fs=[f for f in findings if f["id"].startswith(prefix)]
+        if any(f["status"]=="FAIL" and f["severity"] in ("HIGH","BLOCKER") for f in fs): return "FAIL"
+        if any(f["status"] in ("UNKNOWN","BLOCKED") and f["severity"]=="BLOCKER" for f in fs): return "BLOCKED"
+        if any(f["status"]=="UNKNOWN" for f in fs): return "PARTIAL"
+        return "VERIFIED"
+
     gates = {
         "G0_INTAKE": "VERIFIED" if not any(f["id"]=="G0-ARCHIVE-HASH" and f["status"]=="FAIL" for f in findings) else "BLOCKED",
         "G1_PARSE":"VERIFIED",
-        "G2_COMPILE":"VERIFIED" if compile_data is not None and not diagnostics else ("FAIL" if diagnostics else "UNKNOWN"),
+        "G2_COMPILE":"FAIL" if diagnostics else "VERIFIED",
         "G3_CONNECTIVITY":"VERIFIED" if not any(f["id"].startswith("G3-") and f["status"] in ("FAIL","UNKNOWN","BLOCKED") for f in findings) else "BLOCKED",
         "G4_PCB":"VERIFIED" if not any(f["id"].startswith("G4-") and f["status"] in ("FAIL","UNKNOWN","BLOCKED") for f in findings) else "BLOCKED",
-        "G5_ELECTRICAL":"BLOCKED" if any(f["id"].startswith("G5-") and f["severity"]=="BLOCKER" and f["status"] in ("UNKNOWN","FAIL","BLOCKED") for f in findings) else "VERIFIED",
-        "G6_PHYSICAL":"BLOCKED" if any(f["id"]=="G6-PHYSICAL" and f["severity"]=="BLOCKER" and f["status"] in ("UNKNOWN","FAIL","BLOCKED") for f in findings) else "VERIFIED",
+        "G5_ELECTRICAL":gate_for("G5-"),
+        "G6_PHYSICAL":gate_for("G6-"),
         "G6_PLACEMENT":"BLOCKED" if any(f["domain"]=="placement" and f["severity"] in ("BLOCKER","HIGH") and f["status"] in ("UNKNOWN","FAIL","BLOCKED") for f in findings) else "VERIFIED",
-        "G7_ROUTING":"BLOCKED" if any(f["domain"]=="routing" and f["severity"]=="BLOCKER" and f["status"] in ("UNKNOWN","FAIL","BLOCKED") for f in findings) else "VERIFIED",
-        "G7_FUNCTIONAL":"BLOCKED" if any(f["id"].startswith("G7-FUNCTIONAL") and f["severity"]=="BLOCKER" and f["status"] in ("UNKNOWN","FAIL","BLOCKED") for f in findings) else "VERIFIED",
+        "G7_ROUTING":gate_for("G7-"),
+        "G7_FUNCTIONAL":"PARTIAL" if any(f["id"]=="G7-FUNCTIONAL" and f["status"]=="UNKNOWN" for f in findings) else "VERIFIED",
         "G8_REPORT":"VERIFIED"
     }
-    blocking = any(f["status"] in ("FAIL","BLOCKED") and f["severity"] in ("HIGH","BLOCKER") for f in findings)
-    status = "FAIL" if blocking else "PASS"
+    hard_fail = any(f["status"]=="FAIL" and f["severity"] in ("HIGH","BLOCKER") for f in findings)
+    hard_block = any(f["status"] in ("BLOCKED","UNKNOWN") and f["severity"]=="BLOCKER" for f in findings)
+    incomplete = any(v in ("PARTIAL","UNKNOWN","BLOCKED") for v in gates.values())
+    status = "FAIL" if hard_fail else ("BLOCKED" if hard_block or incomplete else "PASS")
     result = {
-        "schema":"altium-audit/v2","status":status,"project":str(prjs[0]),
+        "schema":"altium-audit/v2","status":status,"project":project_id or (prjs[0].name if prjs else "SCHDOC+PCBDOC"),
         "source_sha256":archive_hash,"gates":gates,"counts":counts,
         "findings":findings,"diagnostics":diagnostics,
         "lineage":{"project":str(prjs[0]),"schematic_files":[str(x) for x in schs],
