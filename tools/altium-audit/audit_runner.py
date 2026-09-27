@@ -126,6 +126,9 @@ def segment_endpoints(obj):
         if a is not None and b is not None: return a,b
     return None
 
+def _snap_point(p, tolerance_mils=1.0):
+    return (round(p[0] / tolerance_mils), round(p[1] / tolerance_mils))
+
 def topology_components(pcb):
     # Conservative endpoint graph: pads/vias/tracks only. Regions are not
     # treated as point-to-point proof because zone fill semantics are separate.
