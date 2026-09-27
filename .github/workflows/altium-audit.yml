@@ -29,8 +29,7 @@ jobs:
         shell: bash
         run: |
           cat > work/audit.py <<'PY'
-          import json, pathlib, hashlib
-          from collections import Counter
+          import json, pathlib
           from altium_monkey import AltiumDesign
 
           root=pathlib.Path("work/project")
@@ -47,18 +46,6 @@ jobs:
           pathlib.Path("work/design.json").write_text(json.dumps(payload,indent=2,ensure_ascii=False),encoding="utf-8")
           pathlib.Path("work/netlist.json").write_text(netlist.to_json_text(),encoding="utf-8")
 
-          def names(obj):
-              if isinstance(obj,dict):
-                  for k in ("designator","refdes","reference","name","component","id"):
-                      if obj.get(k) is not None: return str(obj[k])
-              for k in ("designator","refdes","reference","name","component","id"):
-                  if hasattr(obj,k):
-                      try:
-                          v=getattr(obj,k)
-                          if v is not None: return str(v)
-                      except Exception: pass
-              return None
-
           def field(obj,*keys):
               if isinstance(obj,dict):
                   for k in keys:
@@ -71,36 +58,36 @@ jobs:
                       except Exception: pass
               return None
 
+          def names(obj):
+              v=field(obj,"designator","refdes","reference","name","component","id")
+              return str(v) if v is not None else None
+
           sch_components=payload.get("components",[]) or []
           sch_refs=[names(x) for x in sch_components if names(x)]
           pcb_components=list(getattr(pcb,"components",[]) or [])
           pcb_refs=[names(x) for x in pcb_components if names(x)]
+          pcb_pads=list(getattr(pcb,"pads",[]) or [])
+          pcb_nets=list(getattr(pcb,"nets",[]) or [])
 
           findings=[]
           def add(fid,severity,domain,status,evidence,confidence="VERIFIED",object_id=None):
               findings.append({"id":fid,"severity":severity,"domain":domain,"status":status,
                                "object":object_id,"evidence":evidence,"confidence":confidence})
 
-          # G0: reconstruction is proven by successful unzip; source archive identity is UNKNOWN without an external SHA256.
           add("G0-ARCHIVE-HASH","BLOCKER","intake","UNKNOWN",
-              "Archive reconstructed and opened, but no authoritative source SHA256 is present to prove byte identity.",
-              "FACT")
+              "Archive reconstructed and opened, but no authoritative source SHA256 is present to prove byte identity.","FACT")
 
-          # G1/G2: parser success is distinct from clean compile.
           diagnostics=payload.get("diagnostics") or []
           compile_data=payload.get("compile")
           if compile_data is None:
               add("G2-COMPILE","BLOCKER","compile","UNKNOWN","No compile metadata emitted by parser.","FACT")
           elif diagnostics:
               add("G2-DIAGNOSTICS","HIGH","compile","FAIL",
-                  f"Parser emitted {len(diagnostics)} diagnostic record(s); clean compile cannot be claimed.",
-                  "VERIFIED")
+                  f"Parser emitted {len(diagnostics)} diagnostic record(s); clean compile cannot be claimed.","VERIFIED")
           else:
               add("G2-COMPILE","INFO","compile","VERIFIED",
-                  "Compile metadata is present and diagnostics collection is empty.",
-                  "VERIFIED")
+                  "Compile metadata is present and diagnostics collection is empty.","VERIFIED")
 
-          # G3: real refdes reconciliation.
           s=set(sch_refs); p=set(pcb_refs)
           for ref in sorted(s-p):
               add("G3-SCH-ONLY-"+ref,"HIGH","connectivity","FAIL",
@@ -115,6 +102,121 @@ jobs:
               add("G3-REFDES","BLOCKER","connectivity","FAIL",
                   f"Reference mismatch: {len(s-p)} schematic-only, {len(p-s)} PCB-only.","VERIFIED")
 
-          # G3 net/pad evidence where public typed records expose net identity.
-          pcb_pads=list(getattr(pcb,"pads",[]) or [])
+          # G3 authoritative join:
+          # schematic netlist terminals = (designator,pin)->net uid/name;
+          # PCB pads = (component_index, pad designator)->net_index->PCB net name.
+          try:
+              nl=json.loads(netlist.to_json_text())
+              nl_nets=nl.get("nets",[]) or []
+              sch_pin_to_net={}
+              for n in nl_nets:
+                  net_name=field(n,"name","uid")
+                  for t in (field(n,"terminals") or []):
+                      ref=field(t,"designator","refdes","reference")
+                      pin=field(t,"pin","pin_designator","number")
+                      if ref is not None and pin is not None:
+                          sch_pin_to_net[(str(ref),str(pin))]=str(net_name) if net_name is not None else None
 
+              pcb_ref_by_index={}
+              for i,comp in enumerate(pcb_components):
+                  ref=names(comp)
+                  if ref is not None: pcb_ref_by_index[i]=ref
+
+              pcb_net_by_index={}
+              for i,n in enumerate(pcb_nets):
+                  nname=field(n,"name","net_name","netname","uid")
+                  if nname is not None: pcb_net_by_index[i]=str(nname)
+
+              pcb_pin_to_net={}
+              unresolved_pads=0
+              for pad in pcb_pads:
+                  ci=field(pad,"component_index")
+                  pin=field(pad,"designator","pad_designator","number")
+                  ni=field(pad,"net_index")
+                  if ci is None or pin is None or ni is None:
+                      unresolved_pads+=1
+                      continue
+                  ref=pcb_ref_by_index.get(int(ci))
+                  net_name=pcb_net_by_index.get(int(ni))
+                  if ref is not None:
+                      pcb_pin_to_net[(str(ref),str(pin))]=net_name
+
+              common=set(sch_pin_to_net) & set(pcb_pin_to_net)
+              mismatches=[]
+              for key in sorted(common):
+                  a=sch_pin_to_net[key]; b=pcb_pin_to_net[key]
+                  if a is not None and b is not None and a.strip().upper()!=b.strip().upper():
+                      mismatches.append((key,a,b))
+
+              missing_pcb=sorted(set(sch_pin_to_net)-set(pcb_pin_to_net))
+              extra_pcb=sorted(set(pcb_pin_to_net)-set(sch_pin_to_net))
+              if mismatches:
+                  for (ref,pin),a,b in mismatches[:200]:
+                      add(f"G3-PIN-NET-{ref}-{pin}","HIGH","connectivity","FAIL",
+                          f"Schematic terminal net={a!r}, PCB pad net={b!r}.","VERIFIED",f"{ref}.{pin}")
+              if missing_pcb:
+                  add("G3-PIN-MISSING-ON-PCB","BLOCKER","connectivity","UNKNOWN",
+                      f"{len(missing_pcb)} schematic terminal(s) had no normalized PCB pad counterpart.","FACT")
+              if extra_pcb:
+                  add("G3-PAD-NOT-IN-SCH","HIGH","connectivity","FAIL",
+                      f"{len(extra_pcb)} PCB pad terminal(s) had no schematic terminal counterpart.","VERIFIED")
+              if not mismatches and not missing_pcb and not extra_pcb and common:
+                  add("G3-PIN-NET","INFO","connectivity","VERIFIED",
+                      f"Full terminal join verified for {len(common)} SCH terminal ↔ PCB pad pairs.","VERIFIED")
+              elif not common:
+                  add("G3-PIN-NET","BLOCKER","connectivity","UNKNOWN",
+                      "Parser did not expose enough normalized terminal/pad identity to perform the authoritative join.","FACT")
+          except Exception as exc:
+              add("G3-PIN-NET","BLOCKER","connectivity","UNKNOWN",
+                  f"Authoritative terminal/pad join could not be evaluated: {type(exc).__name__}: {exc}","FACT")
+
+          pcb_counts={}
+          for a in ("components","pads","vias","tracks","arcs","fills","regions","texts","nets"):
+              try: pcb_counts[a]=len(getattr(pcb,a))
+              except Exception: pcb_counts[a]=None
+          add("G4-PCB-STRUCTURE","BLOCKER","pcb","UNKNOWN",
+              "PCB primitives are parsed, but primitive presence/counts do not prove DRC/clearance/routing correctness.","FACT")
+          add("G5-ELECTRICAL","BLOCKER","electrical","UNKNOWN",
+              "No independent electrical-intent rules are encoded; parser output alone cannot establish power, pin-type, protection, or decoupling correctness.","FACT")
+          add("G6-PHYSICAL","BLOCKER","physical","UNKNOWN",
+              "No independent geometry/DRC rule evaluation is encoded in the audit runner.","FACT")
+          add("G7-FUNCTIONAL","BLOCKER","functional","UNKNOWN",
+              "Functional intent is not encoded sufficiently to establish design correctness from file structure alone.","FACT")
+
+          summary={
+            "status":"BLOCKED" if any(x["severity"]=="BLOCKER" and x["status"] in ("FAIL","UNKNOWN") for x in findings) else "PASS",
+            "schema":payload.get("schema"),"generator":payload.get("generator"),"project":payload.get("project"),
+            "gates":{
+              "G0_INTAKE":"VERIFIED","G1_PARSE":"VERIFIED",
+              "G2_COMPILE":"VERIFIED" if compile_data is not None and not diagnostics else ("FAIL" if diagnostics else "UNKNOWN"),
+              "G3_CONNECTIVITY":"VERIFIED" if not any(x["id"].startswith("G3-") and x["status"] in ("FAIL","UNKNOWN") for x in findings) else "BLOCKED",
+              "G4_PCB":"BLOCKED","G5_ELECTRICAL":"BLOCKED","G6_PHYSICAL":"BLOCKED","G7_FUNCTIONAL":"BLOCKED","G8_REPORT":"VERIFIED"},
+            "counts":{"sheets":len(payload.get("sheets",[])),"components":len(sch_components),"nets":len(payload.get("nets",[]) or []),
+                      "pcb_components":len(pcb_components),"pcb_pads":len(pcb_pads),"pcb":pcb_counts},
+            "diagnostics":diagnostics,"compile":compile_data,"findings":findings}
+          pathlib.Path("work/summary.json").write_text(json.dumps(summary,indent=2,ensure_ascii=False),encoding="utf-8")
+          pathlib.Path("work/findings.json").write_text(json.dumps(findings,indent=2,ensure_ascii=False),encoding="utf-8")
+          pathlib.Path("work/pcb_probe.txt").write_text(
+              "counts="+repr(pcb_counts)+"\nattrs="+repr(sorted(a for a in dir(pcb) if not a.startswith("_")))+"\n",
+              encoding="utf-8")
+          report=["# Altium Audit Report","","**Overall:** "+summary["status"],"","## Gate status"]
+          report += [f"- **{k}**: {v}" for k,v in summary["gates"].items()]
+          report += ["","## Findings"]
+          for f in findings:
+              report += [f"### {f['id']} — {f['severity']} / {f['status']}",f"- Domain: {f['domain']}",f"- Evidence: {f['evidence']}",f"- Confidence: {f['confidence']}",""]
+          pathlib.Path("work/report.md").write_text("\n".join(report),encoding="utf-8")
+          print(json.dumps(summary,indent=2,ensure_ascii=False))
+          PY
+          python work/audit.py
+      - name: Upload audit artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: altium-audit-report
+          path: |
+            work/summary.json
+            work/design.json
+            work/netlist.json
+            work/pcb_probe.txt
+            work/findings.json
+            work/report.md
+          if-no-files-found: error
