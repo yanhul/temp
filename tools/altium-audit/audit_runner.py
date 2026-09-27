@@ -130,9 +130,79 @@ def _snap_point(p, tolerance_mils=1.0):
     return (round(p[0] / tolerance_mils), round(p[1] / tolerance_mils))
 
 def topology_components(pcb):
-    # Conservative endpoint graph: pads/vias/tracks only. Regions are not
-    # treated as point-to-point proof because zone fill semantics are separate.
+    """Build a conservative per-net copper graph from parser-owned primitives.
+    Prefer get_net_primitives(index), because its net-local primitive join is
+    authoritative and avoids relying on global primitive net-index conventions.
+    """
     nets=list(getattr(pcb,"nets",[]) or [])
+    result={}
+    def graph_for(name, data):
+        pads=list(data.get("pads",[]) or [])
+        vias=list(data.get("vias",[]) or [])
+        tracks=list(data.get("tracks",[]) or [])
+        arcs=list(data.get("arcs",[]) or [])
+        regions=list(data.get("regions",[]) or [])
+        fills=list(data.get("fills",[]) or [])
+        nodes=[]
+        for p in pads:
+            q=xy(p)
+            if q is not None: nodes.append(("pad",q))
+        for v in vias:
+            q=xy(v)
+            if q is not None: nodes.append(("via",q))
+        for obj in tracks:
+            ep=segment_endpoints(obj)
+            if ep is not None:
+                nodes.extend((("route",ep[0]),("route",ep[1])))
+        for obj in arcs:
+            ep=segment_endpoints(obj)
+            if ep is not None:
+                nodes.extend((("route",ep[0]),("route",ep[1])))
+        if len(nodes)<2:
+            return None
+        parent=list(range(len(nodes)))
+        def find(i):
+            while parent[i]!=i:
+                parent[i]=parent[parent[i]]
+                i=parent[i]
+            return i
+        def union(i,j):
+            x,y=find(i),find(j)
+            if x!=y: parent[y]=x
+        # PCB parser coordinates are floating-point mils. One mil is a
+        # conservative join tolerance for coincident endpoints.
+        snapped={}
+        for i,(_,p) in enumerate(nodes):
+            snapped.setdefault(_snap_point(p,1.0),[]).append(i)
+        for ids in snapped.values():
+            for j in ids[1:]:
+                union(ids[0],j)
+        return {
+            "terminal_nodes":len([x for x in nodes if x[0]=="pad"]),
+            "graph_components":len({find(i) for i in range(len(nodes))}),
+            "route_segments":len(tracks)+len(arcs),
+            "vias":len(vias),
+            "has_copper_area":bool(regions or fills or data.get("polygons")),
+        }
+
+    api=getattr(pcb,"get_net_primitives",None)
+    if callable(api):
+        for idx,n in enumerate(nets):
+            name=field(n,"name","net_name","netname","uid")
+            if name is None:
+                continue
+            try:
+                data=api(idx)
+            except Exception:
+                data=None
+            if isinstance(data,dict):
+                info=graph_for(str(name),data)
+                if info is not None:
+                    result[str(name)]=info
+        if result:
+            return result
+
+    # Fallback for parser versions without the per-net primitive API.
     net_by_idx={i: field(n,"name","net_name","netname","uid") for i,n in enumerate(nets)}
     buckets={}
     def bucket(name):
@@ -151,19 +221,14 @@ def topology_components(pcb):
         p=xy(via)
         if name is not None and p is not None: bucket(name)["vias"].append(p)
     for track in list(getattr(pcb,"tracks",[]) or []):
-        name=net_name(track,net_by_idx); ep=segment_endpoints(track)
+        name=net_name(track,net_by_idx)
+        ep=segment_endpoints(track)
         if name is not None and ep is not None: bucket(name)["segments"].append(ep)
-    # Keep plane/fill evidence net-scoped. A global "regions exist" flag is
-    # insufficient because unrelated copper pours must not excuse a disconnected
-    # signal net.
     copper_area_nets=set()
     for attr in ("regions","fills"):
         for area in list(getattr(pcb,attr,[]) or []):
-            n=net_name(area, net_by_idx)
-            if n is not None:
-                copper_area_nets.add(str(n))
-
-    result={}
+            n=net_name(area,net_by_idx)
+            if n is not None: copper_area_nets.add(str(n))
     for name,d in buckets.items():
         nodes=[("pad",p) for p in d["pads"]]+[("via",p) for p in d["vias"]]
         for a,b in d["segments"]: nodes.extend((("route",a),("route",b)))
@@ -171,20 +236,23 @@ def topology_components(pcb):
         parent=list(range(len(nodes)))
         def find(i):
             while parent[i]!=i:
-                parent[i]=parent[parent[i]]; i=parent[i]
+                parent[i]=parent[parent[i]]
+                i=parent[i]
             return i
         def union(i,j):
-            a,b=find(i),find(j)
-            if a!=b: parent[b]=a
-        for i in range(len(nodes)):
-            for j in range(i+1,len(nodes)):
-                if distance(nodes[i][1],nodes[j][1])<=1.0: union(i,j)
+            x,y=find(i),find(j)
+            if x!=y: parent[y]=x
+        snapped={}
+        for i,(_,p) in enumerate(nodes):
+            snapped.setdefault(_snap_point(p,1.0),[]).append(i)
+        for ids in snapped.values():
+            for j in ids[1:]: union(ids[0],j)
         result[name]={
             "terminal_nodes":len(d["pads"]),
             "graph_components":len({find(i) for i in range(len(nodes))}),
             "route_segments":len(d["segments"]),
             "vias":len(d["vias"]),
-            "has_copper_area": name in copper_area_nets,
+            "has_copper_area":name in copper_area_nets,
         }
     return result
 
