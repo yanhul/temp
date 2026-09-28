@@ -94,7 +94,7 @@ def main():
         if prj and not fallback: shutil.copy2(project_root/prj.name,vrroot/prj.name)
         vo=ad/"audit-verify"; vrc,final=audit(vrroot,vo,a.config)
         vp=ad/"placement-routing-verify.json"; prc=run([HERE/"placement_routing_plan.py","--pcb",repaired,"--out",vp,"--findings",vo/"findings.json"]); vpdata=json.loads(vp.read_text()) if vp.exists() else {}
-        vq=ad/"placement-routing-quality.json"; vqargs=[QUALITY,"--pcb",repaired,"--out",vq]; vqrc=run(vqargs); vqdata=json.loads(vq.read_text()) if vq.exists() else {"optimization_status":"UNKNOWN"}
+        vq=ad/"placement-routing-quality.json"; vqargs=[QUALITY,"--pcb",repaired,"--out",vq]; vqargs += ["--constraints",str(constraints)] if constraints.exists() else []; vqrc=run(vqargs); vqdata=json.loads(vq.read_text()) if vq.exists() else {"optimization_status":"UNKNOWN"}
         history.append({"attempt":attempt,"stage":"VERIFY","returncode":vrc,"planner_returncode":prc,"design_status":vpdata.get("design_status"),"status":final.get("status") if final else None})
         if final is not None:
             final["repair"]=rec; final["repair_history"]=history; final["planning"]=vpdata; final["quality"]=vqdata
