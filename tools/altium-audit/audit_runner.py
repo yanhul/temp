@@ -829,7 +829,12 @@ def main():
         "G5_ELECTRICAL":gate_for("G5-"),
         "G6_PHYSICAL":gate_for("G6-"),
         "G6_PLACEMENT":"BLOCKED" if any(f["domain"]=="placement" and f["severity"] in ("BLOCKER","HIGH") and f["status"] in ("UNKNOWN","FAIL","BLOCKED") for f in findings) else "VERIFIED",
-        "G7_ROUTING":gate_for("G7-"),
+        "G7_ROUTING": (
+            "FAIL" if any(f["domain"]=="routing" and f["status"]=="FAIL" and f["severity"] in ("HIGH","BLOCKER") for f in findings)
+            else "BLOCKED" if any(f["domain"]=="routing" and f["status"] in ("UNKNOWN","BLOCKED") and f["severity"]=="BLOCKER" for f in findings)
+            else "PARTIAL" if any(f["domain"]=="routing" and f["status"]=="UNKNOWN" for f in findings)
+            else "VERIFIED"
+        ),
         "G7_FUNCTIONAL":"PARTIAL" if any(f["id"]=="G7-FUNCTIONAL" and f["status"]=="UNKNOWN" for f in findings) else "VERIFIED",
         "G8_REPORT":"VERIFIED"
     }
