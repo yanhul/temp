@@ -1,0 +1,14 @@
+name: routing-closure-v4-followup
+
+on:
+  workflow_run:
+    workflows: ["altium-audit-kit-e2e"]
+    types: [completed]
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -m pip install -r tools/altium-audit/requirements.txt
+      - run: python tools/altium-audit/audit_kit_v4.py --input audit-input --output work-v4/kit --repair --max-retries 3
