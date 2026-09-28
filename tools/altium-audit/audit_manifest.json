@@ -47,5 +47,34 @@
   ],
   "required_project_config": "altium-audit.config.json",
   "workflow_template": "tools/altium-audit/workflow-template.yml",
-  "runbook": "tools/altium-audit/REUSE_RUNBOOK.md"
+  "runbook": "tools/altium-audit/REUSE_RUNBOOK.md",
+  "industrial_rule_authority": {
+    "required": true,
+    "module": "industrial_rules.py",
+    "normative_baseline": [
+      "IPC-2221C",
+      "IPC-2222",
+      "IPC-7352",
+      "IPC-2152",
+      "IPC-6012F",
+      "IPC-A-610J",
+      "IPC-J-STD-001J"
+    ],
+    "numeric_defaults": false,
+    "missing_authority_status": "BLOCKED",
+    "placement_rule_domains": [
+      "component_clearance",
+      "board_edge_clearance",
+      "courtyard",
+      "keepout",
+      "assembly_access"
+    ],
+    "routing_rule_domains": [
+      "trace_width",
+      "trace_clearance",
+      "via_rules",
+      "layer_stack",
+      "current_capacity"
+    ]
+  }
 }
