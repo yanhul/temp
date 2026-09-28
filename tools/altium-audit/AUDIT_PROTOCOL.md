@@ -54,3 +54,33 @@ Clean-room reuse is proven only when a different input directory can be supplied
 
 ## 9. Evidence limits
 Two files can verify parser-exposed geometry, connectivity and routing facts. They do not by themselves prove complete Altium DRC equivalence, full 3D mechanical collision, SI/timing, or undocumented project intent.
+
+## 10. Strict industrial placement/routing gate
+
+The kit uses an explicit industrial-rule authority layer before placement lock or routing closure. The baseline references are IPC-2221C/IPC-2222 for board design, IPC-7352 for land-pattern/mounting guidance, IPC-2152 for current-carrying capacity, IPC-6012F for rigid-board fabrication performance, and IPC-A-610J/J-STD-001J for assembly acceptability. These are references, not invented numeric defaults. IPC identifies IPC-7352 as the current land-pattern guideline and notes that company/board-technology adjustments may be required.
+
+The project/fabricator/assembly authority must provide each applicable placement/routing rule as either:
+- APPLICABLE with an authoritative value/values and evidence; or
+- NOT_APPLICABLE with explicit evidence.
+
+Required placement rule domains:
+- component clearance
+- board-edge clearance
+- courtyard
+- keepout
+- assembly access
+
+Required routing rule domains:
+- trace width
+- trace clearance
+- via rules
+- layer stack
+- current capacity
+
+Missing or invalid authority is BLOCKED; the engine must not invent a number from a generic IPC reference.
+
+Placement LOCK additionally requires authoritative component position, board bounds, and zero parsed component-envelope overlap.
+
+Routing VERIFIED requires the industrial-rule authority gate plus closed parsed topology. Full DRC, SI/timing, impedance, return-path and other design-specific requirements remain separate gates unless their authoritative evidence and enforcement are implemented.
+
+A parser-success or geometrically connected board is therefore never sufficient for an industrial PASS.
