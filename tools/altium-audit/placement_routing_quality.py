@@ -63,6 +63,26 @@ def component_position(pcb, comp):
         pass
     return xy(comp), "fallback_geometry"
 
+
+
+def validate_constraints(constraints):
+    if not isinstance(constraints, dict) or constraints.get("schema") != "altium-placement-routing-constraints.v1":
+        return False, "missing_or_wrong_schema"
+    if not constraints.get("authority"):
+        return False, "missing_authority"
+    hard = constraints.get("hard_constraints")
+    objectives = constraints.get("objectives")
+    if not isinstance(hard, dict) or not isinstance(objectives, dict):
+        return False, "missing_hard_constraints_or_objectives"
+    if any(v is None for v in hard.values()):
+        return False, "unknown_hard_constraint"
+    for name, spec in objectives.items():
+        if not isinstance(spec, dict) or spec.get("metric") not in {
+            "copper_length_mils", "track_length_mils", "arc_length_mils", "via_count"
+        } or spec.get("direction") not in {"minimize", "maximize"}:
+            return False, f"invalid_objective:{name}"
+    return True, None
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pcb", required=True, type=Path)
@@ -131,15 +151,13 @@ def main():
         "authoritative_constraint_manifest_available": isinstance(constraints, dict) and constraints.get("schema") == "altium-placement-routing-constraints.v1",
     }
 
+    constraints_valid, constraints_validation_error = validate_constraints(constraints)
     hard = (constraints or {}).get("hard_constraints", {}) if isinstance(constraints, dict) else {}
     objectives = (constraints or {}).get("objectives", {}) if isinstance(constraints, dict) else {}
     required_hard = [k for k,v in hard.items() if v is True]
     unknown_hard = [k for k,v in hard.items() if v is None]
     evidence["constraint_manifest_valid"] = (
-        evidence["authoritative_constraint_manifest_available"] and
-        isinstance(hard, dict) and isinstance(objectives, dict) and
-        bool((constraints or {}).get("authority")) and
-        not unknown_hard
+        constraints_valid and not unknown_hard
     )
     missing = [k for k,v in evidence.items() if not v]
     optimization_status = "NOT_PROVEN"
@@ -203,7 +221,7 @@ def main():
         "evidence": evidence,
         "comparison": comparison,
         "objective_verdict": objective_verdict,
-        "constraint_manifest_error": constraints_error,
+        "constraint_manifest_error": constraints_error or constraints_validation_error,
         "policy": {
             "never_claim_optimized_from_connectivity_alone": True,
             "unknown_constraint_is_not_pass": True,
