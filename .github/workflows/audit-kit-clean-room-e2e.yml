@@ -1,0 +1,107 @@
+name: audit-kit-clean-room-e2e
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/altium-audit/**"
+      - ".github/workflows/audit-kit-clean-room-e2e.yml"
+      - "altium-audit.config.json"
+      - "b64parts/**"
+      - "*.zip"
+
+jobs:
+  audit-kit-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct authoritative source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/source work/clean-room-input
+          python - <<'PY'
+          import base64, json
+          from pathlib import Path
+          c=json.loads(Path("altium-audit.config.json").read_text())
+          archive=Path(c["source_archive"])
+          parts=Path(c["base64_parts_dir"])
+          raw=b"".join(p.read_bytes().strip() for p in sorted(parts.glob("part_*.txt")))
+          archive.write_bytes(base64.b64decode(raw, validate=True))
+          PY
+          unzip -q "$(python -c 'import json; print(json.load(open("altium-audit.config.json"))["source_archive"])')" -d work/source
+
+      - name: Build clean-room input
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t sch < <(find work/source -type f -name '*.SchDoc')
+          mapfile -t pcb < <(find work/source -type f -name '*.PcbDoc')
+          mapfile -t prj < <(find work/source -type f -name '*.PrjPcb')
+          test "${#sch[@]}" -eq 1
+          test "${#pcb[@]}" -eq 1
+          test "${#prj[@]}" -le 1
+          cp "${sch[0]}" work/clean-room-input/clean_room_schematic.SchDoc
+          cp "${pcb[0]}" work/clean-room-input/clean_room_board.PcbDoc
+          if [ "${#prj[@]}" -eq 1 ]; then
+            cp "${prj[0]}" work/clean-room-input/clean_room_project.PrjPcb
+            python - <<'PY'
+          from pathlib import Path
+          p=Path("work/clean-room-input/clean_room_project.PrjPcb")
+          lines=[]
+          for line in p.read_text(encoding="utf-8-sig").splitlines():
+              if line.startswith("DocumentPath="):
+                  low=line.lower()
+                  if low.endswith(".schdoc"): line="DocumentPath=clean_room_schematic.SchDoc"
+                  elif low.endswith(".pcbdoc"): line="DocumentPath=clean_room_board.PcbDoc"
+              lines.append(line)
+          p.write_text("\n".join(lines)+"\n", encoding="utf-8-sig")
+          PY
+          fi
+
+      - name: Install pinned parser
+        run: python -m pip install -r tools/altium-audit/requirements.txt
+
+      - name: Execute reusable Audit Kit through pcb.eda@1 contract
+        shell: bash
+        run: |
+          set +e
+          python tools/altium-audit/audit_kit.py --input work/clean-room-input --output work/audit --repair --max-retries 3
+          rc=$?
+          printf '%s\n' "$rc" > work/audit/kit_exit_code.txt
+          exit 0
+
+      - name: Validate E2E terminal receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s work/audit/intake.json
+          test -s work/audit/summary.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path("work/audit/summary.json").read_text())
+          required={"terminal_status","schema","gates","planning"}
+          missing=required-set(s)
+          if missing: raise SystemExit(f"missing terminal receipt fields: {sorted(missing)}")
+          if s.get("schema") != "altium-audit-kit-result.v4":
+              raise SystemExit(f"unexpected kit schema: {s.get('schema')}")
+          print(json.dumps({
+              "contract":"pcb.eda@1",
+              "kit":"yanhul/temp/tools/altium-audit",
+              "terminal_status":s.get("terminal_status"),
+              "status":s.get("status"),
+              "gates":s.get("gates"),
+              "has_repair_history":bool(s.get("repair_history")),
+              "has_repair_receipt":bool(s.get("repair")),
+              "planning":s.get("planning"),
+          }, indent=2))
+          PY
+
+      - name: Upload independent E2E receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-kit-clean-room-e2e
+          path: work/audit/
