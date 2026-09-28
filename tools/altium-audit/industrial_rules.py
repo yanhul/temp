@@ -52,12 +52,70 @@ def _rule_state(value):
         return state
     return "INVALID"
 
-def evaluate(config_path: Path | None):
+def _rule_objects(pcb):
+    candidates=[]
+    if pcb is None: return candidates
+    for attr in ("rules","design_rules","pcb_rules"):
+        try:
+            v=getattr(pcb,attr)
+            if callable(v): v=v()
+            if v is not None: candidates.extend(list(v.values()) if isinstance(v,dict) else list(v))
+        except Exception: pass
+    for meth in ("get_rules","get_design_rules","iter_rules"):
+        try:
+            v=getattr(pcb,meth)
+            if callable(v): candidates.extend(list(v()))
+        except Exception: pass
+    return candidates
+
+def _rule_kind(rule):
+    for k in ("rule_kind","kind","type"):
+        try:
+            v=getattr(rule,k)
+            if v: return str(v)
+        except Exception: pass
+    return rule.__class__.__name__.replace("Altium","").replace("Rule","")
+
+def _rule_value(rule,*keys):
+    for k in keys:
+        try:
+            v=getattr(rule,k)
+            if v is not None: return v
+        except Exception: pass
+        try:
+            v=getattr(rule,"raw_record",{}).get(k)
+            if v is not None: return v
+        except Exception: pass
+    return None
+
+def derive_from_pcb(pcb):
+    out={}
+    for r in _rule_objects(pcb):
+        kind=_rule_kind(r).lower()
+        if kind=="componentclearance" and "component_clearance" not in out:
+            v=_rule_value(r,"gap","clearance","minimum_clearance","GAP")
+            if v is not None: out["component_clearance"]={"status":"APPLICABLE","value":v,"evidence":"PcbDoc design rule: ComponentClearance"}
+        elif kind=="clearance" and "trace_clearance" not in out:
+            v=_rule_value(r,"gap","generic_clearance","clearance","GAP","GENERICCLEARANCE")
+            if v is not None: out["trace_clearance"]={"status":"APPLICABLE","value":v,"evidence":"PcbDoc design rule: Clearance"}
+        elif kind=="width" and "trace_width" not in out:
+            v=_rule_value(r,"minimum_width","min_width","MINLIMIT")
+            if v is not None: out["trace_width"]={"status":"APPLICABLE","value":v,"evidence":"PcbDoc design rule: Width"}
+        elif kind=="routingvias" and "via_rules" not in out:
+            lo=_rule_value(r,"minimum_width","minimum_diameter","min_diameter","MINIMUMWIDTH")
+            hi=_rule_value(r,"maximum_width","maximum_diameter","max_diameter","MAXIMUMWIDTH")
+            if lo is not None or hi is not None:
+                out["via_rules"]={"status":"APPLICABLE","values":{"minimum":lo,"maximum":hi},"evidence":"PcbDoc design rule: RoutingVias"}
+    return out
+
+def evaluate(config_path: Path | None, pcb=None):
     cfg = _load(config_path)
     if cfg is None:
         return {"status": "BLOCKED", "reason": "industrial rule authority/config is missing",
                 "standards": NORMATIVE, "missing": PLACEMENT_KEYS + ROUTING_KEYS}
-    rules = cfg.get("industrial_rules")
+    rules = cfg.get("industrial_rules") if cfg else None
+    if not isinstance(rules, dict):
+        rules = {"standards": NORMATIVE, "rules": derive_from_pcb(pcb)}
     if not isinstance(rules, dict):
         return {"status": "BLOCKED",
                 "reason": "industrial_rules section is missing; no project/fabricator rule authority",
