@@ -70,7 +70,6 @@ def main():
     ap.add_argument("--baseline", type=Path)
     ap.add_argument("--candidate", type=Path)
     ap.add_argument("--constraints", type=Path)
-    ap.add_argument("--constraints", type=Path)
     args = ap.parse_args()
 
     pcb = AltiumPcbDoc.from_file(args.pcb)
@@ -113,18 +112,12 @@ def main():
     }
 
     constraints = None
+    constraints_error = None
     if args.constraints and args.constraints.exists():
         try:
             constraints = json.loads(args.constraints.read_text(encoding="utf-8"))
-        except Exception:
-            constraints = None
-
-    constraints = None
-    if args.constraints and args.constraints.exists():
-        try:
-            constraints = json.loads(args.constraints.read_text(encoding="utf-8"))
-        except Exception:
-            constraints = None
+        except Exception as exc:
+            constraints_error = f"invalid JSON: {type(exc).__name__}: {exc}"
 
     evidence = {
         "placement_positions_complete": bool(comps) and all(x["authoritative"] for x in positions),
@@ -136,9 +129,18 @@ def main():
         "thermal_constraints_available": False,
         "candidate_comparison_available": bool(args.baseline and args.candidate),
         "authoritative_constraint_manifest_available": isinstance(constraints, dict) and constraints.get("schema") == "altium-placement-routing-constraints.v1",
-        "authoritative_constraint_manifest_available": isinstance(constraints, dict) and constraints.get("schema") == "altium-placement-routing-constraints.v1",
     }
 
+    hard = (constraints or {}).get("hard_constraints", {}) if isinstance(constraints, dict) else {}
+    objectives = (constraints or {}).get("objectives", {}) if isinstance(constraints, dict) else {}
+    required_hard = [k for k,v in hard.items() if v is True]
+    unknown_hard = [k for k,v in hard.items() if v is None]
+    evidence["constraint_manifest_valid"] = (
+        evidence["authoritative_constraint_manifest_available"] and
+        isinstance(hard, dict) and isinstance(objectives, dict) and
+        bool((constraints or {}).get("authority")) and
+        not unknown_hard
+    )
     missing = [k for k,v in evidence.items() if not v]
     optimization_status = "NOT_PROVEN"
     reason = (
@@ -149,22 +151,45 @@ def main():
 
     comparison = None
     objective_verdict = "UNKNOWN"
-    objective_verdict = "UNKNOWN"
     if args.baseline and args.candidate and args.baseline.exists() and args.candidate.exists():
         try:
             b = json.loads(args.baseline.read_text(encoding="utf-8"))
             c = json.loads(args.candidate.read_text(encoding="utf-8"))
-            comparison = {"baseline": b.get("metrics",{}), "candidate": c.get("metrics",{})}
-            if isinstance(constraints, dict) and constraints.get("schema") == "altium-placement-routing-constraints.v1":
-                hard = constraints.get("hard_constraints", {})
-                required = [k for k,v in hard.items() if v is True]
-                observed = c.get("evidence", {})
-                objective_verdict = "VERIFIED" if all(observed.get(k) is True for k in required) else "FAIL"
-            if isinstance(constraints, dict) and constraints.get("schema") == "altium-placement-routing-constraints.v1":
-                hard = constraints.get("hard_constraints", {})
-                required = [k for k,v in hard.items() if v is True]
-                observed = c.get("evidence", {})
-                objective_verdict = "VERIFIED" if all(observed.get(k) is True for k in required) else "FAIL"
+            comparison = {"baseline": b.get("metrics", {}), "candidate": c.get("metrics", {})}
+            observed = c.get("evidence", {})
+            hard_ok = evidence["constraint_manifest_valid"] and all(observed.get(k) is True for k in required_hard)
+            comparable = isinstance(b.get("metrics"), dict) and isinstance(c.get("metrics"), dict)
+            objective_results = {}
+            objective_unknown = []
+            for name, spec in objectives.items():
+                if not isinstance(spec, dict):
+                    objective_unknown.append(name)
+                    continue
+                metric, direction = spec.get("metric"), spec.get("direction")
+                bv, cv = b.get("metrics", {}).get(metric), c.get("metrics", {}).get(metric)
+                if not isinstance(bv, (int,float)) or not isinstance(cv, (int,float)) or direction not in ("minimize","maximize"):
+                    objective_unknown.append(name)
+                    continue
+                objective_results[name] = {
+                    "metric": metric, "direction": direction,
+                    "baseline": bv, "candidate": cv,
+                    "improved": cv < bv if direction == "minimize" else cv > bv,
+                    "non_worse": cv <= bv if direction == "minimize" else cv >= bv,
+                }
+            objective_verdict = (
+                "VERIFIED"
+                if hard_ok and comparable and bool(objectives) and not objective_unknown
+                and all(x["non_worse"] for x in objective_results.values())
+                and any(x["improved"] for x in objective_results.values())
+                else ("FAIL" if hard_ok and comparable and not objective_unknown else "UNKNOWN")
+            )
+            comparison["objective_results"] = objective_results
+            comparison["objective_unknown"] = objective_unknown
+            if objective_verdict == "VERIFIED":
+                optimization_status = "VERIFIED"
+                reason = "Authoritative constraints are valid, hard constraints are verified, baseline/candidate metrics are comparable, and the candidate is non-worse on every declared objective with at least one strict improvement."
+            elif objective_verdict == "FAIL":
+                reason = "Candidate did not satisfy the strict objective policy: every declared objective must be non-worse and at least one must strictly improve."
         except Exception:
             comparison = None
             reason = "Candidate/baseline artifacts exist but could not be parsed; optimization remains NOT_PROVEN."
@@ -178,7 +203,7 @@ def main():
         "evidence": evidence,
         "comparison": comparison,
         "objective_verdict": objective_verdict,
-        "objective_verdict": objective_verdict,
+        "constraint_manifest_error": constraints_error,
         "policy": {
             "never_claim_optimized_from_connectivity_alone": True,
             "unknown_constraint_is_not_pass": True,
