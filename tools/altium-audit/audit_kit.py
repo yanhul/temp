@@ -3,7 +3,7 @@
 from __future__ import annotations
 import argparse,json,shutil,subprocess,sys
 from pathlib import Path
-HERE=Path(__file__).resolve().parent; RUNNER=HERE/"audit_runner.py"; PLAN=HERE/"routing_repair_plan.py"; AUTHORIZE=HERE/"routing_repair_authorize.py"; APPLY=HERE/"routing_repair_apply.py"
+HERE=Path(__file__).resolve().parent; RUNNER=HERE/"audit_runner.py"; PLAN=HERE/"routing_repair_plan.py"; AUTHORIZE=HERE/"routing_repair_authorize.py"; APPLY=HERE/"routing_repair_apply.py"; QUALITY=HERE/"placement_routing_quality.py"
 TERMINAL={"PASS","FAIL","BLOCKED","INCONCLUSIVE","UNKNOWN"}
 def discover(root):
     sch=sorted(root.rglob("*.SchDoc")); pcb=sorted(root.rglob("*.PcbDoc")); prj=sorted(root.rglob("*.PrjPcb"))
@@ -67,7 +67,8 @@ def main():
     manifest=write_connectivity_manifest(out,audit_out,initial,sch,pcb)
     pp=out/"placement-routing-plan.json"; run([HERE/"placement_routing_plan.py","--pcb",project_root/pcb.name,"--out",pp,"--findings",audit_out/"findings.json"])
     planning=json.loads(pp.read_text()) if pp.exists() else {"design_status":"BLOCKED","placement":{"status":"UNKNOWN"},"routing":{"status":"UNKNOWN"}}
-    initial["kit"]={"status":"PASS","schema":"altium-audit-kit/v4"}; initial["planning"]=planning; initial["design_status"]=planning.get("design_status","BLOCKED")
+    quality=out/"placement-routing-quality.json"; constraints=project_root/"placement-routing-constraints.json"; qargs=[QUALITY,"--pcb",project_root/pcb.name,"--out",quality]; qargs += ["--constraints",str(constraints)] if constraints.exists() else []; qrc=run(qargs); qdata=json.loads(quality.read_text()) if quality.exists() else {"optimization_status":"UNKNOWN"}
+    initial["kit"]={"status":"PASS","schema":"altium-audit-kit/v4"}; initial["planning"]=planning; initial["design_status"]=planning.get("design_status","BLOCKED"); initial["quality"]=qdata
     if fallback: initial.setdefault("findings",[]).append(blocker); initial.setdefault("gates",{})["G2_COMPILE"]="BLOCKED"
     placement_locked=planning.get("placement",{}).get("lock",{}).get("status")=="LOCKED"
     topology_pending=planning.get("routing",{}).get("status")=="INCOMPLETE"
@@ -93,9 +94,10 @@ def main():
         if prj and not fallback: shutil.copy2(project_root/prj.name,vrroot/prj.name)
         vo=ad/"audit-verify"; vrc,final=audit(vrroot,vo,a.config)
         vp=ad/"placement-routing-verify.json"; prc=run([HERE/"placement_routing_plan.py","--pcb",repaired,"--out",vp,"--findings",vo/"findings.json"]); vpdata=json.loads(vp.read_text()) if vp.exists() else {}
+        vq=ad/"placement-routing-quality.json"; vqraw=ad/"placement-routing-quality-candidate.json"; vqargs=[QUALITY,"--pcb",repaired,"--out",vqraw]; vqargs += ["--constraints",str(constraints)] if constraints.exists() else []; run(vqargs); finalqargs=[QUALITY,"--pcb",repaired,"--out",vq,"--baseline",quality,"--candidate",vqraw]; finalqargs += ["--constraints",str(constraints)] if constraints.exists() else []; vqrc=run(finalqargs); vqdata=json.loads(vq.read_text()) if vq.exists() else {"optimization_status":"UNKNOWN"}
         history.append({"attempt":attempt,"stage":"VERIFY","returncode":vrc,"planner_returncode":prc,"design_status":vpdata.get("design_status"),"status":final.get("status") if final else None})
         if final is not None:
-            final["repair"]=rec; final["repair_history"]=history; final["planning"]=vpdata
+            final["repair"]=rec; final["repair_history"]=history; final["planning"]=vpdata; final["quality"]=vqdata
             if fallback: final.setdefault("findings",[]).append(blocker); final.setdefault("gates",{})["G2_COMPILE"]="BLOCKED"; final["project_compile_fallback"]=True
             routing_closure = (
                 (final.get("gates",{}) or {}).get("G3_CONNECTIVITY")=="VERIFIED" and
