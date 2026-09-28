@@ -70,6 +70,7 @@ def main():
     ap.add_argument("--baseline", type=Path)
     ap.add_argument("--candidate", type=Path)
     ap.add_argument("--constraints", type=Path)
+    ap.add_argument("--constraints", type=Path)
     args = ap.parse_args()
 
     pcb = AltiumPcbDoc.from_file(args.pcb)
@@ -118,6 +119,13 @@ def main():
         except Exception:
             constraints = None
 
+    constraints = None
+    if args.constraints and args.constraints.exists():
+        try:
+            constraints = json.loads(args.constraints.read_text(encoding="utf-8"))
+        except Exception:
+            constraints = None
+
     evidence = {
         "placement_positions_complete": bool(comps) and all(x["authoritative"] for x in positions),
         "track_geometry_complete": len(track_lengths) == len(tracks),
@@ -127,6 +135,7 @@ def main():
         "manufacturing_constraints_available": False,
         "thermal_constraints_available": False,
         "candidate_comparison_available": bool(args.baseline and args.candidate),
+        "authoritative_constraint_manifest_available": isinstance(constraints, dict) and constraints.get("schema") == "altium-placement-routing-constraints.v1",
         "authoritative_constraint_manifest_available": isinstance(constraints, dict) and constraints.get("schema") == "altium-placement-routing-constraints.v1",
     }
 
@@ -140,11 +149,17 @@ def main():
 
     comparison = None
     objective_verdict = "UNKNOWN"
+    objective_verdict = "UNKNOWN"
     if args.baseline and args.candidate and args.baseline.exists() and args.candidate.exists():
         try:
             b = json.loads(args.baseline.read_text(encoding="utf-8"))
             c = json.loads(args.candidate.read_text(encoding="utf-8"))
             comparison = {"baseline": b.get("metrics",{}), "candidate": c.get("metrics",{})}
+            if isinstance(constraints, dict) and constraints.get("schema") == "altium-placement-routing-constraints.v1":
+                hard = constraints.get("hard_constraints", {})
+                required = [k for k,v in hard.items() if v is True]
+                observed = c.get("evidence", {})
+                objective_verdict = "VERIFIED" if all(observed.get(k) is True for k in required) else "FAIL"
             if isinstance(constraints, dict) and constraints.get("schema") == "altium-placement-routing-constraints.v1":
                 hard = constraints.get("hard_constraints", {})
                 required = [k for k,v in hard.items() if v is True]
@@ -162,6 +177,7 @@ def main():
         "metrics": metrics,
         "evidence": evidence,
         "comparison": comparison,
+        "objective_verdict": objective_verdict,
         "objective_verdict": objective_verdict,
         "policy": {
             "never_claim_optimized_from_connectivity_alone": True,
