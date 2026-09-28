@@ -47,7 +47,7 @@ jobs:
           python tools/altium-audit/execution_contract.py \
             --out work/audit \
             --max-attempts 3 \
-            --topology-cmd "python tools/altium-audit/placement_routing_plan.py --pcb $PCB --out work/audit/placement-routing-plan.json" \
+            --topology-cmd "python tools/altium-audit/placement_routing_plan.py --pcb $PCB --out work/audit/placement-routing-plan.json --config altium-audit.config.json" \
             --audit-cmd "python tools/altium-audit/audit_runner.py --root work/project --out work/audit --archive work/project.zip --source-sha256 $(cat work/source.sha256) --config altium-audit.config.json" \
             --plan-cmd "python tools/altium-audit/routing_repair_plan.py --pcb $PCB --out work/audit/routing_repair_plan.json" \
             --authorize-cmd "python tools/altium-audit/routing_repair_authorize.py --pcb $PCB --plan work/audit/routing_repair_plan.json --findings work/audit/findings.json --probe work/audit/g4_probe.json" \
@@ -78,7 +78,7 @@ jobs:
               for f in ("routing_repair_plan.json","repair_receipt.json"):
                   if not Path("work/audit",f).is_file(): raise SystemExit(f"missing PASS artifact: {f}")
           print("AUDIT STATUS:",s.get("status"))
-          print("FINAL EXECUTION STATUS:",status)
+          plan=json.loads(Path("work/audit/placement-routing-plan.json").read_text())\n          if plan.get("industrial_rule_authority",{}).get("status")!="VERIFIED":\n              print("INDUSTRIAL RULE AUTHORITY:", plan.get("industrial_rule_authority",{}).get("status"))\n          print("FINAL EXECUTION STATUS:",status)
           PY
 
       - name: Upload audit artifacts
