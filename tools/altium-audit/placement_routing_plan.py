@@ -5,6 +5,7 @@ import argparse,json,math
 from pathlib import Path
 from collections import defaultdict
 from altium_monkey import AltiumPcbDoc
+from industrial_rules import evaluate as evaluate_industrial_rules
 def f(o,*ks):
     if isinstance(o,dict):
         for k in ks:
@@ -106,8 +107,8 @@ def components_for_net(data):
                 if ib is not None: union(i,ib)
     return len(nodes),len({find(i) for i in range(len(nodes))})
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument("--pcb",required=True,type=Path); ap.add_argument("--out",required=True,type=Path); ap.add_argument("--findings",type=Path); a=ap.parse_args()
-    pcb=AltiumPcbDoc.from_file(a.pcb); comps=list(getattr(pcb,"components",[]) or []); nets=list(getattr(pcb,"nets",[]) or [])
+    ap=argparse.ArgumentParser(); ap.add_argument("--pcb",required=True,type=Path); ap.add_argument("--out",required=True,type=Path); ap.add_argument("--findings",type=Path); ap.add_argument("--config",type=Path); a=ap.parse_args()
+    pcb=AltiumPcbDoc.from_file(a.pcb); comps=list(getattr(pcb,"components",[]) or []); nets=list(getattr(pcb,"nets",[]) or [])\n    industrial=evaluate_industrial_rules(a.config)
     verified_topology_fail_nets=set()
     if a.findings and a.findings.exists():
         raw=json.loads(a.findings.read_text(encoding="utf-8"))
@@ -137,7 +138,7 @@ def main():
     placement_checks={"all_positions_authoritative":all(x["placement_status"]=="VERIFIED" for x in placement),
                       "board_bounds_available":board_box is not None,"component_envelope_count":len(envelopes),
                       "overlap_count":len(overlap_pairs),"overlap_pairs":overlap_pairs[:200]}
-    placement_status="VERIFIED" if placement_checks["all_positions_authoritative"] and placement_checks["board_bounds_available"] else "UNKNOWN"
+    placement_status="VERIFIED" if (industrial["status"]=="VERIFIED" and placement_checks["all_positions_authoritative"] and placement_checks["board_bounds_available"] and placement_checks["overlap_count"]==0) else ("BLOCKED" if industrial["status"]=="BLOCKED" else "UNKNOWN")
     placement_lock={"schema":"altium-placement-lock.v1","status":"LOCKED" if placement_status=="VERIFIED" else "BLOCKED",
                     "basis":"authoritative component position + board bounds; pad-envelope overlap retained as diagnostic only because parser coordinate frame is not independently proven",
                     "checks":placement_checks,
@@ -163,13 +164,13 @@ def main():
         else:routing.append({"net":str(name),"status":"CONNECTED","graph_components":cc,"node_count":node_count})
     # OBSERVED_DISCONNECTED_UNCONFIRMED is diagnostic only. It must not block closure
     # unless the authoritative audit evidence classified the net as a verified topology failure.
-    routing_status="UNKNOWN" if unresolved else ("INCOMPLETE" if any(x["status"]=="TOPOLOGY_UNRESOLVED" for x in routing) else "VERIFIED")
-    result={"schema":"altium-placement-routing-plan.v3","mode":"PLAN_ONLY_NO_MUTATION",
+    routing_status=("BLOCKED" if industrial["status"]!="VERIFIED" else ("UNKNOWN" if unresolved else ("INCOMPLETE" if any(x["status"]=="TOPOLOGY_UNRESOLVED" for x in routing) else "VERIFIED")))
+    result={"schema":"altium-placement-routing-plan.v3","mode":"PLAN_ONLY_NO_MUTATION",\n            "industrial_rule_authority":industrial,
             "status_semantics":{"VERIFIED":"authoritative evidence supports the claim","UNKNOWN":"evidence unavailable or fallback-only","INCOMPLETE":"known evidence exists but required closure is missing","BLOCKED":"policy prevents the next mutation stage"},
             "placement":{"status":placement_status,"components":placement,"checks":placement_checks,"lock":placement_lock},
             "routing":{"status":routing_status,"nets":routing,"unresolved_nets":unresolved},
             "design_status":"PASS" if placement_status=="VERIFIED" and routing_status=="VERIFIED" else "BLOCKED",
             "next_stage":"ROUTE_AND_VERIFY" if placement_status=="VERIFIED" and routing_status=="VERIFIED" else ("ROUTING_REPAIR" if placement_status=="VERIFIED" and routing_status=="INCOMPLETE" else "PLACEMENT_REVIEW")}
-    a.out.parent.mkdir(parents=True,exist_ok=True); a.out.write_text(json.dumps(result,indent=2,ensure_ascii=False)); print(json.dumps({"placement_status":placement_status,"placement_lock":placement_lock["status"],"routing_status":routing_status,"unresolved_topologies":sum(x["status"]=="TOPOLOGY_UNRESOLVED" for x in routing),"parser_unresolved":len(unresolved)}))
+    a.out.parent.mkdir(parents=True,exist_ok=True); a.out.write_text(json.dumps(result,indent=2,ensure_ascii=False)); print(json.dumps({"placement_status":placement_status,"placement_lock":placement_lock["status"],"routing_status":routing_status,"industrial_rules":industrial["status"],"unresolved_topologies":sum(x["status"]=="TOPOLOGY_UNRESOLVED" for x in routing),"parser_unresolved":len(unresolved)}))
     return 0 if result["design_status"]=="PASS" else 1
 if __name__=="__main__":raise SystemExit(main())
