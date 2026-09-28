@@ -1,0 +1,19 @@
+name: altium-audit-kit-quality
+
+on:
+  push:
+    branches: ["main", "feat/**"]
+  pull_request:
+
+jobs:
+  python-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile audit kit
+        run: python -m py_compile tools/altium-audit/*.py
+      - name: Run strict quality tests
+        run: python -m unittest discover -s tests -p 'test_placement_routing_quality.py' -v
