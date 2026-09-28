@@ -128,14 +128,14 @@ def derive_from_g4_probe(path):
             out["via_rules"]={"status":"APPLICABLE","values":{"minimum":"19.685mil","maximum":"47.2441mil"},"evidence":"g4_probe authoritative PcbDoc RoutingVias rule sample"}
     return out
 
-def evaluate(config_path: Path | None, pcb=None):
+def evaluate(config_path: Path | None, pcb=None, evidence_path: Path | None=None):
     cfg = _load(config_path)
     if cfg is None:
         return {"status": "BLOCKED", "reason": "industrial rule authority/config is missing",
                 "standards": NORMATIVE, "missing": PLACEMENT_KEYS + ROUTING_KEYS}
     rules = cfg.get("industrial_rules") if cfg else None
     if not isinstance(rules, dict):
-        rules = {"standards": NORMATIVE, "rules": {**derive_from_pcb(pcb), **derive_from_g4_probe((config_path.parent / "g4_probe.json") if config_path else None)}}
+        rules = {"standards": NORMATIVE, "rules": {**derive_from_pcb(pcb), **derive_from_g4_probe(evidence_path)}}
     if not isinstance(rules, dict):
         return {"status": "BLOCKED",
                 "reason": "industrial_rules section is missing; no project/fabricator rule authority",
