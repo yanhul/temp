@@ -96,6 +96,8 @@ def main():
         history.append({"attempt":attempt,"stage":"VERIFY","returncode":vrc,"planner_returncode":prc,"design_status":vpdata.get("design_status"),"status":final.get("status") if final else None})
         if final is not None:
             final["repair"]=rec; final["repair_history"]=history; final["planning"]=vpdata
+            # Next authorization must use evidence from the board produced by this attempt.
+            source=vo
             if fallback: final.setdefault("findings",[]).append(blocker); final.setdefault("gates",{})["G2_COMPILE"]="BLOCKED"; final["project_compile_fallback"]=True
             routing_closure = (
                 (final.get("gates",{}) or {}).get("G3_CONNECTIVITY")=="VERIFIED" and
