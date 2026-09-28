@@ -108,7 +108,8 @@ def components_for_net(data):
     return len(nodes),len({find(i) for i in range(len(nodes))})
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument("--pcb",required=True,type=Path); ap.add_argument("--out",required=True,type=Path); ap.add_argument("--findings",type=Path); ap.add_argument("--config",type=Path); a=ap.parse_args()
-    pcb=AltiumPcbDoc.from_file(a.pcb); comps=list(getattr(pcb,"components",[]) or []); nets=list(getattr(pcb,"nets",[]) or [])\n    industrial=evaluate_industrial_rules(a.config)
+    pcb=AltiumPcbDoc.from_file(a.pcb); comps=list(getattr(pcb,"components",[]) or []); nets=list(getattr(pcb,"nets",[]) or [])
+    industrial=evaluate_industrial_rules(a.config)
     verified_topology_fail_nets=set()
     if a.findings and a.findings.exists():
         raw=json.loads(a.findings.read_text(encoding="utf-8"))
