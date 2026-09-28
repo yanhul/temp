@@ -90,7 +90,42 @@ def _rule_value(rule,*keys):
 
 def derive_from_pcb(pcb):
     out={}
-    for r in _rule_objects(pcb):
+    rules = _rule_objects(pcb)
+    for r in rules:
+        kind=_rule_kind(r).lower()
+        if kind=="boardoutlineclearance" and "board_edge_clearance" not in out:
+            v=_rule_value(r,"gap","clearance","minimum_clearance","GAP")
+            if v is not None:
+                out["board_edge_clearance"]={"status":"APPLICABLE","value":v,"evidence":"PcbDoc design rule: BoardOutlineClearance"}
+    try:
+        kinds = {int(v) for v in (getattr(pcb,"mechanical_layer_kinds",{}) or {}).values()}
+        courtyard_ids={k for k,v in (getattr(pcb,"mechanical_layer_kinds",{}) or {}).items() if int(v) in {11,12}}
+        geom = list(getattr(pcb,"regions",[]) or []) + list(getattr(pcb,"shapebased_regions",[]) or [])
+        geom += list(getattr(pcb,"component_bodies",[]) or []) + list(getattr(pcb,"shapebased_component_bodies",[]) or [])
+        courtyard_geom=[g for g in geom if getattr(g,"layer",None) in courtyard_ids or getattr(g,"layer_id",None) in courtyard_ids]
+        if courtyard_ids and courtyard_geom:
+            out["courtyard"]={"status":"APPLICABLE","value":"semantic_geometry_exposed","evidence":"PcbDoc exposes geometry on semantic COURTYARD_TOP/BOTTOM mechanical layers"}
+    except Exception:
+        pass
+    try:
+        regions = list(getattr(pcb,"regions",[]) or []) + list(getattr(pcb,"shapebased_regions",[]) or [])
+        keepouts = [x for x in regions if bool(getattr(x,"is_keepout",False)) or bool(getattr(x,"keepout",False))]
+        if keepouts:
+            out["keepout"]={"status":"APPLICABLE","value":"explicit_geometry_exposed","evidence":f"PcbDoc exposes {len(keepouts)} keepout region(s)"}
+        elif regions:
+            out["keepout"]={"status":"NOT_APPLICABLE","evidence":"PcbDoc parser exposes region keepout semantics; no keepout regions are present"}
+    except Exception:
+        pass
+    try:
+        from altium_monkey.altium_layer_stack_document import AltiumLayerStackDocument
+        stack=AltiumLayerStackDocument.from_pcbdoc(pcb)
+        physical=list(getattr(stack,"physical_stacks",()) or [])
+        layer_count=sum(len(getattr(s,"layers",()) or ()) for s in physical)
+        if layer_count > 0:
+            out["layer_stack"]={"status":"APPLICABLE","value":{"physical_stacks":len(physical),"layer_count":layer_count},"evidence":"AltiumLayerStackDocument.from_pcbdoc(PcbDoc)"}
+    except Exception:
+        pass
+    for r in rules:
         kind=_rule_kind(r).lower()
         if kind=="componentclearance" and "component_clearance" not in out:
             v=_rule_value(r,"gap","clearance","minimum_clearance","GAP")
