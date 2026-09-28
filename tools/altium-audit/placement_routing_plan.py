@@ -51,20 +51,18 @@ def component_center(pcb, comp):
     return None, "unresolved"
 
 def component_envelope(pcb, comp_index):
-    pts=[]
-    for pad in list(getattr(pcb,"pads",[]) or []):
-        ci=f(pad,"component_index")
-        try:
-            if ci is None or int(ci)!=comp_index: continue
-        except Exception:
-            continue
-        q=xy(pad)
-        w=num(f(pad,"width_mils","width")); h=num(f(pad,"height_mils","height"))
-        if q and w and h:
-            pts.append((q[0]-w/2,q[1]-h/2,q[0]+w/2,q[1]+h/2))
-    if not pts:return None
-    return (min(x[0] for x in pts),min(x[1] for x in pts),
-            max(x[2] for x in pts),max(x[3] for x in pts))
+    comps=list(getattr(pcb,"components",[]) or [])
+    if comp_index < len(comps):
+        comp=comps[comp_index]
+        bb=f(comp,"bounding_box","bbox","bounds")
+        if isinstance(bb,(tuple,list)) and len(bb)>=4:
+            vals=[num(x) for x in bb[:4]]
+            if all(x is not None for x in vals):
+                x0,y0,x1,y1=vals
+                return (min(x0,x1),min(y0,y1),max(x0,x1),max(y0,y1))
+    # Pad envelopes are copper geometry, not component-body/courtyard geometry.
+    # Never use them as proof of component overlap.
+    return None
 
 def boxes_overlap(a,b):
     return not (a[2] < b[0] or b[2] < a[0] or a[3] < b[1] or b[3] < a[1])
@@ -138,8 +136,8 @@ def main():
             if boxes_overlap(envelopes[ra],envelopes[rb]): overlap_pairs.append((ra,rb))
     placement_checks={"all_positions_authoritative":all(x["placement_status"]=="VERIFIED" for x in placement),
                       "board_bounds_available":board_box is not None,"component_envelope_count":len(envelopes),
-                      "overlap_count":len(overlap_pairs),"overlap_pairs":overlap_pairs[:200]}
-    placement_status="VERIFIED" if (industrial["status"]=="VERIFIED" and placement_checks["all_positions_authoritative"] and placement_checks["board_bounds_available"] and placement_checks["overlap_count"]==0) else ("BLOCKED" if industrial["status"]=="BLOCKED" else "UNKNOWN")
+                      "overlap_count":len(overlap_pairs),"overlap_pairs":overlap_pairs[:200],"overlap_evidence":"authoritative_component_bbox" if envelopes else "UNAVAILABLE"}
+    placement_status="VERIFIED" if (industrial["status"]=="VERIFIED" and placement_checks["all_positions_authoritative"] and placement_checks["board_bounds_available"] and placement_checks["component_envelope_count"]>0 and placement_checks["overlap_count"]==0) else ("BLOCKED" if industrial["status"]=="BLOCKED" else "UNKNOWN")
     placement_lock={"schema":"altium-placement-lock.v1","status":"LOCKED" if placement_status=="VERIFIED" else "BLOCKED",
                     "basis":"authoritative component position + board bounds; pad-envelope overlap retained as diagnostic only because parser coordinate frame is not independently proven",
                     "checks":placement_checks,
