@@ -67,7 +67,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          python tools/altium-audit/audit_kit.py --input work/clean-room-input --output work/audit --repair --max-retries 3
+          python tools/altium-audit/audit_kit.py --input work/clean-room-input --output work/audit --repair --max-retries 3 --config altium-audit.config.json
           rc=$?
           printf '%s\n' "$rc" > work/audit/kit_exit_code.txt
           exit 0
