@@ -3,7 +3,11 @@
   "project_id": "QI9-2604-A01",
   "source_archive": "QI9-2604-A01.zip",
   "base64_parts_dir": "b64parts",
-  "required_inputs": ["*.PrjPcb", "*.SchDoc", "*.PcbDoc"],
+  "required_inputs": [
+    "*.PrjPcb",
+    "*.SchDoc",
+    "*.PcbDoc"
+  ],
   "authoritative_source_sha256_file": "source.sha256",
   "profiles": {
     "structural": true,
@@ -15,5 +19,17 @@
     "fail_on_verified_issue": true,
     "block_on_unsupported_required_check": true,
     "never_infer_pass_from_parser_success": true
+  },
+  "placement": {
+    "locked_references": [
+      "U15",
+      "J1",
+      "J2",
+      "J3",
+      "J4",
+      "J5",
+      "J7"
+    ],
+    "authority": "project_declared_fixed_anchors"
   }
 }
