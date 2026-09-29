@@ -127,3 +127,14 @@ def write(netlist_path: Path, out: Path) -> dict:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     return result
+
+
+if __name__ == "__main__":
+    import argparse
+    ap=argparse.ArgumentParser()
+    ap.add_argument("--netlist",required=True,type=Path)
+    ap.add_argument("--out",required=True,type=Path)
+    a=ap.parse_args()
+    result=write(a.netlist,a.out)
+    print(json.dumps({"status":result["status"],"nets":len(result["nets"]),"affinity_pairs":len(result["component_affinity"]),"clusters":len(result["functional_clusters"])}))
+    raise SystemExit(0 if result["status"]=="VERIFIED" else 1)
