@@ -10,7 +10,7 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
-_HIGH = ("USB", "USB_D+", "USB_D-", "CLK", "CLOCK", "XTAL", "OSC", "DIFF", "ETH", "MII", "RMII", "LVDS")
+_HIGH = ("USB", "USB_D+", "USB_D-", "CLK", "CLOCK", "XTAL", "OSC", "DIFF", "ETH", "MII", "RMII", "LVDS", "TXP", "TXN", "RXP", "RXN", "D+", "D-")
 _POWER = ("VBUS", "VCC", "VDD", "VSS", "GND", "AGND", "DGND", "5V", "3V3", "3.3V", "12V", "24V", "VIN", "VOUT")
 _RESET = ("RESET", "RST", "EN", "ENABLE")
 _ANALOG = ("ADC", "DAC", "ANALOG", "SENSE", "FB", "REF")
