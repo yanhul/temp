@@ -105,7 +105,7 @@ def components_for_net(data):
                 if ib is not None: union(i,ib)
     return len(nodes),len({find(i) for i in range(len(nodes))})
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument("--pcb",required=True,type=Path); ap.add_argument("--out",required=True,type=Path); ap.add_argument("--findings",type=Path); ap.add_argument("--config",type=Path); a=ap.parse_args()
+    ap=argparse.ArgumentParser(); ap.add_argument("--pcb",required=True,type=Path); ap.add_argument("--out",required=True,type=Path); ap.add_argument("--findings",type=Path); ap.add_argument("--config",type=Path); ap.add_argument("--connectivity-manifest",type=Path); a=ap.parse_args()
     pcb=AltiumPcbDoc.from_file(a.pcb); comps=list(getattr(pcb,"components",[]) or []); nets=list(getattr(pcb,"nets",[]) or [])
     industrial=evaluate_industrial_rules(a.config, pcb, (a.findings.parent / "g4_probe.json") if a.findings else None)
     verified_topology_fail_nets=set()
@@ -115,6 +115,13 @@ def main():
         for finding in fs:
             if finding.get("id","").startswith("G7-TOPOLOGY-") and finding.get("status")=="FAIL" and finding.get("object") is not None:
                 verified_topology_fail_nets.add(str(finding["object"]))
+    connectivity={}
+    if a.connectivity_manifest and a.connectivity_manifest.exists():
+        try: connectivity=json.loads(a.connectivity_manifest.read_text(encoding="utf-8")).get("intelligence",{}) or {}
+        except Exception: connectivity={}
+    affinity_by_pair={}
+    for item in connectivity.get("component_affinity",[]) or []:
+        affinity_by_pair[tuple(sorted((str(item.get("a")),str(item.get("b")))))] = float(item.get("weight",0) or 0)
     placement=[]
     envelopes={}
     outline=getattr(getattr(pcb,"board",None),"outline",None)
@@ -137,6 +144,28 @@ def main():
     placement_checks={"all_positions_authoritative":all(x["placement_status"]=="VERIFIED" for x in placement),
                       "board_bounds_available":board_box is not None,"component_envelope_count":len(envelopes),
                       "overlap_count":len(overlap_pairs),"overlap_pairs":overlap_pairs[:200],"overlap_evidence":"authoritative_component_bbox" if envelopes else "UNAVAILABLE"}
+    # Connectivity-driven placement is advisory at this stage. It scores the
+    # current placement against net-derived component affinity but does not
+    # mutate coordinates or claim design intent.
+    pos_by_ref={x["reference"]:x["position"] for x in placement if x.get("reference") and x.get("position") is not None}
+    affinity_observed=[]
+    affinity_missing=[]
+    for (ra,rb), weight in sorted(affinity_by_pair.items(), key=lambda x:(-x[1],x[0])):
+        pa,pb=pos_by_ref.get(ra),pos_by_ref.get(rb)
+        rec={"a":ra,"b":rb,"weight":weight}
+        if pa is not None and pb is not None:
+            rec["distance_mils"]=round(math.dist(pa,pb),3); rec["status"]="OBSERVED"
+            affinity_observed.append(rec)
+        else:
+            rec["status"]="UNRESOLVED"; affinity_missing.append(rec)
+    placement_quality={
+        "schema":"altium-placement-affinity.v1",
+        "status":"SUGGESTED" if connectivity.get("status")=="VERIFIED" else "UNKNOWN",
+        "basis":"compiled-netlist component affinity + authoritative current component positions",
+        "observed_pairs":affinity_observed[:500],
+        "unresolved_pairs":affinity_missing[:500],
+        "next_action":"OPTIMIZE_PLACEMENT" if affinity_observed else "PLACEMENT_REVIEW"
+    }
     placement_status="VERIFIED" if (placement_checks["all_positions_authoritative"] and placement_checks["board_bounds_available"] and placement_checks["overlap_count"]==0) else "BLOCKED"
     placement_lock={"schema":"altium-placement-lock.v1","status":"LOCKED" if placement_status=="VERIFIED" else "BLOCKED",
                     "basis":"authoritative component position + board bounds; pad-envelope overlap retained as diagnostic only because parser coordinate frame is not independently proven",
@@ -167,7 +196,7 @@ def main():
     result={"schema":"altium-placement-routing-plan.v3","mode":"PLAN_ONLY_NO_MUTATION",
             "industrial_rule_authority":industrial,
             "status_semantics":{"VERIFIED":"authoritative evidence supports the claim","UNKNOWN":"evidence unavailable or fallback-only","INCOMPLETE":"known evidence exists but required closure is missing","BLOCKED":"policy prevents the next mutation stage"},
-            "placement":{"status":placement_status,"components":placement,"checks":placement_checks,"lock":placement_lock},
+            "placement":{"status":placement_status,"components":placement,"checks":placement_checks,"lock":placement_lock,"connectivity_intelligence":placement_quality},
             "routing":{"status":routing_status,"nets":routing,"unresolved_nets":unresolved},
             "design_status":"PASS" if placement_status=="VERIFIED" and routing_status=="VERIFIED" and industrial["status"]=="VERIFIED" else "BLOCKED",
             "next_stage":"ROUTE_AND_VERIFY" if placement_status=="VERIFIED" and routing_status=="VERIFIED" else ("ROUTING_REPAIR" if placement_status=="VERIFIED" and routing_status=="INCOMPLETE" else "PLACEMENT_REVIEW")}
