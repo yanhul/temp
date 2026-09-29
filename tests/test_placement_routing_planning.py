@@ -17,6 +17,7 @@ class PlanningContractTests(unittest.TestCase):
         self.assertIn('"design_status"',text)
         self.assertIn('--connectivity-manifest',text)
         self.assertIn('connectivity_intelligence',text)
+        self.assertIn('locked_references',text)
 
 if __name__=="__main__":
     unittest.main()
