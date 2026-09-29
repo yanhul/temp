@@ -147,7 +147,21 @@ def main():
         return block("connectivity manifest is not VERIFIED")
     if not topo:return block("no authoritative G7 topology finding")
     if not clear:return block("authoritative clearance rule is not exposed; no clearance value is guessed")
-    clearance=max(clear);authorized=[];rejected=[]
+    widths=[]
+    for r in probe.get("rule_samples",[]) or []:
+        attrs=r.get("attrs",{}) or {}; rawr=r.get("raw_rule",{}) or {}
+        if str(attrs.get("rule_kind","")).lower()!="width": continue
+        value=next((attrs.get(k) for k in ("minimum_width","min_width","MINLIMIT","width") if attrs.get(k) is not None),None)
+        if value is None:
+            value=next((rawr.get(k) for k in ("minimum_width","min_width","MINLIMIT","width") if rawr.get(k) is not None),None)
+        if value is None:
+            m=re.search(r"(?:MINLIMIT|MINIMUMWIDTH|WIDTH)\\s*[=:]\\s*([-+]?\\d+(?:\\.\\d+)?)",str(r.get("repr","")),re.I)
+            value=m.group(1) if m else None
+        if value is not None:
+            try: widths.append(float(re.search(r"[-+]?\\d+(?:\\.\\d+)?",str(value)).group(0)))
+            except Exception: pass
+    if not widths:return block("authoritative trace width rule is not exposed; no trace width is guessed")
+    clearance=max(clear); trace_width=min(widths); authorized=[];rejected=[]
     for net in plan.get("nets",[]) or []:
         name=str(net.get("name")); finding=topo.get(name)
         if not finding or finding.get("status")!="FAIL" or finding.get("severity") not in ("HIGH","BLOCKER"):
