@@ -38,6 +38,7 @@ jobs:
           cp audit-input/*.SchDoc work/clean-room-input/CLEANROOM_SCHEMATIC.SchDoc
           cp audit-input/*.PcbDoc work/clean-room-input/CLEANROOM_BOARD.PcbDoc
           if compgen -G 'audit-input/*.PrjPcb' > /dev/null; then cp audit-input/*.PrjPcb work/clean-room-input/CLEANROOM_PROJECT.PrjPcb; fi
+          if test -f audit-input/altium-audit.config.json; then cp audit-input/altium-audit.config.json work/clean-room-input/altium-audit.config.json; fi
           set +e
           python tools/altium-audit/audit_kit.py --input work/clean-room-input --output work/clean-room
           rc=$?
