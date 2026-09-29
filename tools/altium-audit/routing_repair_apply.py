@@ -82,8 +82,12 @@ def main():
                 layer = normalize_layer(a.get("layer") or b.get("layer") or PcbLayer.TOP)
                 if str(layer).lower() in {"multi-layer", "multilayer"}:
                     layer = "Top Layer"
-                pcb.add_track(p,q,width_mils=10,layer=layer,net=name)
-                applied.append({"net":name,"from":p,"to":q,"layer":layer,"distance_mils":bridge.get("distance_mils"),"width_mils":10})
+                width = bridge.get("width_mils")
+                if width is None:
+                    rejected.append({"net":name,"reason":"authoritative trace width missing; mutation forbidden"})
+                    continue
+                pcb.add_track(p,q,width_mils=float(width),layer=layer,net=name)
+                applied.append({"net":name,"from":p,"to":q,"layer":layer,"distance_mils":bridge.get("distance_mils"),"width_mils":float(width)})
             except Exception as exc:
                 rejected.append({"net":name,"reason":f"add_track failed: {type(exc).__name__}: {exc}"})
     if not applied:
