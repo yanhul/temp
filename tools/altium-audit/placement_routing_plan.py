@@ -52,17 +52,31 @@ def component_center(pcb, comp):
 
 def component_envelope(pcb, comp_index):
     comps=list(getattr(pcb,"components",[]) or [])
-    if comp_index < len(comps):
-        comp=comps[comp_index]
-        bb=f(comp,"bounding_box","bbox","bounds")
-        if isinstance(bb,(tuple,list)) and len(bb)>=4:
-            vals=[num(x) for x in bb[:4]]
-            if all(x is not None for x in vals):
-                x0,y0,x1,y1=vals
-                return (min(x0,x1),min(y0,y1),max(x0,x1),max(y0,y1))
-    # Pad envelopes are copper geometry, not component-body/courtyard geometry.
-    # Never use them as proof of component overlap.
-    return None
+    if comp_index >= len(comps): return None, "UNAVAILABLE"
+    comp=comps[comp_index]
+    bb=f(comp,"bounding_box","bbox","bounds")
+    if isinstance(bb,(tuple,list)) and len(bb)>=4:
+        vals=[num(x) for x in bb[:4]]
+        if all(x is not None for x in vals):
+            x0,y0,x1,y1=vals
+            return (min(x0,x1),min(y0,y1),max(x0,x1),max(y0,y1)), "COMPONENT_BBOX"
+    ref=f(comp,"designator","refdes","reference")
+    prims=None
+    for arg in (comp,ref,comp_index):
+        try:
+            prims=pcb.get_component_primitives(arg)
+            if prims is not None: break
+        except Exception: pass
+    points=[]
+    for p in list(prims or []):
+        q=xy(p)
+        if q: points.append(q)
+        e=endpoint(p)
+        if e: points.extend(e)
+    if points:
+        return (min(x for x,y in points),min(y for x,y in points),
+                max(x for x,y in points),max(y for x,y in points)), "COPPER_PRIMITIVES"
+    return None, "UNAVAILABLE"
 
 def boxes_overlap(a,b):
     return not (a[2] < b[0] or b[2] < a[0] or a[3] < b[1] or b[3] < a[1])
@@ -138,11 +152,11 @@ def main():
     for i,c in enumerate(comps):
         ref=f(c,"designator","refdes","reference")
         pos,source=component_center(pcb,c)
-        env=component_envelope(pcb,i)
+        env,env_source=component_envelope(pcb,i)
         if ref is not None and env is not None: envelopes[str(ref)]=env
         inside=bool(pos is not None and (board_box is None or (board_box[0]<=pos[0]<=board_box[2] and board_box[1]<=pos[1]<=board_box[3])))
         placement.append({"component_index":i,"reference":str(ref) if ref is not None else None,"position":pos,
-                          "evidence_source":source,"inside_board":inside,
+                          "evidence_source":source,"inside_board":inside,"envelope_source":env_source,
                           "placement_status":"VERIFIED" if pos is not None and source in ("authoritative_pick_place","authoritative_component_position") and inside else "UNKNOWN"})
     overlap_pairs=[]
     refs=sorted(envelopes)
@@ -151,7 +165,8 @@ def main():
             if boxes_overlap(envelopes[ra],envelopes[rb]): overlap_pairs.append((ra,rb))
     placement_checks={"all_positions_authoritative":all(x["placement_status"]=="VERIFIED" for x in placement),
                       "board_bounds_available":board_box is not None,"component_envelope_count":len(envelopes),
-                      "overlap_count":len(overlap_pairs),"overlap_pairs":overlap_pairs[:200],"overlap_evidence":"authoritative_component_bbox" if envelopes else "UNAVAILABLE"}
+                      "overlap_count":len(overlap_pairs),"overlap_pairs":overlap_pairs[:200],"overlap_evidence":"component_bbox_or_copper_primitives" if envelopes else "UNAVAILABLE",
+                      "envelope_sources":dict(sorted({x["reference"]:x.get("envelope_source") for x in placement if x.get("reference") and x.get("envelope_source")!="UNAVAILABLE"}.items()))}
     # Connectivity-driven placement is advisory at this stage. It scores the
     # current placement against net-derived component affinity but does not
     # mutate coordinates or claim design intent.
