@@ -137,7 +137,7 @@ def main():
     placement_checks={"all_positions_authoritative":all(x["placement_status"]=="VERIFIED" for x in placement),
                       "board_bounds_available":board_box is not None,"component_envelope_count":len(envelopes),
                       "overlap_count":len(overlap_pairs),"overlap_pairs":overlap_pairs[:200],"overlap_evidence":"authoritative_component_bbox" if envelopes else "UNAVAILABLE"}
-    placement_status="VERIFIED" if (industrial["status"]=="VERIFIED" and placement_checks["all_positions_authoritative"] and placement_checks["board_bounds_available"] and placement_checks["component_envelope_count"]>0 and placement_checks["overlap_count"]==0) else ("BLOCKED" if industrial["status"]=="BLOCKED" else "UNKNOWN")
+    placement_status="VERIFIED" if (placement_checks["all_positions_authoritative"] and placement_checks["board_bounds_available"] and placement_checks["overlap_count"]==0) else "BLOCKED"
     placement_lock={"schema":"altium-placement-lock.v1","status":"LOCKED" if placement_status=="VERIFIED" else "BLOCKED",
                     "basis":"authoritative component position + board bounds; pad-envelope overlap retained as diagnostic only because parser coordinate frame is not independently proven",
                     "checks":placement_checks,
@@ -169,7 +169,7 @@ def main():
             "status_semantics":{"VERIFIED":"authoritative evidence supports the claim","UNKNOWN":"evidence unavailable or fallback-only","INCOMPLETE":"known evidence exists but required closure is missing","BLOCKED":"policy prevents the next mutation stage"},
             "placement":{"status":placement_status,"components":placement,"checks":placement_checks,"lock":placement_lock},
             "routing":{"status":routing_status,"nets":routing,"unresolved_nets":unresolved},
-            "design_status":"PASS" if placement_status=="VERIFIED" and routing_status=="VERIFIED" else "BLOCKED",
+            "design_status":"PASS" if placement_status=="VERIFIED" and routing_status=="VERIFIED" and industrial["status"]=="VERIFIED" else "BLOCKED",
             "next_stage":"ROUTE_AND_VERIFY" if placement_status=="VERIFIED" and routing_status=="VERIFIED" else ("ROUTING_REPAIR" if placement_status=="VERIFIED" and routing_status=="INCOMPLETE" else "PLACEMENT_REVIEW")}
     a.out.parent.mkdir(parents=True,exist_ok=True); a.out.write_text(json.dumps(result,indent=2,ensure_ascii=False)); print(json.dumps({"placement_status":placement_status,"placement_lock":placement_lock["status"],"routing_status":routing_status,"industrial_rules":industrial["status"],"unresolved_topologies":sum(x["status"]=="TOPOLOGY_UNRESOLVED" for x in routing),"parser_unresolved":len(unresolved)}))
     return 0 if result["design_status"]=="PASS" else 1
