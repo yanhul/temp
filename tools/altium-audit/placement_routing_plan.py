@@ -203,7 +203,14 @@ def main():
         delta=round(math.dist(current,target),3)
         legal=True
         reasons=[]
-        if board_box is not None and ref in envelopes:
+        env_source = next((x.get("envelope_source") for x in placement if x.get("reference")==ref), "UNAVAILABLE")
+        placement_rule_keys=("component_clearance","board_edge_clearance","courtyard","keepout","assembly_access")
+        placement_rules=(industrial.get("rules",{}) if isinstance(industrial,dict) else {})
+        placement_authority=all(isinstance(placement_rules.get(k),dict) and placement_rules[k].get("status") in ("APPLICABLE","NOT_APPLICABLE") for k in placement_rule_keys)
+        if not placement_authority:
+            legal=False
+            reasons.append("PLACEMENT_RULE_AUTHORITY_INCOMPLETE")
+        elif board_box is not None and ref in envelopes:
             env=envelopes[ref]
             dx,dy=target[0]-current[0],target[1]-current[1]
             moved=(env[0]+dx,env[1]+dy,env[2]+dx,env[3]+dy)
@@ -223,7 +230,7 @@ def main():
             "suggested_target_mils":target,
             "move_distance_mils":delta,
             "basis":"weighted connectivity-affinity barycenter",
-            "status":"LEGAL_CANDIDATE" if legal else "REJECTED_PRECHECK",
+            "status":"LEGAL_CANDIDATE" if legal else ("PENDING_LEGALITY" if "PLACEMENT_RULE_AUTHORITY_INCOMPLETE" in reasons else "REJECTED_PRECHECK"),
             "precheck":reasons,
             "authority":"derived_from_compiled_netlist"
         })
@@ -238,6 +245,7 @@ def main():
         "mutation":"FORBIDDEN_IN_THIS_STAGE",
         "locked_references":sorted(locked_refs),
         "legal_candidate_count":sum(x["status"]=="LEGAL_CANDIDATE" for x in candidate_moves),
+        "pending_legality_count":sum(x["status"]=="PENDING_LEGALITY" for x in candidate_moves),
         "rejected_precheck_count":sum(x["status"]=="REJECTED_PRECHECK" for x in candidate_moves),
         "next_action":"OPTIMIZE_PLACEMENT" if any(x["status"]=="LEGAL_CANDIDATE" for x in candidate_moves) else "PLACEMENT_REVIEW"
     }
