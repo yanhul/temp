@@ -102,14 +102,26 @@ def main():
             routing_closure = (
                 (final.get("gates",{}) or {}).get("G3_CONNECTIVITY")=="VERIFIED" and
                 (final.get("gates",{}) or {}).get("G6_PLACEMENT")=="VERIFIED" and
-                (final.get("gates",{}) or {}).get("G7_ROUTING")=="VERIFIED" and
-                vpdata.get("design_status")=="PASS"
+                (final.get("gates",{}) or {}).get("G7_ROUTING")=="VERIFIED"
             )
             if routing_closure:
                 final["audit_status"]=final.get("status")
-                final["status"]="PASS"
-                final["terminal_reason"]="connectivity + placement + routing closure verified; non-routing generic audit domains may remain PARTIAL"
-                write_terminal(out,final); return 0
+                industrial = vpdata.get("industrial_rule_authority", {}) or {}
+                if vpdata.get("design_status")=="PASS":
+                    final["status"]="PASS"
+                    final["terminal_reason"]="connectivity + placement + routing closure verified; industrial rule authority also verified"
+                    write_terminal(out,final); return 0
+                # Routing closure is terminal evidence in its own right. Do not
+                # launch another repair attempt merely because a separate
+                # industrial-rule authority gate is incomplete; that can erase
+                # the true blocker behind a misleading "no mutation" result.
+                final["status"]="BLOCKED"
+                final["terminal_reason"]=(
+                    "connectivity + placement + routing closure verified, but "
+                    "industrial rule authority is incomplete"
+                )
+                final["industrial_rule_authority"]=industrial
+                write_terminal(out,final); return 1
             if attempt>=a.max_retries: final["status"]="INCONCLUSIVE" if vrc==0 else "FAIL"; final["terminal_reason"]="verification did not reach routing closure within retry budget"; write_terminal(out,final); return 1
         else:
             if attempt>=a.max_retries: initial["status"]="INCONCLUSIVE"; initial["terminal_reason"]="verification evidence missing"; initial["repair_history"]=history; write_terminal(out,initial); return 1
