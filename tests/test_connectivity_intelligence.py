@@ -1,9 +1,15 @@
+import importlib.util
 import unittest
-from tools.altium_audit_testshim import build_intelligence
+from pathlib import Path
+
+MODULE=Path("tools/altium-audit/connectivity_intelligence.py")
+spec=importlib.util.spec_from_file_location("connectivity_intelligence",MODULE)
+mod=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
 
 class ConnectivityIntelligenceTests(unittest.TestCase):
     def test_affinity_is_derived_without_mutation(self):
-        result=build_intelligence({"nets":[
+        result=mod.build({"nets":[
             {"name":"USB_D+","terminals":[{"designator":"J2","pin":"1"},{"designator":"U15","pin":"1"}]},
             {"name":"GND","terminals":[{"designator":"J2","pin":"2"},{"designator":"U15","pin":"2"},{"designator":"C1","pin":"2"}]},
             {"name":"MYSTERY","terminals":[{"designator":"U1","pin":"1"},{"designator":"R1","pin":"1"}]}
