@@ -132,7 +132,9 @@ def main():
                     if name.startswith("_"): continue
                     try:
                         v=getattr(obj,name)
-                        if callable(v): continue
+                        if callable(v):
+                            attrs.append((name,"<callable>"))
+                            continue
                         if isinstance(v,(str,int,float,bool,type(None))): attrs.append((name,v))
                     except Exception: pass
                 geometry_probe.append({"collection":collection_name,"class":obj.__class__.__name__,"attrs":attrs[:80]})
