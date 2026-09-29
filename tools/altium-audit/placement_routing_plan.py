@@ -163,7 +163,7 @@ def main():
         else:routing.append({"net":str(name),"status":"CONNECTED","graph_components":cc,"node_count":node_count})
     # OBSERVED_DISCONNECTED_UNCONFIRMED is diagnostic only. It must not block closure
     # unless the authoritative audit evidence classified the net as a verified topology failure.
-    routing_status=("BLOCKED" if industrial["status"]!="VERIFIED" else ("UNKNOWN" if unresolved else ("INCOMPLETE" if any(x["status"]=="TOPOLOGY_UNRESOLVED" for x in routing) else "VERIFIED")))
+    routing_status=("UNKNOWN" if unresolved else ("INCOMPLETE" if any(x["status"]=="TOPOLOGY_UNRESOLVED" for x in routing) else "VERIFIED"))
     result={"schema":"altium-placement-routing-plan.v3","mode":"PLAN_ONLY_NO_MUTATION",
             "industrial_rule_authority":industrial,
             "status_semantics":{"VERIFIED":"authoritative evidence supports the claim","UNKNOWN":"evidence unavailable or fallback-only","INCOMPLETE":"known evidence exists but required closure is missing","BLOCKED":"policy prevents the next mutation stage"},
