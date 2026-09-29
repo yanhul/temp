@@ -186,7 +186,7 @@ def main():
                 z=ep(tr)
                 if z and sd(p,q,*z)<clearance:bad=True;break
             if bad:rejected.append({"net":name,"reason":f"foreign-track clearance below {clearance:g} mil"});continue
-            authorized.append({**bridge,"net":name,"clearance_mils":clearance,
+            authorized.append({**bridge,"net":name,"clearance_mils":clearance,"width_mils":trace_width,
                                "evidence":{"finding_id":finding["id"],"source_sha256":sha(args.pcb)}})
     if not authorized:return block("no candidate passed independent evidence and geometry validation",rejected)
     bynet={}
@@ -194,7 +194,7 @@ def main():
     plan["nets"]=[{"name":n,"nearest_component_bridges":v} for n,v in bynet.items()]
     plan["mutation_authorized"]=True
     plan["authorization"]={"status":"AUTHORIZED","method":"routing_evidence_authorizer.v1",
-                           "pcb_sha256":sha(args.pcb),"clearance_mils":clearance,"rejected":rejected}
+                           "pcb_sha256":sha(args.pcb),"clearance_mils":clearance,"trace_width_mils":trace_width,"rejected":rejected}
     args.plan.write_text(json.dumps(plan,indent=2,sort_keys=True))
     return 0
 if __name__=="__main__":raise SystemExit(main())
