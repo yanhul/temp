@@ -17,7 +17,8 @@ class PlanningContractTests(unittest.TestCase):
         self.assertIn('"design_status"',text)
         self.assertIn('--connectivity-manifest',text)
         self.assertIn('connectivity_intelligence',text)
-        self.assertIn('locked_references',text)
+        planner=(ROOT/"placement_routing_plan.py").read_text(encoding="utf-8")
+        self.assertIn('locked_references',planner)
 
 if __name__=="__main__":
     unittest.main()
