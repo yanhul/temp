@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p work/project work/audit
+          mkdir -p work/project work/audit work/auditkit
           ARCHIVE=$(python -c 'import json; print(json.load(open("altium-audit.config.json"))["source_archive"])')
           PARTS=$(python -c 'import json; print(json.load(open("altium-audit.config.json"))["base64_parts_dir"])')
           test -s "$ARCHIVE"
@@ -36,13 +36,13 @@ jobs:
       - name: Install pinned parser
         run: python -m pip install -r tools/altium-audit/requirements.txt
 
-      - name: Run evidence-first audit
+      - name: Run reusable audit kit with repair/verify loop
         shell: bash
         run: |
           set +e
-          python tools/altium-audit/audit_runner.py             --root work/project             --out work/audit             --archive work/project.zip             --source-sha256 "$(cat work/source.sha256)"
+          python tools/altium-audit/audit_kit.py --input work/project --output work/auditkit --repair --max-retries 3 --config altium-audit.config.json
           rc=$?
-          printf '%s\n' "$rc" > work/audit/runner_exit_code.txt
+          printf '%s\n' "$rc" > work/auditkit/kit_exit_code.txt
           exit 0
 
       - name: Build terminal receipt
@@ -53,17 +53,20 @@ jobs:
           python - <<'PY'
           import json, os
           from pathlib import Path
-          out = Path("work/audit")
+          out = Path("work/auditkit")
           summary = json.loads((out/"summary.json").read_text()) if (out/"summary.json").exists() else {}
           receipt = {
-              "schema": "aios/pcb.eda/terminal-receipt/v1",
+              "schema": "aios/pcb.eda/terminal-receipt/v2",
               "status": summary.get("status", "BLOCKED"),
+              "design_status": summary.get("design_status"),
+              "terminal_reason": summary.get("terminal_reason"),
               "project_id": json.loads(Path("altium-audit.config.json").read_text()).get("project_id"),
               "source_archive_sha256": Path("work/source.sha256").read_text().strip() if Path("work/source.sha256").exists() else None,
               "github_sha": os.environ.get("GITHUB_SHA"),
               "workflow_run_id": os.environ.get("GITHUB_RUN_ID"),
-              "runner_exit_code": int(Path("work/audit/runner_exit_code.txt").read_text()) if (out/"runner_exit_code.txt").exists() else None,
-              "required_artifacts": [p for p in ["summary.json","netlist.json","design.json","pcb_probe.txt","g4_probe.json","findings.json","report.md"] if (out/p).exists()],
+              "kit_exit_code": int(Path("work/auditkit/kit_exit_code.txt").read_text()) if (out/"kit_exit_code.txt").exists() else None,
+              "repair_attempts": len(summary.get("repair_history", [])),
+              "required_artifacts": [str(p.relative_to(out)) for p in out.rglob("*") if p.is_file()],
               "summary": summary,
           }
           (out/"terminal_receipt.json").write_text(json.dumps(receipt, indent=2, sort_keys=True))
@@ -74,9 +77,8 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          for f in summary.json netlist.json design.json pcb_probe.txt g4_probe.json findings.json report.md terminal_receipt.json; do
-            test -s "work/audit/$f"
-          done
+          test -s work/auditkit/summary.json
+          test -s work/auditkit/terminal_receipt.json
 
       - name: Upload terminal evidence
         if: always()
@@ -92,7 +94,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          r=json.loads(Path("work/audit/terminal_receipt.json").read_text())
+          r=json.loads(Path("work/auditkit/terminal_receipt.json").read_text())
           if r.get("status") != "PASS":
               raise SystemExit(f"strict audit not PASS: {r.get('status')}")
           PY
