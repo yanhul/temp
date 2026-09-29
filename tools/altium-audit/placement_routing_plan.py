@@ -158,13 +158,45 @@ def main():
             affinity_observed.append(rec)
         else:
             rec["status"]="UNRESOLVED"; affinity_missing.append(rec)
+    # Produce candidate targets from the current graph only. This is a
+    # recommendation surface; it is intentionally not a PCB mutation.
+    neighbors=defaultdict(list)
+    for pair in affinity_observed:
+        w=max(float(pair.get("weight",0)),0.001)
+        neighbors[pair["a"]].append((pair["b"],w))
+        neighbors[pair["b"]].append((pair["a"],w))
+    candidate_moves=[]
+    for ref, edges in sorted(neighbors.items()):
+        if len(edges) < 1 or ref not in pos_by_ref: continue
+        sx=sy=sw=0.0
+        for other,w in edges:
+            if other not in pos_by_ref: continue
+            sx += pos_by_ref[other][0]*w
+            sy += pos_by_ref[other][1]*w
+            sw += w
+        if sw <= 0: continue
+        target=(round(sx/sw,3),round(sy/sw,3))
+        current=pos_by_ref[ref]
+        delta=round(math.dist(current,target),3)
+        candidate_moves.append({
+            "reference":ref,
+            "current_mils":current,
+            "suggested_target_mils":target,
+            "move_distance_mils":delta,
+            "basis":"weighted connectivity-affinity barycenter",
+            "status":"CANDIDATE_ONLY",
+            "authority":"derived_from_compiled_netlist"
+        })
+    candidate_moves.sort(key=lambda x:-x["move_distance_mils"])
     placement_quality={
-        "schema":"altium-placement-affinity.v1",
+        "schema":"altium-placement-affinity.v2",
         "status":"SUGGESTED" if connectivity.get("status")=="VERIFIED" else "UNKNOWN",
         "basis":"compiled-netlist component affinity + authoritative current component positions",
         "observed_pairs":affinity_observed[:500],
         "unresolved_pairs":affinity_missing[:500],
-        "next_action":"OPTIMIZE_PLACEMENT" if affinity_observed else "PLACEMENT_REVIEW"
+        "candidate_moves":candidate_moves[:500],
+        "mutation":"FORBIDDEN_IN_THIS_STAGE",
+        "next_action":"OPTIMIZE_PLACEMENT" if candidate_moves else "PLACEMENT_REVIEW"
     }
     placement_status="VERIFIED" if (placement_checks["all_positions_authoritative"] and placement_checks["board_bounds_available"] and placement_checks["overlap_count"]==0) else "BLOCKED"
     placement_lock={"schema":"altium-placement-lock.v1","status":"LOCKED" if placement_status=="VERIFIED" else "BLOCKED",
