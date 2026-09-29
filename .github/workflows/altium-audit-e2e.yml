@@ -85,7 +85,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: altium-audit-terminal-evidence
-          path: work/audit/
+          path: work/auditkit/
 
       - name: Enforce terminal status
         if: always()
