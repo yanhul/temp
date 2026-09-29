@@ -122,6 +122,21 @@ def main():
     ap=argparse.ArgumentParser(); ap.add_argument("--pcb",required=True,type=Path); ap.add_argument("--out",required=True,type=Path); ap.add_argument("--findings",type=Path); ap.add_argument("--config",type=Path); ap.add_argument("--connectivity-manifest",type=Path); a=ap.parse_args()
     pcb=AltiumPcbDoc.from_file(a.pcb); comps=list(getattr(pcb,"components",[]) or []); nets=list(getattr(pcb,"nets",[]) or [])
     industrial=evaluate_industrial_rules(a.config, pcb, (a.findings.parent / "g4_probe.json") if a.findings else None)
+    geometry_probe=[]
+    for collection_name in ("component_bodies","shapebased_component_bodies","regions","shapebased_regions"):
+        try:
+            coll=list(getattr(pcb,collection_name,[]) or [])
+            for obj in coll[:5]:
+                attrs=[]
+                for name in dir(obj):
+                    if name.startswith("_"): continue
+                    try:
+                        v=getattr(obj,name)
+                        if callable(v): continue
+                        if isinstance(v,(str,int,float,bool,type(None))): attrs.append((name,v))
+                    except Exception: pass
+                geometry_probe.append({"collection":collection_name,"class":obj.__class__.__name__,"attrs":attrs[:80]})
+        except Exception: pass
     verified_topology_fail_nets=set()
     if a.findings and a.findings.exists():
         raw=json.loads(a.findings.read_text(encoding="utf-8"))
@@ -278,6 +293,7 @@ def main():
     routing_status=("UNKNOWN" if unresolved else ("INCOMPLETE" if any(x["status"]=="TOPOLOGY_UNRESOLVED" for x in routing) else "VERIFIED"))
     result={"schema":"altium-placement-routing-plan.v3","mode":"PLAN_ONLY_NO_MUTATION",
             "industrial_rule_authority":industrial,
+            "geometry_probe":geometry_probe,
             "status_semantics":{"VERIFIED":"authoritative evidence supports the claim","UNKNOWN":"evidence unavailable or fallback-only","INCOMPLETE":"known evidence exists but required closure is missing","BLOCKED":"policy prevents the next mutation stage"},
             "placement":{"status":placement_status,"components":placement,"checks":placement_checks,"lock":placement_lock,"connectivity_intelligence":placement_quality},
             "routing":{"status":routing_status,"nets":routing,"unresolved_nets":unresolved},
