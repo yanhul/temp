@@ -15,6 +15,8 @@ class PlanningContractTests(unittest.TestCase):
         self.assertIn("placement-routing-plan.json",text)
         self.assertIn('"kit"',text)
         self.assertIn('"design_status"',text)
+        self.assertIn('--connectivity-manifest',text)
+        self.assertIn('connectivity_intelligence',text)
 
 if __name__=="__main__":
     unittest.main()
