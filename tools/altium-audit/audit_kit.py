@@ -62,6 +62,11 @@ def main():
     ap=argparse.ArgumentParser(); ap.add_argument("--input",required=True,type=Path); ap.add_argument("--output",required=True,type=Path); ap.add_argument("--repair",action="store_true"); ap.add_argument("--max-retries",type=int,default=3); ap.add_argument("--config",type=Path); a=ap.parse_args()
     root,out=a.input.resolve(),a.output.resolve()
     if not root.is_dir(): raise SystemExit(f"input directory does not exist: {root}")
+    if a.config is None:
+        for candidate in (root/"altium-audit.config.json", root.parent/"altium-audit.config.json"):
+            if candidate.exists():
+                a.config=candidate
+                break
     out.mkdir(parents=True,exist_ok=True); sch,pcb,prj=discover(root)
     (out/"intake.json").write_text(json.dumps({"schema":"altium-audit-kit-run.v4","input":{"directory":str(root),"schematic":sch.name,"pcb":pcb.name,"project":prj.name if prj else None},"repair_requested":a.repair,"max_retries":a.max_retries},indent=2))
     project_root=stage_project(out,sch,pcb,prj)
