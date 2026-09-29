@@ -3,7 +3,7 @@
 from __future__ import annotations
 import argparse,json,shutil,subprocess,sys
 from pathlib import Path
-HERE=Path(__file__).resolve().parent; RUNNER=HERE/"audit_runner.py"; PLAN=HERE/"routing_repair_plan.py"; AUTHORIZE=HERE/"routing_repair_authorize.py"; APPLY=HERE/"routing_repair_apply.py"
+HERE=Path(__file__).resolve().parent; RUNNER=HERE/"audit_runner.py"; PLAN=HERE/"routing_repair_plan.py"; AUTHORIZE=HERE/"routing_repair_authorize.py"; APPLY=HERE/"routing_repair_apply.py"; CONNECTIVITY=HERE/"connectivity_intelligence.py"
 TERMINAL={"PASS","FAIL","BLOCKED","INCONCLUSIVE","UNKNOWN"}
 def discover(root):
     sch=sorted(root.rglob("*.SchDoc")); pcb=sorted(root.rglob("*.PcbDoc")); prj=sorted(root.rglob("*.PrjPcb"))
@@ -35,9 +35,18 @@ def write_connectivity_manifest(out,audit_out,initial,sch,pcb):
         nl=json.loads((audit_out/"netlist.json").read_text(encoding="utf-8")).get("nets",[]) or []
     except Exception:
         nl=[]
-    manifest={"schema":"altium-connectivity-manifest.v1","status":"VERIFIED" if g3=="VERIFIED" else "BLOCKED",
+    intelligence={}
+    tmp=out/"connectivity-netlist.json"
+    tmp.write_text(json.dumps({"nets":nl},ensure_ascii=False),encoding="utf-8")
+    if g3=="VERIFIED":
+        run([CONNECTIVITY,"--netlist",tmp,"--out",out/"connectivity-intelligence.json"])
+        if (out/"connectivity-intelligence.json").exists():
+            intelligence=json.loads((out/"connectivity-intelligence.json").read_text(encoding="utf-8"))
+    manifest={"schema":"altium-connectivity-manifest.v2","status":"VERIFIED" if g3=="VERIFIED" else "BLOCKED",
               "basis":"audit_runner G3 terminal join","schematic":sch.name,"pcb":pcb.name,
-              "terminal_join_gate":g3,"nets":nl}
+              "terminal_join_gate":g3,"nets":nl,
+              "intelligence":intelligence,
+              "placement_ready":g3=="VERIFIED" and bool(intelligence.get("component_affinity") is not None)}
     path=out/"connectivity-manifest.json"
     path.write_text(json.dumps(manifest,indent=2,ensure_ascii=False),encoding="utf-8")
     return path
@@ -65,7 +74,7 @@ def main():
             blocker={"id":"G2-PROJECT-COMPILE","severity":"BLOCKER","domain":"compile","status":"BLOCKED","object":prj.name,"evidence":"Project compile failed; structural SCH+PCB audit continued directly.","confidence":"FACT"}
             direct.setdefault("findings",[]).append(blocker); direct.setdefault("gates",{})["G2_COMPILE"]="BLOCKED"; direct["status"]="BLOCKED"; direct["project_compile_fallback"]=True; initial=direct; fallback=True
     manifest=write_connectivity_manifest(out,audit_out,initial,sch,pcb)
-    pp=out/"placement-routing-plan.json"; run([HERE/"placement_routing_plan.py","--pcb",project_root/pcb.name,"--out",pp,"--findings",audit_out/"findings.json"] + ([ "--config", str(a.config.resolve()) ] if a.config else []))
+    pp=out/"placement-routing-plan.json"; run([HERE/"placement_routing_plan.py","--pcb",project_root/pcb.name,"--out",pp,"--findings",audit_out/"findings.json","--connectivity-manifest",manifest] + ([ "--config", str(a.config.resolve()) ] if a.config else []))
     planning=json.loads(pp.read_text()) if pp.exists() else {"design_status":"BLOCKED","placement":{"status":"UNKNOWN"},"routing":{"status":"UNKNOWN"}}
     initial["kit"]={"status":"PASS","schema":"altium-audit-kit/v4"}; initial["planning"]=planning; initial["design_status"]=planning.get("design_status","BLOCKED")
     if fallback: initial.setdefault("findings",[]).append(blocker); initial.setdefault("gates",{})["G2_COMPILE"]="BLOCKED"
@@ -92,7 +101,7 @@ def main():
         vrroot=ad/"verify-input"; vrroot.mkdir(exist_ok=True); shutil.copy2(project_root/sch.name,vrroot/sch.name); shutil.copy2(repaired,vrroot/pcb.name)
         if prj and not fallback: shutil.copy2(project_root/prj.name,vrroot/prj.name)
         vo=ad/"audit-verify"; vrc,final=audit(vrroot,vo,a.config)
-        vp=ad/"placement-routing-verify.json"; prc=run([HERE/"placement_routing_plan.py","--pcb",repaired,"--out",vp,"--findings",vo/"findings.json"] + ([ "--config", str(a.config.resolve()) ] if a.config else [])); vpdata=json.loads(vp.read_text()) if vp.exists() else {}
+        vp=ad/"placement-routing-verify.json"; verify_manifest=ad/"connectivity-manifest.json"; write_connectivity_manifest(ad,vo,final,sch,pcb); prc=run([HERE/"placement_routing_plan.py","--pcb",repaired,"--out",vp,"--findings",vo/"findings.json","--connectivity-manifest",verify_manifest] + ([ "--config", str(a.config.resolve()) ] if a.config else [])); vpdata=json.loads(vp.read_text()) if vp.exists() else {}
         history.append({"attempt":attempt,"stage":"VERIFY","returncode":vrc,"planner_returncode":prc,"design_status":vpdata.get("design_status"),"status":final.get("status") if final else None})
         if final is not None:
             final["repair"]=rec; final["repair_history"]=history; final["planning"]=vpdata
