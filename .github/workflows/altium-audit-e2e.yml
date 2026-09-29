@@ -1,0 +1,98 @@
+name: altium-audit-e2e
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/altium-audit-e2e.yml"
+      - "tools/altium-audit/**"
+      - "altium-audit.config.json"
+      - "b64parts/**"
+      - "*.zip"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare immutable input
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/project work/audit
+          ARCHIVE=$(python -c 'import json; print(json.load(open("altium-audit.config.json"))["source_archive"])')
+          PARTS=$(python -c 'import json; print(json.load(open("altium-audit.config.json"))["base64_parts_dir"])')
+          test -s "$ARCHIVE"
+          test -d "$PARTS"
+          find "$PARTS" -maxdepth 1 -name 'part_*.txt' -print | sort | xargs cat | base64 -d > work/project.zip
+          cmp -s "$ARCHIVE" work/project.zip
+          unzip -q work/project.zip -d work/project
+          sha256sum work/project.zip | awk '{print $1}' > work/source.sha256
+          printf 'commit_sha=%s\n' "$GITHUB_SHA" > work/lineage.txt
+          printf 'archive=%s\n' "$ARCHIVE" >> work/lineage.txt
+          printf 'archive_sha256=%s\n' "$(cat work/source.sha256)" >> work/lineage.txt
+
+      - name: Install pinned parser
+        run: python -m pip install -r tools/altium-audit/requirements.txt
+
+      - name: Run evidence-first audit
+        shell: bash
+        run: |
+          set +e
+          python tools/altium-audit/audit_runner.py             --root work/project             --out work/audit             --archive work/project.zip             --source-sha256 "$(cat work/source.sha256)"
+          rc=$?
+          printf '%s\n' "$rc" > work/audit/runner_exit_code.txt
+          exit 0
+
+      - name: Build terminal receipt
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          out = Path("work/audit")
+          summary = json.loads((out/"summary.json").read_text()) if (out/"summary.json").exists() else {}
+          receipt = {
+              "schema": "aios/pcb.eda/terminal-receipt/v1",
+              "status": summary.get("status", "BLOCKED"),
+              "project_id": json.loads(Path("altium-audit.config.json").read_text()).get("project_id"),
+              "source_archive_sha256": Path("work/source.sha256").read_text().strip() if Path("work/source.sha256").exists() else None,
+              "github_sha": os.environ.get("GITHUB_SHA"),
+              "workflow_run_id": os.environ.get("GITHUB_RUN_ID"),
+              "runner_exit_code": int(Path("work/audit/runner_exit_code.txt").read_text()) if (out/"runner_exit_code.txt").exists() else None,
+              "required_artifacts": [p for p in ["summary.json","netlist.json","design.json","pcb_probe.txt","g4_probe.json","findings.json","report.md"] if (out/p).exists()],
+              "summary": summary,
+          }
+          (out/"terminal_receipt.json").write_text(json.dumps(receipt, indent=2, sort_keys=True))
+          print(json.dumps(receipt, indent=2, sort_keys=True))
+          PY
+
+      - name: Validate artifacts
+        if: always()
+        run: |
+          set -euo pipefail
+          for f in summary.json netlist.json design.json pcb_probe.txt g4_probe.json findings.json report.md terminal_receipt.json; do
+            test -s "work/audit/$f"
+          done
+
+      - name: Upload terminal evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: altium-audit-terminal-evidence
+          path: work/audit/
+
+      - name: Enforce terminal status
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("work/audit/terminal_receipt.json").read_text())
+          if r.get("status") != "PASS":
+              raise SystemExit(f"strict audit not PASS: {r.get('status')}")
+          PY
