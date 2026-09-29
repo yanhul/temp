@@ -116,6 +116,14 @@ def main():
             if finding.get("id","").startswith("G7-TOPOLOGY-") and finding.get("status")=="FAIL" and finding.get("object") is not None:
                 verified_topology_fail_nets.add(str(finding["object"]))
     connectivity={}
+    placement_config={}
+    if a.config and a.config.exists():
+        try:
+            cfg=json.loads(a.config.read_text(encoding="utf-8-sig"))
+            placement_config=cfg.get("placement",{}) if isinstance(cfg,dict) else {}
+        except Exception:
+            placement_config={}
+    locked_refs=set(str(x) for x in placement_config.get("locked_references",[]) or [])
     if a.connectivity_manifest and a.connectivity_manifest.exists():
         try: connectivity=json.loads(a.connectivity_manifest.read_text(encoding="utf-8")).get("intelligence",{}) or {}
         except Exception: connectivity={}
@@ -167,7 +175,7 @@ def main():
         neighbors[pair["b"]].append((pair["a"],w))
     candidate_moves=[]
     for ref, edges in sorted(neighbors.items()):
-        if len(edges) < 1 or ref not in pos_by_ref: continue
+        if len(edges) < 1 or ref not in pos_by_ref or ref in locked_refs: continue
         sx=sy=sw=0.0
         for other,w in edges:
             if other not in pos_by_ref: continue
@@ -196,6 +204,7 @@ def main():
         "unresolved_pairs":affinity_missing[:500],
         "candidate_moves":candidate_moves[:500],
         "mutation":"FORBIDDEN_IN_THIS_STAGE",
+        "locked_references":sorted(locked_refs),
         "next_action":"OPTIMIZE_PLACEMENT" if candidate_moves else "PLACEMENT_REVIEW"
     }
     placement_status="VERIFIED" if (placement_checks["all_positions_authoritative"] and placement_checks["board_bounds_available"] and placement_checks["overlap_count"]==0) else "BLOCKED"
