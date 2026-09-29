@@ -186,16 +186,32 @@ def main():
         target=(round(sx/sw,3),round(sy/sw,3))
         current=pos_by_ref[ref]
         delta=round(math.dist(current,target),3)
+        legal=True
+        reasons=[]
+        if board_box is not None and ref in envelopes:
+            env=envelopes[ref]
+            dx,dy=target[0]-current[0],target[1]-current[1]
+            moved=(env[0]+dx,env[1]+dy,env[2]+dx,env[3]+dy)
+            if moved[0] < board_box[0] or moved[1] < board_box[1] or moved[2] > board_box[2] or moved[3] > board_box[3]:
+                legal=False; reasons.append("BOARD_BOUNDS")
+            if legal:
+                for other,other_env in envelopes.items():
+                    if other==ref: continue
+                    if boxes_overlap(moved,other_env):
+                        legal=False; reasons.append("COMPONENT_BBOX_OVERLAP"); break
+        else:
+            reasons.append("ENVELOPE_OR_BOARD_UNAVAILABLE")
         candidate_moves.append({
             "reference":ref,
             "current_mils":current,
             "suggested_target_mils":target,
             "move_distance_mils":delta,
             "basis":"weighted connectivity-affinity barycenter",
-            "status":"CANDIDATE_ONLY",
+            "status":"LEGAL_CANDIDATE" if legal else "REJECTED_PRECHECK",
+            "precheck":reasons,
             "authority":"derived_from_compiled_netlist"
         })
-    candidate_moves.sort(key=lambda x:-x["move_distance_mils"])
+    candidate_moves.sort(key=lambda x:(x["status"]!="LEGAL_CANDIDATE",-x["move_distance_mils"]))
     placement_quality={
         "schema":"altium-placement-affinity.v2",
         "status":"SUGGESTED" if connectivity.get("status")=="VERIFIED" else "UNKNOWN",
@@ -205,7 +221,9 @@ def main():
         "candidate_moves":candidate_moves[:500],
         "mutation":"FORBIDDEN_IN_THIS_STAGE",
         "locked_references":sorted(locked_refs),
-        "next_action":"OPTIMIZE_PLACEMENT" if candidate_moves else "PLACEMENT_REVIEW"
+        "legal_candidate_count":sum(x["status"]=="LEGAL_CANDIDATE" for x in candidate_moves),
+        "rejected_precheck_count":sum(x["status"]=="REJECTED_PRECHECK" for x in candidate_moves),
+        "next_action":"OPTIMIZE_PLACEMENT" if any(x["status"]=="LEGAL_CANDIDATE" for x in candidate_moves) else "PLACEMENT_REVIEW"
     }
     placement_status="VERIFIED" if (placement_checks["all_positions_authoritative"] and placement_checks["board_bounds_available"] and placement_checks["overlap_count"]==0) else "BLOCKED"
     placement_lock={"schema":"altium-placement-lock.v1","status":"LOCKED" if placement_status=="VERIFIED" else "BLOCKED",
