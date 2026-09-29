@@ -200,6 +200,7 @@ def main():
                     if boxes_overlap(moved,other_env):
                         legal=False; reasons.append("COMPONENT_BBOX_OVERLAP"); break
         else:
+            legal=False
             reasons.append("ENVELOPE_OR_BOARD_UNAVAILABLE")
         candidate_moves.append({
             "reference":ref,
