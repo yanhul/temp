@@ -144,23 +144,62 @@ def derive_from_pcb(pcb):
     return out
 
 def derive_from_g4_probe(path):
+    """Derive only values actually exposed by the authoritative probe.
+
+    Never substitute a guessed/default IPC or Altium value.  A rule is
+    authoritative only when the probe exposes a concrete value in structured
+    attributes/raw_rule or a parseable textual representation.
+    """
     out={}
     if path is None or not path.exists(): return out
     try: data=json.loads(path.read_text(encoding="utf-8"))
     except Exception: return out
+
+    def first_value(attrs, raw_rule, *keys):
+        for k in keys:
+            v=attrs.get(k)
+            if v is not None: return v
+            v=raw_rule.get(k)
+            if v is not None: return v
+        return None
+
+    def text_value(text, keys):
+        import re
+        if not text: return None
+        for key in keys:
+            m=re.search(rf"{re.escape(key)}\\s*[=:]\\s*([-+]?\\d+(?:\\.\\d+)?)\\s*(mil|mm|inch|in)?", str(text), re.I)
+            if m:
+                return m.group(1)+(m.group(2) or "")
+        return None
+
     samples=data.get("rule_samples",[])
     for item in samples:
-        attrs=item.get("attrs",{})
-        kind=str(attrs.get("rule_kind","")).lower()
+        attrs=item.get("attrs",{}) or {}
+        raw_rule=item.get("raw_rule",{}) or {}
+        kind=str(attrs.get("rule_kind", raw_rule.get("rule_kind", ""))).lower()
         raw=item.get("repr","")
         if kind=="componentclearance" and "component_clearance" not in out:
-            if "GAP" in raw: out["component_clearance"]={"status":"APPLICABLE","value":"10mil","evidence":"g4_probe authoritative PcbDoc rule sample: ComponentClearance"}
+            v=first_value(attrs,raw_rule,"clearance","minimum_clearance","gap","GAP")
+            v=v if v is not None else text_value(raw,("clearance","minimum_clearance","gap","GAP"))
+            if v is not None:
+                out["component_clearance"]={"status":"APPLICABLE","value":v,"evidence":"g4_probe authoritative PcbDoc rule sample: ComponentClearance"}
         elif kind=="clearance" and "trace_clearance" not in out:
-            if "GAP" in raw: out["trace_clearance"]={"status":"APPLICABLE","value":"10mil","evidence":"g4_probe authoritative PcbDoc rule sample: Clearance"}
+            v=first_value(attrs,raw_rule,"clearance","minimum_clearance","gap","generic_clearance","GAP","GENERICCLEARANCE")
+            v=v if v is not None else text_value(raw,("clearance","minimum_clearance","gap","generic_clearance","GAP","GENERICCLEARANCE"))
+            if v is not None:
+                out["trace_clearance"]={"status":"APPLICABLE","value":v,"evidence":"g4_probe authoritative PcbDoc rule sample: Clearance"}
         elif kind=="width" and "trace_width" not in out:
-            out["trace_width"]={"status":"APPLICABLE","value":"10mil","evidence":"g4_probe authoritative PcbDoc Width rule; width_rule_exposed=true"}
+            v=first_value(attrs,raw_rule,"minimum_width","min_width","MINLIMIT","width")
+            v=v if v is not None else text_value(raw,("minimum_width","min_width","MINLIMIT","width","WIDTH"))
+            if v is not None:
+                out["trace_width"]={"status":"APPLICABLE","value":v,"evidence":"g4_probe authoritative PcbDoc Width rule"}
         elif kind=="routingvias" and "via_rules" not in out:
-            out["via_rules"]={"status":"APPLICABLE","values":{"minimum":"19.685mil","maximum":"47.2441mil"},"evidence":"g4_probe authoritative PcbDoc RoutingVias rule sample"}
+            lo=first_value(attrs,raw_rule,"minimum_diameter","min_diameter","MINIMUMDIAMETER","minimum_width","MINIMUMWIDTH")
+            hi=first_value(attrs,raw_rule,"maximum_diameter","max_diameter","MAXIMUMDIAMETER","maximum_width","MAXIMUMWIDTH")
+            if lo is None: lo=text_value(raw,("minimum_diameter","min_diameter","MINIMUMDIAMETER","minimum_width","MINIMUMWIDTH"))
+            if hi is None: hi=text_value(raw,("maximum_diameter","max_diameter","MAXIMUMDIAMETER","maximum_width","MAXIMUMWIDTH"))
+            if lo is not None or hi is not None:
+                out["via_rules"]={"status":"APPLICABLE","values":{"minimum":lo,"maximum":hi},"evidence":"g4_probe authoritative PcbDoc RoutingVias rule sample"}
     return out
 
 def evaluate(config_path: Path | None, pcb=None, evidence_path: Path | None=None):
