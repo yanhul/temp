@@ -1,0 +1,27 @@
+{
+  "schema": "altium-placement-authority.v1",
+  "profile": "GENERIC",
+  "mode": "GENERIC",
+  "anchors": {},
+  "unlisted_component_policy": "BLOCK_UNTIL_AUTHORITY_CLASSIFIED",
+  "optimization": {
+    "allow_rotation": true,
+    "allow_top_bottom": true,
+    "preserve_fixed_anchors": true
+  },
+  "input_sufficiency": {
+    "required_for_placement": [
+      "board_outline",
+      "component_geometry",
+      "component_position",
+      "connectivity",
+      "fixed_anchor_registry",
+      "mechanical_envelopes",
+      "courtyard",
+      "keepout",
+      "assembly_access"
+    ],
+    "missing_status": "BLOCKED",
+    "unknown_status": "UNKNOWN"
+  }
+}
