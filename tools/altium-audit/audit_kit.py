@@ -83,13 +83,23 @@ def main():
     planning=json.loads(pp.read_text()) if pp.exists() else {"design_status":"BLOCKED","placement":{"status":"UNKNOWN"},"routing":{"status":"UNKNOWN"}}
     anchor_plan=out/"anchor-first-placement-plan.json"
     if PLACEMENT_ENGINE.exists():
-        authority = QI9_AUTHORITY if a.config and a.config.exists() and json.loads(a.config.read_text(encoding="utf-8-sig")).get("project_id")=="QI9-2604-A01" and QI9_AUTHORITY.exists() else None
-        if authority:
+        cfg = {}
+        if a.config and a.config.exists():
+            try:
+                cfg = json.loads(a.config.read_text(encoding="utf-8-sig"))
+            except Exception:
+                cfg = {}
+        configured = cfg.get("placement",{}).get("authority_file")
+        authority = (root / configured) if configured else None
+        if authority is None and cfg.get("project_id")=="QI9-2604-A01" and QI9_AUTHORITY.exists():
+            authority = QI9_AUTHORITY
+        if authority is not None and authority.exists():
             run([PLACEMENT_ENGINE,"--pcb",project_root/pcb.name,"--authority",authority,"--connectivity-manifest",manifest,"--out",anchor_plan])
             if anchor_plan.exists():
                 planning["anchor_first"]=json.loads(anchor_plan.read_text(encoding="utf-8"))
+                planning["placement_profile"]=planning["anchor_first"].get("mode","GENERIC")
         else:
-            planning["anchor_first"]={"status":"BLOCKED","reason":"generic authority packet required; no project-specific authority selected"}
+            planning["anchor_first"]={"status":"BLOCKED","reason":"placement authority packet is required for both generic and project-specific runs"}
 
     initial["kit"]={"status":"PASS","schema":"altium-audit-kit/v4"}; initial["planning"]=planning; initial["design_status"]=planning.get("design_status","BLOCKED")
     if fallback: initial.setdefault("findings",[]).append(blocker); initial.setdefault("gates",{})["G2_COMPILE"]="BLOCKED"
