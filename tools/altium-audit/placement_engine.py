@@ -101,7 +101,11 @@ def run(pcb_path,authority_path,manifest_path,out_path):
     fixed=[r for r,v in authority["anchors"].items() if v["state"]=="FIXED"]
     free=[r for r,v in authority["anchors"].items() if v["state"]=="FREE"]
     discovered=[r for r in positions if r not in authority["anchors"]]
-    unknown=sorted(set(discovered)-set(fixed)-set(free))
+    if authority.get("unlisted_component_policy","").startswith("FREE_IF_"):
+        free=sorted(set(free)|set(discovered)-set(fixed)-set(free))
+        unknown=[]
+    else:
+        unknown=sorted(set(discovered)-set(fixed)-set(free))
 
     # Unknown components are never silently optimized. They must be classified
     # by the authority layer first.
