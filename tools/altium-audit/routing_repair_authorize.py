@@ -155,11 +155,23 @@ def main():
         if value is None:
             value=next((rawr.get(k) for k in ("minimum_width","min_width","MINLIMIT","width") if rawr.get(k) is not None),None)
         if value is None:
-            m=re.search(r"(?:MINLIMIT|MINIMUMWIDTH|WIDTH)\\s*[=:]\\s*([-+]?\\d+(?:\\.\\d+)?)",str(r.get("repr","")),re.I)
+            # Probe repr is authoritative evidence too; parse the explicit
+            # field without inventing a width.
+            m=re.search(r"(?:MINLIMIT|MINIMUMWIDTH|WIDTH)\\s*[=:]\\s*([-+]?\\d+(?:\\.\\d+)?)(?:\\s*(?:mil|mm|inch|in))?",str(r.get("repr","")),re.I)
             value=m.group(1) if m else None
         if value is not None:
-            try: widths.append(float(re.search(r"[-+]?\\d+(?:\\.\\d+)?",str(value)).group(0)))
-            except Exception: pass
+            v=mil(value)
+            if v is not None: widths.append(v)
+    # Some probe versions expose the Width rule summary at top level rather
+    # than retaining the Width sample in rule_samples. Accept it only when
+    # the probe explicitly says width_rule_exposed=true and supplies the
+    # named field/value in width_rule_repr. This remains input-derived.
+    if not widths and probe.get("width_rule_exposed") is True:
+        field_name=str(probe.get("width_rule_field") or "minimum_width")
+        m=re.search(rf"{re.escape(field_name)}\\s*=\\s*['\\\"]?([-+]?\\d+(?:\\.\\d+)?)(?:\\s*(?:mil|mm|inch|in))?",str(probe.get("width_rule_repr","")),re.I)
+        if m:
+            v=mil(m.group(1))
+            if v is not None: widths.append(v)
     if not widths:return block("authoritative trace width rule is not exposed; no trace width is guessed")
     clearance=max(clear); trace_width=min(widths); authorized=[];rejected=[]
     for net in plan.get("nets",[]) or []:
