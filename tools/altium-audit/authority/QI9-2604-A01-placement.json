@@ -1,0 +1,20 @@
+{
+  "schema": "altium-placement-authority.v1",
+  "project_id": "QI9-2604-A01",
+  "mode": "QI9",
+  "anchors": {
+    "J1": {"state":"FIXED","position":"source_pcbdoc","orientation":"source_pcbdoc","mechanical_envelope":"source_pcbdoc"},
+    "J2": {"state":"FIXED","position":"source_pcbdoc","orientation":"source_pcbdoc","mechanical_envelope":"source_pcbdoc"},
+    "J3": {"state":"FIXED","position":"source_pcbdoc","orientation":"source_pcbdoc","mechanical_envelope":"source_pcbdoc"},
+    "J4": {"state":"FIXED","position":"source_pcbdoc","orientation":"source_pcbdoc","mechanical_envelope":"source_pcbdoc"},
+    "J5": {"state":"FIXED","position":"source_pcbdoc","orientation":"source_pcbdoc","mechanical_envelope":"source_pcbdoc"},
+    "J7": {"state":"FIXED","position":"source_pcbdoc","orientation":"source_pcbdoc","mechanical_envelope":"source_pcbdoc"},
+    "U15": {"state":"FIXED","position":"source_pcbdoc","orientation":"source_pcbdoc","mechanical_envelope":"source_pcbdoc"}
+  },
+  "unlisted_component_policy": "FREE_IF_PARSER_CONFIRMS_COMPONENT_AND_NO_OTHER_MECHANICAL_ANCHOR_AUTHORITY",
+  "optimization": {
+    "allow_rotation": true,
+    "allow_top_bottom": true,
+    "preserve_fixed_anchors": true
+  }
+}
