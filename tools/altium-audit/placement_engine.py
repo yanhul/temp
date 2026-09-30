@@ -212,4 +212,5 @@ if __name__=="__main__":
     ap.add_argument("--authority",required=True,type=Path)
     ap.add_argument("--connectivity-manifest",required=True,type=Path)
     ap.add_argument("--out",required=True,type=Path)
-    a=ap.parse_args()\n    raise SystemExit(run(a.pcb,a.authority,a.connectivity_manifest,a.out))
+    a=ap.parse_args()
+    raise SystemExit(run(a.pcb,a.authority,a.connectivity_manifest,a.out))
