@@ -149,16 +149,52 @@ def run(pcb_path,authority_path,manifest_path,out_path):
         if a in positions and b in positions:
             neighbors[a].append((b,w)); neighbors[b].append((a,w))
 
+    # Functional zones are authority data, not algorithmic design knowledge.
+    # The engine consumes them generically: zone member -> fixed/known zone anchors.
+    zones=authority.get("functional_zones",{}) or {}
+    zone_anchors=defaultdict(list)
+    for anchor,members in zones.items():
+        if anchor not in positions:
+            continue
+        for member in members or []:
+            zone_anchors[str(member)].append(str(anchor))
+
     candidates=[]
+    blocked_refs=[]
     for ref in free:
         current=positions.get(ref)
-        if current is None:continue
+        if current is None:
+            blocked_refs.append({"reference":ref,"reason":"POSITION_MISSING"})
+            continue
+
         edges=neighbors.get(ref,[])
-        if not edges:continue
-        sw=sum(w for _,w in edges)
-        target=(sum(positions[o][0]*w for o,w in edges)/sw,
-                sum(positions[o][1]*w for o,w in edges)/sw)
-        anchor_neighbors=sorted(o for o,_ in edges if o in fixed)
+        zanchors=[a for a in zone_anchors.get(ref,[]) if a in positions]
+        evidence=[]
+        # Connectivity is stronger evidence than a zone declaration; the zone
+        # contributes a bounded prior so placement remains useful when affinity
+        # is sparse, but never invents a target for a component with no authority.
+        for other,w in edges:
+            evidence.append((other,float(w),"NET_AFFINITY"))
+        for anchor in zanchors:
+            evidence.append((anchor,1.0,"FUNCTIONAL_ZONE"))
+
+        if not evidence:
+            blocked_refs.append({
+                "reference":ref,
+                "reason":"NO_PLACEMENT_TARGET_EVIDENCE",
+                "required":"net_connectivity_or_functional_zone_authority"
+            })
+            continue
+
+        # Weighted target derived solely from observed component positions and
+        # authority-declared zone membership.
+        sw=sum(w for _,w,_ in evidence)
+        target=(sum(positions[o][0]*w for o,w,_ in evidence)/sw,
+                sum(positions[o][1]*w for o,w,_ in evidence)/sw)
+        anchor_neighbors=sorted({o for o,_,_ in evidence if o in fixed})
+        basis_counts=defaultdict(int)
+        for _,_,basis in evidence: basis_counts[basis]+=1
+
         rotations=ROTATIONS if authority.get("optimization",{}).get("allow_rotation",True) else [orientations[ref]]
         sides=LAYERS if authority.get("optimization",{}).get("allow_top_bottom",True) else [layers[ref]]
         options=[]
@@ -166,23 +202,47 @@ def run(pcb_path,authority_path,manifest_path,out_path):
             for side in sides:
                 delta=rot-orientations[ref]
                 box=shifted_box(envelopes.get(ref),current,target,delta)
-                collision=False
+                rejection=[]
                 for other,other_box in envelopes.items():
-                    if other==ref or other_box is None:continue
-                    if overlap(box,other_box):collision=True;break
+                    if other==ref or other_box is None:
+                        continue
+                    # 2-D component/courtyard collision is only authoritative
+                    # on the same assembly side. Do not invent cross-side 3-D
+                    # interference without mechanical authority.
+                    if side==layers.get(other) and overlap(box,other_box):
+                        rejection.append({
+                            "reason":"COMPONENT_ENVELOPE_OVERLAP",
+                            "other":other
+                        })
+                distance=((target[0]-current[0])**2+(target[1]-current[1])**2)**0.5
                 options.append({
                     "target_mils":[round(target[0],3),round(target[1],3)],
                     "rotation":rot,"layer":side,
-                    "status":"CANDIDATE" if not collision else "REJECTED_COLLISION",
+                    "status":"CANDIDATE" if not rejection else "REJECTED_COLLISION",
                     "anchor_neighbors":anchor_neighbors,
-                    "collision":collision
+                    "collision":bool(rejection),
+                    "rejections":rejection,
+                    "objective":{"target_distance_mils":round(distance,3)}
                 })
+
         candidates.append({
             "reference":ref,"current_mils":current,"current_rotation":orientations[ref],
             "current_layer":layers[ref],"anchor_neighbors":anchor_neighbors,
-            "basis":"net-derived weighted component affinity; fixed anchors are reference-only",
+            "zone_anchors":zanchors,
+            "basis":{"evidence_counts":dict(basis_counts),
+                     "rule":"weighted target from authority zones + observed net affinity"},
             "options":options
         })
+
+    if blocked_refs:
+        result={
+            "schema":"altium-placement-plan.v2","status":"BLOCKED",
+            "mode":authority.get("mode"),"reason":"placement input sufficiency failed",
+            "blocked_components":blocked_refs,
+            "fixed_anchors":fixed
+        }
+        Path(out_path).write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding="utf-8")
+        return 1
 
     result={
         "schema":"altium-placement-plan.v2","status":"PLANNED",
@@ -191,9 +251,12 @@ def run(pcb_path,authority_path,manifest_path,out_path):
         "fixed_anchors":fixed,"free_components":free,
         "fixed_anchor_snapshot":fixed_snapshot,
         "candidate_count":len(candidates),"candidates":candidates,
+        "functional_zone_count":len(zones),
+        "target_evidence":"NET_AFFINITY and/or authority FUNCTIONAL_ZONE; no target may be guessed",
         "hard_constraints":{
-            "fixed_position":True,"fixed_orientation":True,"fixed_layer":True,
-            "fixed_mechanical_envelope":True,"fixed_anchors_may_not_move":True
+            "fixed_position":True,"fixed_orientation":True,
+            "fixed_mechanical_envelope":True,"fixed_anchors_may_not_move":True,
+            "fixed_layer_only_if_authority_declares":True
         },
         "optimization_order":[
             "FIXED_ANCHORS","DERIVE_FUNCTIONAL_ZONES","PLACE_FREE_COMPONENTS",
