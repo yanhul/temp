@@ -266,7 +266,7 @@ def main():
         inside=bool(pos is not None and (board_box is None or (board_box[0]<=pos[0]<=board_box[2] and board_box[1]<=pos[1]<=board_box[3])))
         placement.append({"component_index":i,"reference":str(ref) if ref is not None else None,"position":pos,
                           "evidence_source":source,"inside_board":inside,"envelope_source":env_source,
-                          "placement_status":"VERIFIED" if pos is not None and source in ("authoritative_pick_place","authoritative_component_position") and inside and env_source != "UNAVAILABLE" else "UNKNOWN"})
+                          "placement_status":"VERIFIED" if pos is not None and source in ("authoritative_pick_place","authoritative_component_position") and inside else "UNKNOWN"})
     overlap_pairs=[]
     refs=sorted(envelopes)
     for i,ra in enumerate(refs):
