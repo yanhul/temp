@@ -111,6 +111,23 @@ def affinity_from_manifest(path):
 
 def run(pcb_path,authority_path,manifest_path,out_path):
     authority=load_authority(authority_path)
+
+    # Assembly-access authority is a hard planning input. A normative baseline
+    # is sufficient for generic planning checks, but it does not imply a
+    # project/fabricator-specific industrial PASS.
+    assembly=authority.get("assembly_access")
+    if not isinstance(assembly,dict) or assembly.get("status") not in {"BASELINE_VERIFIED","VERIFIED"}:
+        result={
+            "schema":"altium-placement-plan.v2",
+            "status":"BLOCKED",
+            "mode":authority.get("mode"),
+            "reason":"placement input sufficiency failed",
+            "blocked_input":"assembly_access",
+            "required":"BASELINE_VERIFIED or VERIFIED assembly-access authority"
+        }
+        Path(out_path).write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding="utf-8")
+        return 1
+
     pcb=AltiumPcbDoc.from_file(pcb_path)
     comps=list(getattr(pcb,"components",[]) or [])
     positions={}; orientations={}; layers={}; envelopes={}
@@ -270,6 +287,11 @@ def run(pcb_path,authority_path,manifest_path,out_path):
         "candidate_count":len(candidates),"candidates":candidates,
         "functional_zone_count":len(zones),
         "target_evidence":"NET_AFFINITY and/or authority FUNCTIONAL_ZONE; no target may be guessed",
+        "assembly_access_authority":{
+            "status":assembly.get("status"),
+            "scope":assembly.get("scope"),
+            "project_specific_fabricator_process":(assembly.get("project_specific_fabricator_process") or {}).get("status")
+        },
         "hard_constraints":{
             "fixed_position":True,"fixed_orientation":True,
             "fixed_mechanical_envelope":True,"fixed_anchors_may_not_move":True,
