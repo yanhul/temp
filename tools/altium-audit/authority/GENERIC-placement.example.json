@@ -1,0 +1,12 @@
+{
+  "schema": "altium-placement-authority.v1",
+  "project_id": "GENERIC",
+  "mode": "GENERIC",
+  "anchors": {},
+  "unlisted_component_policy": "FREE_IF_PARSER_CONFIRMS_COMPONENT_AND_NO_OTHER_MECHANICAL_ANCHOR_AUTHORITY",
+  "optimization": {
+    "allow_rotation": true,
+    "allow_top_bottom": true,
+    "preserve_fixed_anchors": true
+  }
+}
