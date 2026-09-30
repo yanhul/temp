@@ -100,5 +100,29 @@
       "U20",
       "U21"
     ]
+  },
+  "assembly_access": {
+    "status": "BASELINE_VERIFIED",
+    "scope": "generic_normative_baseline",
+    "basis": [
+      {
+        "standard": "IPC-2221C",
+        "topic": "component placement and accessibility"
+      },
+      {
+        "standard": "IPC-2231A",
+        "topic": "DFX / printed-board assembly design review"
+      }
+    ],
+    "checks": [
+      "same_side_component_envelope_clearance",
+      "land_access_not_obscured_by_placed_component",
+      "component_removal_access_not_blocked_by_placed_component"
+    ],
+    "project_specific_fabricator_process": {
+      "status": "MISSING",
+      "effect": "does_not_authorize_industrial_PASS",
+      "required": "fabricator_or_assembler_process_constraints_when applicable"
+    }
   }
 }
