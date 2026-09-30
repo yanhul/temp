@@ -3,7 +3,7 @@
 from __future__ import annotations
 import argparse,json,shutil,subprocess,sys
 from pathlib import Path
-HERE=Path(__file__).resolve().parent; RUNNER=HERE/"audit_runner.py"; PLAN=HERE/"routing_repair_plan.py"; AUTHORIZE=HERE/"routing_repair_authorize.py"; APPLY=HERE/"routing_repair_apply.py"; CONNECTIVITY=HERE/"connectivity_intelligence.py"
+HERE=Path(__file__).resolve().parent; RUNNER=HERE/"audit_runner.py"; PLAN=HERE/"routing_repair_plan.py"; AUTHORIZE=HERE/"routing_repair_authorize.py"; APPLY=HERE/"routing_repair_apply.py"; CONNECTIVITY=HERE/"connectivity_intelligence.py"; PLACEMENT_ENGINE=HERE/"placement_engine.py"; QI9_AUTHORITY=HERE/"authority/QI9-2604-A01-placement.json"
 TERMINAL={"PASS","FAIL","BLOCKED","INCONCLUSIVE","UNKNOWN"}
 def discover(root):
     sch=sorted(root.rglob("*.SchDoc")); pcb=sorted(root.rglob("*.PcbDoc")); prj=sorted(root.rglob("*.PrjPcb"))
@@ -81,6 +81,16 @@ def main():
     manifest=write_connectivity_manifest(out,audit_out,initial,sch,pcb)
     pp=out/"placement-routing-plan.json"; run([HERE/"placement_routing_plan.py","--pcb",project_root/pcb.name,"--out",pp,"--findings",audit_out/"findings.json","--connectivity-manifest",manifest] + ([ "--config", str(a.config.resolve()) ] if a.config else []))
     planning=json.loads(pp.read_text()) if pp.exists() else {"design_status":"BLOCKED","placement":{"status":"UNKNOWN"},"routing":{"status":"UNKNOWN"}}
+    anchor_plan=out/"anchor-first-placement-plan.json"
+    if PLACEMENT_ENGINE.exists():
+        authority = QI9_AUTHORITY if a.config and a.config.exists() and json.loads(a.config.read_text(encoding="utf-8-sig")).get("project_id")=="QI9-2604-A01" and QI9_AUTHORITY.exists() else None
+        if authority:
+            run([PLACEMENT_ENGINE,"--pcb",project_root/pcb.name,"--authority",authority,"--connectivity-manifest",manifest,"--out",anchor_plan])
+            if anchor_plan.exists():
+                planning["anchor_first"]=json.loads(anchor_plan.read_text(encoding="utf-8"))
+        else:
+            planning["anchor_first"]={"status":"BLOCKED","reason":"generic authority packet required; no project-specific authority selected"}
+
     initial["kit"]={"status":"PASS","schema":"altium-audit-kit/v4"}; initial["planning"]=planning; initial["design_status"]=planning.get("design_status","BLOCKED")
     if fallback: initial.setdefault("findings",[]).append(blocker); initial.setdefault("gates",{})["G2_COMPILE"]="BLOCKED"
     placement_locked=planning.get("placement",{}).get("lock",{}).get("status")=="LOCKED"
