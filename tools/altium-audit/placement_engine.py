@@ -3,7 +3,7 @@
 
 Two execution profiles are supported:
 - generic: all fixed/optimizable decisions come from an authority packet.
-- QI9: the QI9 authority packet fixes J1/J2/J3/J4/J5/J7/U15.
+- workload-specific: fixed anchors and functional zones come only from an authority packet.
 
 This module is planning-only. It never mutates a PcbDoc.
 """
