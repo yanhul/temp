@@ -30,6 +30,8 @@
       "J5",
       "J7"
     ],
-    "authority": "project_declared_fixed_anchors"
+    "authority": "project_declared_fixed_anchors",
+    "authority_file": "tools/altium-audit/authority/QI9-2604-A01-placement.json",
+    "profile": "QI9"
   }
 }
