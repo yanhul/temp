@@ -84,3 +84,33 @@ Placement LOCK additionally requires authoritative component position, board bou
 Routing VERIFIED requires the industrial-rule authority gate plus closed parsed topology. Full DRC, SI/timing, impedance, return-path and other design-specific requirements remain separate gates unless their authoritative evidence and enforcement are implemented.
 
 A parser-success or geometrically connected board is therefore never sufficient for an industrial PASS.
+
+## 11. Placement execution profiles
+
+Placement has two explicit profiles over the same engine:
+
+### GENERIC
+- Project/fabricator authority supplies the fixed-anchor registry.
+- The engine discovers the rest of the components from the PcbDoc and classifies them only when the authority permits.
+- Missing fixed-anchor/mechanical/assembly authority is BLOCKED.
+- No project reference designators are embedded in the engine.
+
+### QI9
+- Authority packet: `authority/QI9-2604-A01-placement.json`.
+- Hard anchors: J1, J2, J3, J4, J5, J7 and U15.
+- Position, orientation, layer and mechanical envelope of these anchors are immutable.
+- All other parser-confirmed components are optimizable under the authority packet unless another mechanical anchor is later declared.
+- Functional zones are derived from the QI9 authority plus compiled connectivity; the optimizer moves FREE components toward the fixed frame, never the reverse.
+
+The QI9 profile is a workload-specific authority packet, not a QI9-specific algorithm. The same placement engine and sufficiency gate are used by both profiles.
+
+## 12. Input sufficiency gate
+
+Sufficiency is operation-specific. The engine must emit a machine-readable decision before placement planning:
+- VERIFIED: authoritative evidence exists;
+- MISSING: required input is absent;
+- UNKNOWN: input exists but cannot establish the required fact;
+- NOT_APPLICABLE: explicitly evidenced as not applicable;
+- BLOCKED: a required authority is missing or invalid.
+
+Minimum placement authority covers board outline, component geometry/position, connectivity, fixed-anchor registry, mechanical envelopes/courtyard, keepouts and assembly access. Missing required authority blocks placement optimization; it is never replaced by a guessed default.
