@@ -53,3 +53,16 @@ temp/
 ```
 
 See `AUDIT_PROTOCOL.md` and `REUSE_RUNBOOK.md`.
+
+## Placement profiles
+
+The placement engine has two execution profiles over one generic algorithm:
+
+- **GENERIC**: requires an authority packet that declares fixed anchors and manufacturing/mechanical constraints.
+- **QI9**: uses `authority/QI9-2604-A01-placement.json`; J1/J2/J3/J4/J5/J7/U15 are hard anchors and cannot be moved, rotated or layer-swapped.
+
+Both profiles run the same sequence:
+
+`FIXED ANCHORS -> INPUT SUFFICIENCY -> FUNCTIONAL ZONES -> FREE COMPONENT PLACEMENT -> ROTATION/TOP-BOTTOM -> CLEARANCE/ASSEMBLY -> ROUTING FEASIBILITY -> VERIFY`
+
+The placement engine is planning-only until a separate mutation authority/backend is implemented. A placement candidate is not a manufacturing PASS.
