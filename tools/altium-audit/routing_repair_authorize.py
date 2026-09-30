@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Independent authorization gate for conservative PCB routing repair."""
+# E2E retrigger marker: width evidence remains probe-derived.
 from __future__ import annotations
 import argparse, hashlib, json, math, re
 from pathlib import Path
