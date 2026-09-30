@@ -225,15 +225,32 @@ def run(pcb_path,authority_path,manifest_path,out_path):
                     "objective":{"target_distance_mils":round(distance,3)}
                 })
 
+        legal=[o for o in options if o["status"]=="CANDIDATE"]
+        if not legal:
+            blocked_refs.append({
+                "reference":ref,
+                "reason":"NO_LEGAL_PLACEMENT_CANDIDATE",
+                "rejections":[o["rejections"] for o in options]
+            })
+            continue
+
+        # Deterministic selection only; no PcbDoc mutation occurs here.
+        selected=min(legal, key=lambda o: (
+            o["objective"]["target_distance_mils"],
+            0 if o["layer"]==layers[ref] else 1,
+            0 if o["rotation"]==orientations[ref] else 1,
+            ROTATIONS.index(o["rotation"]),
+            LAYERS.index(o["layer"])
+        ))
+
         candidates.append({
             "reference":ref,"current_mils":current,"current_rotation":orientations[ref],
             "current_layer":layers[ref],"anchor_neighbors":anchor_neighbors,
             "zone_anchors":zanchors,
             "basis":{"evidence_counts":dict(basis_counts),
                      "rule":"weighted target from authority zones + observed net affinity"},
-            "options":options
+            "selected":selected,"options":options
         })
-
     if blocked_refs:
         result={
             "schema":"altium-placement-plan.v2","status":"BLOCKED",
