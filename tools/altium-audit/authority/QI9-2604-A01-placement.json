@@ -3,18 +3,102 @@
   "project_id": "QI9-2604-A01",
   "mode": "QI9",
   "anchors": {
-    "J1": {"state":"FIXED","position":"source_pcbdoc","orientation":"source_pcbdoc","mechanical_envelope":"source_pcbdoc"},
-    "J2": {"state":"FIXED","position":"source_pcbdoc","orientation":"source_pcbdoc","mechanical_envelope":"source_pcbdoc"},
-    "J3": {"state":"FIXED","position":"source_pcbdoc","orientation":"source_pcbdoc","mechanical_envelope":"source_pcbdoc"},
-    "J4": {"state":"FIXED","position":"source_pcbdoc","orientation":"source_pcbdoc","mechanical_envelope":"source_pcbdoc"},
-    "J5": {"state":"FIXED","position":"source_pcbdoc","orientation":"source_pcbdoc","mechanical_envelope":"source_pcbdoc"},
-    "J7": {"state":"FIXED","position":"source_pcbdoc","orientation":"source_pcbdoc","mechanical_envelope":"source_pcbdoc"},
-    "U15": {"state":"FIXED","position":"source_pcbdoc","orientation":"source_pcbdoc","mechanical_envelope":"source_pcbdoc"}
+    "J1": {
+      "state": "FIXED",
+      "position": "source_pcbdoc",
+      "orientation": "source_pcbdoc",
+      "mechanical_envelope": "source_pcbdoc"
+    },
+    "J2": {
+      "state": "FIXED",
+      "position": "source_pcbdoc",
+      "orientation": "source_pcbdoc",
+      "mechanical_envelope": "source_pcbdoc"
+    },
+    "J3": {
+      "state": "FIXED",
+      "position": "source_pcbdoc",
+      "orientation": "source_pcbdoc",
+      "mechanical_envelope": "source_pcbdoc"
+    },
+    "J4": {
+      "state": "FIXED",
+      "position": "source_pcbdoc",
+      "orientation": "source_pcbdoc",
+      "mechanical_envelope": "source_pcbdoc"
+    },
+    "J5": {
+      "state": "FIXED",
+      "position": "source_pcbdoc",
+      "orientation": "source_pcbdoc",
+      "mechanical_envelope": "source_pcbdoc"
+    },
+    "J7": {
+      "state": "FIXED",
+      "position": "source_pcbdoc",
+      "orientation": "source_pcbdoc",
+      "mechanical_envelope": "source_pcbdoc"
+    },
+    "U15": {
+      "state": "FIXED",
+      "position": "source_pcbdoc",
+      "orientation": "source_pcbdoc",
+      "mechanical_envelope": "source_pcbdoc"
+    }
   },
   "unlisted_component_policy": "FREE_IF_PARSER_CONFIRMS_COMPONENT_AND_NO_OTHER_MECHANICAL_ANCHOR_AUTHORITY",
   "optimization": {
     "allow_rotation": true,
     "allow_top_bottom": true,
     "preserve_fixed_anchors": true
+  },
+  "input_sufficiency": {
+    "required_for_placement": [
+      "SchDoc",
+      "PcbDoc",
+      "board_outline",
+      "component_geometry",
+      "component_positions",
+      "net_connectivity",
+      "fixed_anchor_registry",
+      "mechanical_envelopes",
+      "courtyard",
+      "keepout",
+      "assembly_access"
+    ],
+    "missing_status": "BLOCKED",
+    "unknown_status": "UNKNOWN",
+    "optional_for_placement": [
+      "PrjPcb",
+      "fabricator_specific_DFM"
+    ]
+  },
+  "functional_zones": {
+    "J5": [
+      "U14"
+    ],
+    "J7": [
+      "Q2",
+      "Q3",
+      "Q4",
+      "Q5",
+      "Q6",
+      "Q7",
+      "Q8",
+      "Q9",
+      "RN6",
+      "RN7",
+      "U20",
+      "U21"
+    ],
+    "J2": [
+      "U2"
+    ],
+    "U15": [
+      "U14",
+      "U2",
+      "U20",
+      "U21"
+    ]
   }
 }
