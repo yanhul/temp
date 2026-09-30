@@ -95,14 +95,13 @@ Placement has two explicit profiles over the same engine:
 - Missing fixed-anchor/mechanical/assembly authority is BLOCKED.
 - No project reference designators are embedded in the engine.
 
-### QI9
-- Authority packet: `authority/QI9-2604-A01-placement.json`.
-- Hard anchors: J1, J2, J3, J4, J5, J7 and U15.
-- Position, orientation, layer and mechanical envelope of these anchors are immutable.
-- All other parser-confirmed components are optimizable under the authority packet unless another mechanical anchor is later declared.
-- Functional zones are derived from the QI9 authority plus compiled connectivity; the optimizer moves FREE components toward the fixed frame, never the reverse.
+### WORKLOAD-SPECIFIC
+- A workload authority packet supplies the fixed-anchor registry and any functional zones.
+- Anchor position, orientation, layer and mechanical envelope are immutable only where the packet declares them fixed.
+- All other parser-confirmed components are optimizable under the authority packet unless another mechanical anchor is declared.
+- Functional zones are derived from authority plus compiled connectivity; the optimizer moves FREE components toward the fixed frame, never the reverse.
 
-The QI9 profile is a workload-specific authority packet, not a QI9-specific algorithm. The same placement engine and sufficiency gate are used by both profiles.
+The workload-specific profile is an authority packet, not a project-specific algorithm. The same placement engine and sufficiency gate are used by both profiles.
 
 ## 12. Input sufficiency gate
 
