@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Single-entry reusable Altium Audit Kit: intake -> audit -> plan -> authorize -> apply -> verify -> retry."""
+"""Single-entry reusable Altium Audit Kit: intake -> audit -> plan -> authorize -> apply -> verify -> retry.
+
+Placement authority is supplied by the workload configuration; no workload-specific fallback is embedded here."""
 from __future__ import annotations
 import argparse,json,shutil,subprocess,sys
 from pathlib import Path
