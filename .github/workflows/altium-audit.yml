@@ -78,7 +78,10 @@ jobs:
               for f in ("routing_repair_plan.json","repair_receipt.json"):
                   if not Path("work/audit",f).is_file(): raise SystemExit(f"missing PASS artifact: {f}")
           print("AUDIT STATUS:",s.get("status"))
-          plan=json.loads(Path("work/audit/placement-routing-plan.json").read_text())\n          if plan.get("industrial_rule_authority",{}).get("status")!="VERIFIED":\n              print("INDUSTRIAL RULE AUTHORITY:", plan.get("industrial_rule_authority",{}).get("status"))\n          print("FINAL EXECUTION STATUS:",status)
+          plan=json.loads(Path("work/audit/placement-routing-plan.json").read_text())
+          if plan.get("industrial_rule_authority",{}).get("status")!="VERIFIED":
+              print("INDUSTRIAL RULE AUTHORITY:", plan.get("industrial_rule_authority",{}).get("status"))
+          print("FINAL EXECUTION STATUS:",status)
           PY
 
       - name: Upload audit artifacts
