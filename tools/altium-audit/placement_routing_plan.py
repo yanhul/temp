@@ -6,6 +6,7 @@ from pathlib import Path
 from collections import defaultdict
 from altium_monkey import AltiumPcbDoc
 from industrial_rules import evaluate as evaluate_industrial_rules
+from placement_optimizer import PlacementConfig, PlacementNode, optimize as optimize_placement
 def f(o,*ks):
     if isinstance(o,dict):
         for k in ks:
@@ -276,93 +277,39 @@ def main():
                       "board_bounds_available":board_box is not None,"component_envelope_count":len(envelopes),
                       "overlap_count":len(overlap_pairs),"overlap_pairs":overlap_pairs[:200],"overlap_evidence":"authoritative_component_body_or_courtyard_geometry" if envelopes else "UNAVAILABLE",
                       "envelope_sources":dict(sorted({x["reference"]:x.get("envelope_source") for x in placement if x.get("reference") and x.get("envelope_source")!="UNAVAILABLE"}.items()))}
-    # Connectivity-driven placement is advisory at this stage. It scores the
-    # current placement against net-derived component affinity but does not
-    # mutate coordinates or claim design intent.
+    # Generic placement optimization: derive candidates from compiled-net affinity,
+    # authoritative envelopes and board bounds. Never mutate the PcbDoc here.
     pos_by_ref={x["reference"]:x["position"] for x in placement if x.get("reference") and x.get("position") is not None}
-    affinity_observed=[]
-    affinity_missing=[]
-    for (ra,rb), weight in sorted(affinity_by_pair.items(), key=lambda x:(-x[1],x[0])):
-        pa,pb=pos_by_ref.get(ra),pos_by_ref.get(rb)
-        rec={"a":ra,"b":rb,"weight":weight}
-        if pa is not None and pb is not None:
-            rec["distance_mils"]=round(math.dist(pa,pb),3); rec["status"]="OBSERVED"
-            affinity_observed.append(rec)
-        else:
-            rec["status"]="UNRESOLVED"; affinity_missing.append(rec)
-    # Produce candidate targets from the current graph only. This is a
-    # recommendation surface; it is intentionally not a PCB mutation.
-    neighbors=defaultdict(list)
-    for pair in affinity_observed:
-        w=max(float(pair.get("weight",0)),0.001)
-        neighbors[pair["a"]].append((pair["b"],w))
-        neighbors[pair["b"]].append((pair["a"],w))
-    candidate_moves=[]
-    for ref, edges in sorted(neighbors.items()):
-        if len(edges) < 1 or ref not in pos_by_ref or ref in locked_refs: continue
-        sx=sy=sw=0.0
-        for other,w in edges:
-            if other not in pos_by_ref: continue
-            sx += pos_by_ref[other][0]*w
-            sy += pos_by_ref[other][1]*w
-            sw += w
-        if sw <= 0: continue
-        target=(round(sx/sw,3),round(sy/sw,3))
-        current=pos_by_ref[ref]
-        delta=round(math.dist(current,target),3)
-        legal=True
-        reasons=[]
-        env_source = next((x.get("envelope_source") for x in placement if x.get("reference")==ref), "UNAVAILABLE")
-        placement_rule_keys=("component_clearance","board_edge_clearance","courtyard","keepout","assembly_access")
-        placement_rules=(industrial.get("rules",{}) if isinstance(industrial,dict) else {})
-        placement_authority=all(isinstance(placement_rules.get(k),dict) and placement_rules[k].get("status") in ("APPLICABLE","NOT_APPLICABLE") for k in placement_rule_keys)
-        if not placement_authority:
-            legal=False
-            reasons.append("PLACEMENT_RULE_AUTHORITY_INCOMPLETE")
-        elif board_box is not None and ref in envelopes:
-            env=envelopes[ref]
-            dx,dy=target[0]-current[0],target[1]-current[1]
-            moved=(env[0]+dx,env[1]+dy,env[2]+dx,env[3]+dy)
-            if moved[0] < board_box[0] or moved[1] < board_box[1] or moved[2] > board_box[2] or moved[3] > board_box[3]:
-                legal=False; reasons.append("BOARD_BOUNDS")
-            if legal:
-                for other,other_env in envelopes.items():
-                    if other==ref: continue
-                    if boxes_overlap(moved,other_env):
-                        legal=False; reasons.append("COMPONENT_BBOX_OVERLAP"); break
-        else:
-            legal=False
-            reasons.append("ENVELOPE_OR_BOARD_UNAVAILABLE")
-        candidate_moves.append({
-            "reference":ref,
-            "current_mils":current,
-            "suggested_target_mils":target,
-            "move_distance_mils":delta,
-            "basis":"weighted connectivity-affinity barycenter",
-            "status":"LEGAL_CANDIDATE" if legal else ("PENDING_LEGALITY" if "PLACEMENT_RULE_AUTHORITY_INCOMPLETE" in reasons else "REJECTED_PRECHECK"),
-            "precheck":reasons,
-            "authority":"derived_from_compiled_netlist"
-        })
-    candidate_moves.sort(key=lambda x:(x["status"]!="LEGAL_CANDIDATE",-x["move_distance_mils"]))
+    placement_rules=(industrial.get("rules",{}) if isinstance(industrial,dict) else {})
+    placement_rule_keys=("component_clearance","board_edge_clearance","courtyard","keepout","assembly_access")
+    placement_authority=all(isinstance(placement_rules.get(k),dict) and placement_rules[k].get("status") in ("APPLICABLE","NOT_APPLICABLE") for k in placement_rule_keys)
+    affinity_map={tuple(sorted((str(a),str(b)))):float(w) for (a,b),w in affinity_by_pair.items() if a in pos_by_ref and b in pos_by_ref}
+    optimizer_result={"schema":"altium-placement-optimizer.v1","status":"BLOCKED","reason":"optimizer prerequisites unavailable","mutation":"FORBIDDEN"}
+    if board_box is not None and envelopes and placement_authority:
+        nodes=[]
+        for ref,pos in pos_by_ref.items():
+            env=envelopes.get(ref)
+            if env is not None:
+                nodes.append(PlacementNode(ref,tuple(pos),tuple(env),ref in locked_refs))
+        if nodes:
+            optimizer_result=optimize_placement(nodes,affinity_map,board_box,PlacementConfig(edge_clearance_mils=0.0))
+    optimizer_moves=optimizer_result.get("moves",[]) if isinstance(optimizer_result,dict) else []
+    candidate_moves=[m for m in optimizer_moves if m.get("changed")]
+    for m in candidate_moves:
+        m["basis"]="generic weighted connectivity-affinity coordinate descent"
+        m["authority"]="compiled-netlist affinity + authoritative geometry/rules"
+        m["status"]="LEGAL_CANDIDATE" if optimizer_result.get("status")=="OPTIMIZED" else "PENDING_VERIFICATION"
     placement_quality={
-        "schema":"altium-placement-affinity.v2",
-        "status":"SUGGESTED" if connectivity.get("status")=="VERIFIED" else "UNKNOWN",
-        "basis":"compiled-netlist component affinity + authoritative current component positions",
-        "observed_pairs":affinity_observed[:500],
-        "unresolved_pairs":affinity_missing[:500],
+        "schema":"altium-placement-affinity.v3",
+        "status":optimizer_result.get("status","BLOCKED"),
+        "basis":"generic deterministic optimizer over compiled-netlist affinity + authoritative component geometry",
         "candidate_moves":candidate_moves[:500],
+        "optimizer":optimizer_result,
         "mutation":"FORBIDDEN_IN_THIS_STAGE",
         "locked_references":sorted(locked_refs),
-        "legal_candidate_count":sum(x["status"]=="LEGAL_CANDIDATE" for x in candidate_moves),
-        "pending_legality_count":sum(x["status"]=="PENDING_LEGALITY" for x in candidate_moves),
-        "rejected_precheck_count":sum(x["status"]=="REJECTED_PRECHECK" for x in candidate_moves),
-        "next_action":"OPTIMIZE_PLACEMENT" if any(x["status"]=="LEGAL_CANDIDATE" for x in candidate_moves) else "PLACEMENT_REVIEW"
+        "legal_candidate_count":sum(x.get("status")=="LEGAL_CANDIDATE" for x in candidate_moves),
+        "next_action":"APPLY_AND_VERIFY_PLACEMENT" if optimizer_result.get("status")=="OPTIMIZED" else "PLACEMENT_REVIEW",
     }
-    placement_status="VERIFIED" if (placement_checks["all_positions_authoritative"] and placement_checks["board_bounds_available"]) else "BLOCKED"
-    placement_lock={"schema":"altium-placement-lock.v1","status":"LOCKED" if placement_status=="VERIFIED" else "BLOCKED",
-                    "basis":"authoritative component position + board bounds; body/courtyard overlap is retained as diagnostic placement evidence and is not a routing-anchor lock condition",
-                    "checks":placement_checks,
-                    "locked_references":sorted(x["reference"] for x in placement if x["placement_status"]=="VERIFIED")}
     routing=[]; unresolved=[]
     for i,n in enumerate(nets):
         name=f(n,"name","net_name","netname","uid")
