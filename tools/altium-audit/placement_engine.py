@@ -205,7 +205,21 @@ def run(pcb_path,authority_path,manifest_path,out_path):
         if ref is None:continue
         ref=str(ref); positions[ref]=center(pcb,c); orientations[ref]=orientation(c); layers[ref]=layer(c); envelopes[ref]=envelope(pcb,i)
         geometry[ref]=component_geometry_points(pcb,i)
-        geometry_exact[ref]=bool(geometry[ref])
+        # Explicit vertices/outlines are exact geometry evidence; a bbox fallback
+        # is usable for collision prechecks but is NOT sufficient to authorize rotation.
+        geometry_exact[ref]=False
+        for name in ("component_bodies","shapebased_component_bodies","regions","shapebased_regions"):
+            try: items=list(getattr(pcb,name,[]) or [])
+            except Exception: continue
+            for body in items:
+                owner=get(body,"component","component_index","owner","designator","refdes","reference")
+                if owner is not None and str(owner) not in {str(i),ref}: continue
+                lname=str(get(body,"layer_name","layer","mechanical_layer") or "").upper()
+                if name in ("regions","shapebased_regions") and "COURTYARD" not in lname: continue
+                if any(get(body,a) is not None for a in ("vertices","points","outline","contours")):
+                    geometry_exact[ref]=True
+                    break
+            if geometry_exact[ref]: break
     board_box=board_bounds(pcb)
     keepouts=collect_keepouts(pcb)
     if board_box is None:
