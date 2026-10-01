@@ -36,3 +36,24 @@ class AnchorFirstPlacementTests(unittest.TestCase):
     def test_generic_engine_remains_project_agnostic(self):
         text=(ROOT/"placement_engine.py").read_text(encoding="utf-8")
         self.assertNotIn("QI9-2604-A01",text)
+
+
+    def test_placement_engine_has_global_legality_gates(self):
+        text=(ROOT/"placement_engine.py").read_text(encoding="utf-8")
+        for marker in (
+            "global placement reservation",
+            "BOARD_BOUNDS",
+            "KEEPOUT_OVERLAP",
+            "COMPONENT_COURTYARD_OVERLAP",
+            "FINAL_GLOBAL_RECHECK",
+        ):
+            self.assertIn(marker,text)
+
+    def test_rotation_fails_closed_without_explicit_geometry(self):
+        text=(ROOT/"placement_engine.py").read_text(encoding="utf-8")
+        self.assertIn("ROTATION_GEOMETRY_UNAVAILABLE",text)
+        self.assertIn("geometry_exact",text)
+
+    def test_optimizer_has_no_pcbdoc_mutation(self):
+        text=(ROOT/"placement_engine.py").read_text(encoding="utf-8")
+        self.assertIn('"mutation":"FORBIDDEN"',text)
