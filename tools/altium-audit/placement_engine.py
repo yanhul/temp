@@ -378,22 +378,39 @@ def run(pcb_path,authority_path,manifest_path,out_path):
     reserved=[]; placement_order=[]; reservation_failures=[]
     ordered=sorted(candidates,key=lambda x:(-len(x["anchor_neighbors"]),x["reference"]))
     for item in ordered:
-        ref=item["reference"]; sel=item["selected"]; current=item["current_mils"]
-        delta=sel["rotation"]-item["current_rotation"]; pts=geometry.get(ref,[])
-        moved=transform_points(pts,current,tuple(sel["target_mils"]),delta) if pts else []
-        box=points_bbox(moved)
-        conflicts=[]
-        if box is not None:
-            for r,rb,rl in reserved:
-                if sel["layer"]==rl and rb is not None and overlap(box,rb): conflicts.append(r)
-        if conflicts:
-            reservation_failures.append({"reference":ref,"conflicts":conflicts})
-            sel["status"]="REJECTED_GLOBAL_RESERVATION"
-            sel["rejections"].append({"reason":"GLOBAL_RESERVED_GEOMETRY_OVERLAP","others":conflicts})
-        else:
-            reserved.append((ref,box,sel["layer"]))
-            placement_order.append(ref)
-            sel["status"]="RESERVED_CANDIDATE"
+        ref=item["reference"]; current=item["current_mils"]
+        ranked=sorted(
+            [o for o in item["options"] if o["status"] in {"CANDIDATE","RESERVED_CANDIDATE"}],
+            key=lambda o: (
+                o["objective"]["target_distance_mils"],
+                0 if o["layer"]==item["current_layer"] else 1,
+                0 if o["rotation"]==item["current_rotation"] else 1,
+                ROTATIONS.index(o["rotation"]), LAYERS.index(o["layer"])
+            )
+        )
+        chosen=None
+        rejected=[]
+        for sel in ranked:
+            delta=sel["rotation"]-item["current_rotation"]; pts=geometry.get(ref,[])
+            moved=transform_points(pts,current,tuple(sel["target_mils"]),delta) if pts else []
+            box=points_bbox(moved)
+            conflicts=[]
+            if box is not None:
+                for r,rb,rl in reserved:
+                    if sel["layer"]==rl and rb is not None and overlap(box,rb): conflicts.append(r)
+            if conflicts:
+                rejected.append({"candidate":sel["target_mils"],"rotation":sel["rotation"],"layer":sel["layer"],"others":conflicts})
+                continue
+            chosen=(sel,box); break
+        if chosen is None:
+            reservation_failures.append({"reference":ref,"reason":"NO_CANDIDATE_SURVIVES_GLOBAL_RESERVATION","rejected_candidates":rejected})
+            continue
+        sel,box=chosen
+        item["selected"]=sel
+        sel["status"]="RESERVED_CANDIDATE"
+        sel.setdefault("global_rejections",[]).extend(rejected)
+        reserved.append((ref,box,sel["layer"]))
+        placement_order.append(ref)
     if reservation_failures:
         result={"schema":"altium-placement-plan.v2","status":"BLOCKED","mode":authority.get("mode"),"reason":"global placement reservation failed","reservation_failures":reservation_failures,"candidate_count":len(candidates),"placement_order":placement_order}
         Path(out_path).write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding="utf-8"); return 1
