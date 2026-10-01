@@ -380,8 +380,8 @@ def main():
             sch_components = list(getattr(schdoc, "components", []) or [])
             payload = {"components": [repr(x) for x in sch_components], "compile": None,
                        "diagnostics": [], "source_mode": "SCHDOC+PCBDOC"}
-            netlist = {"nets": []}
-            netlist_text = json.dumps(netlist, indent=2)
+            netlist = None
+            netlist_text = json.dumps({"nets": [], "authoritative": False}, indent=2)
             parse_basis = f"direct {schs[0].name} + {pcbs[0].name}"
         add(findings,"G1-PARSE","INFO","parse","VERIFIED",
             f"Loaded {parse_basis}; schematic count={len(schs)}, PCB count={len(pcbs)}.","VERIFIED")
@@ -394,8 +394,8 @@ def main():
     diagnostics = payload.get("diagnostics") or []
     compile_data = payload.get("compile")
     if compile_data is None:
-        add(findings,"G2-COMPILE","INFO","compile","VERIFIED",
-            "Two-file SCH+PCB mode: no project compile context is required for the structural baseline; compile-dependent checks are explicitly limited.","FACT")
+        add(findings,"G2-COMPILE","BLOCKER","compile","BLOCKED",
+            "No authoritative compiled schematic/netlist evidence is available. Direct SchDoc parsing is structural-only and cannot authorize connectivity, placement, or routing.","FACT")
     elif diagnostics:
         add(findings,"G2-DIAGNOSTICS","HIGH","compile","FAIL",
             f"{len(diagnostics)} compile diagnostic record(s) emitted.","VERIFIED")
@@ -408,6 +408,14 @@ def main():
     if sch_components is None:
         sch_components = payload.get("components", []) or []
     pcb_components = list(getattr(pcb, "components", []) or [])
+    pcb_pads = list(getattr(pcb, "pads", []) or [])
+    pcb_nets = list(getattr(pcb, "nets", []) or [])
+    if not pcb_components or not pcb_pads:
+        add(findings,"G4-PCB-STRUCTURE","BLOCKER","pcb","BLOCKED",
+            f"Authoritative PcbDoc loaded but structural extraction is incomplete: components={len(pcb_components)}, pads={len(pcb_pads)}, nets={len(pcb_nets)}.","FACT")
+    else:
+        add(findings,"G4-PCB-STRUCTURE","INFO","pcb","VERIFIED",
+            f"Authoritative PcbDoc structural extraction: components={len(pcb_components)}, pads={len(pcb_pads)}, nets={len(pcb_nets)}.","VERIFIED")
     srefs = {as_name(x) for x in sch_components if as_name(x)}
     prefs = {as_name(x) for x in pcb_components if as_name(x)}
     for ref in sorted(srefs - prefs):
@@ -423,8 +431,12 @@ def main():
         add(findings,"G3-REFDES","BLOCKER","connectivity","FAIL",
             f"Reference mismatch: {len(srefs-prefs)} schematic-only; {len(prefs-srefs)} PCB-only.","VERIFIED")
 
-    # Authoritative terminal join.
-    nl_nets = netlist.get("nets", []) or []
+    # Authoritative terminal join. An empty/missing netlist is not evidence;
+    # it is a hard connectivity block.
+    nl_nets = (netlist or {}).get("nets", []) or []
+    if not nl_nets:
+        add(findings,"G3-NETLIST-AUTHORITY","BLOCKER","connectivity","BLOCKED",
+            "Authoritative compiled schematic netlist is missing or empty; reference reconciliation alone cannot prove pin-to-net connectivity.","FACT")
     sch_pin_to_net = {}
     for n in nl_nets:
         nn = field(n,"name","uid")
@@ -432,8 +444,6 @@ def main():
             ref, pin = field(t,"designator","refdes","reference"), field(t,"pin","pin_designator","number")
             if ref is not None and pin is not None:
                 sch_pin_to_net[(str(ref),str(pin))] = None if nn is None else str(nn)
-    pcb_nets = list(getattr(pcb,"nets",[]) or [])
-    pcb_pads = list(getattr(pcb,"pads",[]) or [])
     ref_by_idx = {i: as_name(c) for i,c in enumerate(pcb_components)}
     net_by_idx = {i: field(n,"name","net_name","netname","uid") for i,n in enumerate(pcb_nets)}
     pcb_pin_to_net = {}
@@ -823,7 +833,11 @@ def main():
     gates = {
         "G0_INTAKE": "VERIFIED" if not any(f["id"]=="G0-ARCHIVE-HASH" and f["status"]=="FAIL" for f in findings) else "BLOCKED",
         "G1_PARSE":"VERIFIED",
-        "G2_COMPILE":"FAIL" if diagnostics else "VERIFIED",
+        "G2_COMPILE": (
+            "FAIL" if diagnostics else
+            "BLOCKED" if any(f["id"]=="G2-COMPILE" and f["status"]=="BLOCKED" for f in findings) else
+            "VERIFIED"
+        ),
         "G3_CONNECTIVITY":"VERIFIED" if not any(f["id"].startswith("G3-") and f["status"] in ("FAIL","UNKNOWN","BLOCKED") for f in findings) else "BLOCKED",
         "G4_PCB":"VERIFIED" if not any(f["id"].startswith("G4-") and f["status"] in ("FAIL","UNKNOWN","BLOCKED") for f in findings) else "BLOCKED",
         "G5_ELECTRICAL":gate_for("G5-"),
