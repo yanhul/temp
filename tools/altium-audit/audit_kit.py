@@ -80,8 +80,9 @@ def main():
         if direct is not None:
             blocker={"id":"G2-PROJECT-COMPILE","severity":"BLOCKER","domain":"compile","status":"BLOCKED","object":prj.name,"evidence":"Project compile failed; structural SCH+PCB audit continued directly.","confidence":"FACT"}
             direct.setdefault("findings",[]).append(blocker); direct.setdefault("gates",{})["G2_COMPILE"]="BLOCKED"; direct["status"]="BLOCKED"; direct["project_compile_fallback"]=True; initial=direct; fallback=True
-    manifest=write_connectivity_manifest(out,audit_out,initial,sch,pcb)
-    pp=out/"placement-routing-plan.json"; run([HERE/"placement_routing_plan.py","--pcb",project_root/pcb.name,"--out",pp,"--findings",audit_out/"findings.json","--connectivity-manifest",manifest] + ([ "--config", str(a.config.resolve()) ] if a.config else []))
+    evidence_out = out/"audit-direct-fallback" if fallback else audit_out
+    manifest=write_connectivity_manifest(out,evidence_out,initial,sch,pcb)
+    pp=out/"placement-routing-plan.json"; run([HERE/"placement_routing_plan.py","--pcb",project_root/pcb.name,"--out",pp,"--findings",evidence_out/"findings.json","--connectivity-manifest",manifest] + ([ "--config", str(a.config.resolve()) ] if a.config else []))
     planning=json.loads(pp.read_text()) if pp.exists() else {"design_status":"BLOCKED","placement":{"status":"UNKNOWN"},"routing":{"status":"UNKNOWN"}}
     anchor_plan=out/"anchor-first-placement-plan.json"
     if PLACEMENT_ENGINE.exists():
