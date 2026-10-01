@@ -88,6 +88,75 @@ def shifted_box(box,old,new,rotation_delta=0.0):
 def overlap(a,b):
     return not(a[2] < b[0] or b[2] < a[0] or a[3] < b[1] or b[3] < a[1])
 
+
+
+def board_bounds(pcb):
+    """Return authoritative board outline bbox, or None (fail closed)."""
+    board=getattr(pcb,"board",None)
+    outline=get(board,"outline") if board is not None else None
+    bb=get(outline,"bounding_box","bbox","bounds") if outline is not None else None
+    if isinstance(bb,(list,tuple)) and len(bb)>=4:
+        try:return tuple(float(x) for x in bb[:4])
+        except Exception:pass
+    return None
+
+def collect_keepouts(pcb):
+    out=[]
+    for name in ("keepouts","keepout_regions","keepout_areas","regions","shapebased_regions"):
+        try:items=list(getattr(pcb,name,[]) or [])
+        except Exception:continue
+        for obj in items:
+            layer_name=str(get(obj,"layer_name","layer","mechanical_layer") or "").upper()
+            kind=str(get(obj,"kind","type","region_type","name") or "").upper()
+            if name not in ("keepouts","keepout_regions","keepout_areas") and "KEEP" not in (layer_name+" "+kind):
+                continue
+            bb=get(obj,"bounding_box","bbox","bounds")
+            if isinstance(bb,(list,tuple)) and len(bb)>=4:
+                try:out.append(tuple(float(x) for x in bb[:4]))
+                except Exception:pass
+    return out
+
+def component_geometry_points(pcb,i):
+    comps=list(getattr(pcb,"components",[]) or [])
+    if i>=len(comps):return []
+    c=comps[i]; ref=str(get(c,"designator","refdes","reference") or "")
+    points=[]
+    for name in ("component_bodies","shapebased_component_bodies","regions","shapebased_regions"):
+        try:items=list(getattr(pcb,name,[]) or [])
+        except Exception:continue
+        for body in items:
+            owner=get(body,"component","component_index","owner","designator","refdes","reference")
+            if owner is not None and str(owner) not in {str(i),ref}:continue
+            lname=str(get(body,"layer_name","layer","mechanical_layer") or "").upper()
+            if name in ("regions","shapebased_regions") and "COURTYARD" not in lname:continue
+            for attr in ("vertices","points","outline","contours"):
+                vals=get(body,attr)
+                try: vals=list(vals) if vals is not None else []
+                except Exception: vals=[]
+                for p in vals:
+                    q=xy(p)
+                    if q is not None:points.append(q)
+            if not points:
+                bb=get(body,"bounding_box","bbox","bounds")
+                if isinstance(bb,(list,tuple)) and len(bb)>=4:
+                    try:
+                        x0,y0,x1,y1=(float(x) for x in bb[:4])
+                        points.extend(((x0,y0),(x1,y0),(x1,y1),(x0,y1)))
+                    except Exception:pass
+    return points
+
+def transform_points(points,old,new,delta):
+    if not points:return []
+    rad=math.radians(delta); co,si=math.cos(rad),math.sin(rad)
+    cx=sum(p[0] for p in points)/len(points); cy=sum(p[1] for p in points)/len(points)
+    return [(new[0]+(p[0]-cx)*co-(p[1]-cy)*si,
+             new[1]+(p[0]-cx)*si+(p[1]-cy)*co) for p in points]
+
+def points_bbox(points):
+    if not points:return None
+    xs=[p[0] for p in points]; ys=[p[1] for p in points]
+    return (min(xs),min(ys),max(xs),max(ys))
+
 def load_authority(path):
     d=json.loads(Path(path).read_text(encoding="utf-8"))
     if d.get("schema")!="altium-placement-authority.v1":
@@ -130,11 +199,18 @@ def run(pcb_path,authority_path,manifest_path,out_path):
 
     pcb=AltiumPcbDoc.from_file(pcb_path)
     comps=list(getattr(pcb,"components",[]) or [])
-    positions={}; orientations={}; layers={}; envelopes={}
+    positions={}; orientations={}; layers={}; envelopes={}; geometry={}; geometry_exact={}
     for i,c in enumerate(comps):
         ref=get(c,"designator","refdes","reference")
         if ref is None:continue
         ref=str(ref); positions[ref]=center(pcb,c); orientations[ref]=orientation(c); layers[ref]=layer(c); envelopes[ref]=envelope(pcb,i)
+        geometry[ref]=component_geometry_points(pcb,i)
+        geometry_exact[ref]=bool(geometry[ref])
+    board_box=board_bounds(pcb)
+    keepouts=collect_keepouts(pcb)
+    if board_box is None:
+        result={"schema":"altium-placement-plan.v2","status":"BLOCKED","mode":authority.get("mode"),"reason":"board outline unavailable; placement bounds cannot be verified"}
+        Path(out_path).write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding="utf-8"); return 1
 
     fixed=[r for r,v in authority["anchors"].items() if v["state"]=="FIXED"]
     declared_free=[r for r,v in authority["anchors"].items() if v["state"]=="FREE"]
@@ -218,19 +294,26 @@ def run(pcb_path,authority_path,manifest_path,out_path):
         for rot in rotations:
             for side in sides:
                 delta=rot-orientations[ref]
-                box=shifted_box(envelopes.get(ref),current,target,delta)
                 rejection=[]
-                for other,other_box in envelopes.items():
-                    if other==ref or other_box is None:
-                        continue
-                    # 2-D component/courtyard collision is only authoritative
-                    # on the same assembly side. Do not invent cross-side 3-D
-                    # interference without mechanical authority.
-                    if side==layers.get(other) and overlap(box,other_box):
-                        rejection.append({
-                            "reason":"COMPONENT_ENVELOPE_OVERLAP",
-                            "other":other
-                        })
+                points=geometry.get(ref,[])
+                if not points:
+                    rejection.append({"reason":"COMPONENT_GEOMETRY_UNAVAILABLE"})
+                    box=None
+                else:
+                    moved_points=transform_points(points,current,target,delta)
+                    box=points_bbox(moved_points)
+                    if box[0] < board_box[0] or box[1] < board_box[1] or box[2] > board_box[2] or box[3] > board_box[3]:
+                        rejection.append({"reason":"BOARD_BOUNDS"})
+                    for ko in keepouts:
+                        if overlap(box,ko):
+                            rejection.append({"reason":"KEEPOUT_OVERLAP"})
+                    for other,other_box in envelopes.items():
+                        if other==ref or other_box is None:
+                            continue
+                        if side==layers.get(other) and overlap(box,other_box):
+                            rejection.append({"reason":"COMPONENT_COURTYARD_OVERLAP","other":other})
+                    if delta % 360 != 0 and not geometry_exact.get(ref,False):
+                        rejection.append({"reason":"ROTATION_GEOMETRY_UNAVAILABLE"})
                 distance=((target[0]-current[0])**2+(target[1]-current[1])**2)**0.5
                 options.append({
                     "target_mils":[round(target[0],3),round(target[1],3)],
@@ -278,6 +361,37 @@ def run(pcb_path,authority_path,manifest_path,out_path):
         Path(out_path).write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding="utf-8")
         return 1
 
+    reserved=[]; placement_order=[]; reservation_failures=[]
+    ordered=sorted(candidates,key=lambda x:(-len(x["anchor_neighbors"]),x["reference"]))
+    for item in ordered:
+        ref=item["reference"]; sel=item["selected"]; current=item["current_mils"]
+        delta=sel["rotation"]-item["current_rotation"]; pts=geometry.get(ref,[])
+        moved=transform_points(pts,current,tuple(sel["target_mils"]),delta) if pts else []
+        box=points_bbox(moved)
+        conflicts=[]
+        if box is not None:
+            for r,rb,rl in reserved:
+                if sel["layer"]==rl and rb is not None and overlap(box,rb): conflicts.append(r)
+        if conflicts:
+            reservation_failures.append({"reference":ref,"conflicts":conflicts})
+            sel["status"]="REJECTED_GLOBAL_RESERVATION"
+            sel["rejections"].append({"reason":"GLOBAL_RESERVED_GEOMETRY_OVERLAP","others":conflicts})
+        else:
+            reserved.append((ref,box,sel["layer"]))
+            placement_order.append(ref)
+            sel["status"]="RESERVED_CANDIDATE"
+    if reservation_failures:
+        result={"schema":"altium-placement-plan.v2","status":"BLOCKED","mode":authority.get("mode"),"reason":"global placement reservation failed","reservation_failures":reservation_failures,"candidate_count":len(candidates),"placement_order":placement_order}
+        Path(out_path).write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding="utf-8"); return 1
+    final_conflicts=[]
+    for i,(ra,ba,la) in enumerate(reserved):
+        for rb,bb,lb in reserved[i+1:]:
+            if la==lb and ba is not None and bb is not None and overlap(ba,bb):
+                final_conflicts.append((ra,rb))
+    if final_conflicts:
+        result={"schema":"altium-placement-plan.v2","status":"BLOCKED","mode":authority.get("mode"),"reason":"final global placement recheck failed","conflicts":final_conflicts}
+        Path(out_path).write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding="utf-8"); return 1
+
     result={
         "schema":"altium-placement-plan.v2","status":"PLANNED",
         "mode":authority.get("mode","GENERIC"),
@@ -285,6 +399,9 @@ def run(pcb_path,authority_path,manifest_path,out_path):
         "fixed_anchors":fixed,"free_components":free,
         "fixed_anchor_snapshot":fixed_snapshot,
         "candidate_count":len(candidates),"candidates":candidates,
+        "board_bounds":board_box,"keepout_count":len(keepouts),
+        "geometry_exact_count":sum(1 for v in geometry_exact.values() if v),
+        "global_reservation":{"status":"VERIFIED","reserved_count":len(reserved),"placement_order":placement_order,"final_recheck":"VERIFIED"},
         "functional_zone_count":len(zones),
         "target_evidence":"NET_AFFINITY and/or authority FUNCTIONAL_ZONE; no target may be guessed",
         "assembly_access_authority":{
@@ -295,11 +412,15 @@ def run(pcb_path,authority_path,manifest_path,out_path):
         "hard_constraints":{
             "fixed_position":True,"fixed_orientation":True,
             "fixed_mechanical_envelope":True,"fixed_anchors_may_not_move":True,
-            "fixed_layer_only_if_authority_declares":True
+            "fixed_layer_only_if_authority_declares":True,"board_bounds":True,
+            "keepout":True,"courtyard":True,"global_collision_reservation":True,
+            "rotation_requires_explicit_geometry":True
         },
         "optimization_order":[
-            "FIXED_ANCHORS","DERIVE_FUNCTIONAL_ZONES","PLACE_FREE_COMPONENTS",
-            "OPTIMIZE_ROTATION","OPTIMIZE_TOP_BOTTOM","CHECK_CLEARANCE",
+            "FIXED_ANCHORS","DERIVE_FUNCTIONAL_ZONES","GENERATE_CANDIDATES",
+            "PLACE_WITH_GLOBAL_RESERVATION","OPTIMIZE_ROTATION","OPTIMIZE_TOP_BOTTOM",
+            "CHECK_BOARD_BOUNDS","CHECK_KEEPOUT","CHECK_COURTYARD","CHECK_ASSEMBLY",
+            "FINAL_GLOBAL_RECHECK",
             "CHECK_ASSEMBLY","VERIFY_ROUTING_FEASIBILITY"
         ],
         "mutation":"FORBIDDEN",
