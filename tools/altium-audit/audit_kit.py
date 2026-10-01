@@ -90,7 +90,12 @@ def main():
             except Exception:
                 cfg = {}
         configured = cfg.get("placement",{}).get("authority_file")
-        authority = (root / configured) if configured else None
+        authority = None
+        if configured:
+            candidates = [Path(configured)]
+            if not Path(configured).is_absolute():
+                candidates.extend([root / configured, a.config.parent / configured])
+            authority = next((p.resolve() for p in candidates if p.exists()), None)
         if authority is not None and authority.exists():
             run([PLACEMENT_ENGINE,"--pcb",project_root/pcb.name,"--authority",authority,"--connectivity-manifest",manifest,"--out",anchor_plan])
             if anchor_plan.exists():
