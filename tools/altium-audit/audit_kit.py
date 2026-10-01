@@ -3,7 +3,7 @@
 from __future__ import annotations
 import argparse,json,shutil,subprocess,sys
 from pathlib import Path
-HERE=Path(__file__).resolve().parent; RUNNER=HERE/"audit_runner.py"; PLAN=HERE/"routing_repair_plan.py"; AUTHORIZE=HERE/"routing_repair_authorize.py"; APPLY=HERE/"routing_repair_apply.py"; CONNECTIVITY=HERE/"connectivity_intelligence.py"; PLACEMENT_ENGINE=HERE/"placement_engine.py"; QI9_AUTHORITY=HERE/"authority/QI9-2604-A01-placement.json"
+HERE=Path(__file__).resolve().parent; RUNNER=HERE/"audit_runner.py"; PLAN=HERE/"routing_repair_plan.py"; AUTHORIZE=HERE/"routing_repair_authorize.py"; APPLY=HERE/"routing_repair_apply.py"; CONNECTIVITY=HERE/"connectivity_intelligence.py"; PLACEMENT_ENGINE=HERE/"placement_engine.py"
 TERMINAL={"PASS","FAIL","BLOCKED","INCONCLUSIVE","UNKNOWN"}
 def discover(root):
     sch=sorted(root.rglob("*.SchDoc")); pcb=sorted(root.rglob("*.PcbDoc")); prj=sorted(root.rglob("*.PrjPcb"))
@@ -91,8 +91,6 @@ def main():
                 cfg = {}
         configured = cfg.get("placement",{}).get("authority_file")
         authority = (root / configured) if configured else None
-        if authority is None and cfg.get("project_id")=="QI9-2604-A01" and QI9_AUTHORITY.exists():
-            authority = QI9_AUTHORITY
         if authority is not None and authority.exists():
             run([PLACEMENT_ENGINE,"--pcb",project_root/pcb.name,"--authority",authority,"--connectivity-manifest",manifest,"--out",anchor_plan])
             if anchor_plan.exists():
