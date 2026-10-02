@@ -190,4 +190,101 @@ def run(components,netlist,add):
             add("G2-NET-OUTPUT-NO-CONSUMER-"+name,"MEDIUM","schematic","WARN",
                 "Net %r has an OUTPUT but no INPUT/CLOCK/IO consumer among %d terminals."
                 %(name,len(terms)),"INFERRED",name)
+    return idsdef _metadata_drift(i):
+    """Descriptive metadata drift; never treat it as identity proof."""
+    v = _norm(i.get("value"))
+    pv = _norm(i.get("properties", {}).get("value"))
+    m = _norm(i.get("mpn"))
+    notes = []
+    if v and pv and v != pv:
+        notes.append("display_value_vs_compiled_value")
+    if v and m and v != m:
+        notes.append("value_vs_mpn")
+    return notes
+
+def _known_identity_contradiction(i, pins):
+    """Return only a pin-evidence-backed identity contradiction."""
+    if resolve_declared_vs_compiled is None:
+        return None
+    value, library = i.get("value"), i.get("library")
+    if not value or not library:
+        return None
+    result = resolve_declared_vs_compiled(value, library, pins)
+    return result if result.get("state") == "CONTRADICTION" else None
+
+def run(components,netlist,add):
+    ids=inspect_components(components)
+    for i in ids:
+        ref=i["ref"]; declared=_norm(i["value"]); part=_norm(i["mpn"] or i["value"])
+        _metadata_findings(i,add)
+
+        if part in KNOWN_PIN_COUNTS and i["pin_count"] is not None and i["pin_count"]!=KNOWN_PIN_COUNTS[part]:
+            add("G2-SCH-PINCOUNT-"+ref,"BLOCKER","schematic","FAIL",
+                "Authoritative part %r is documented as %d pins, but compiled schematic exposes %d."
+                %(i["mpn"] or i["value"],KNOWN_PIN_COUNTS[part],i["pin_count"]),"VERIFIED",ref)
+
+        pins=_pins(netlist,ref)
+        if resolve_declared_vs_compiled is not None and i.get("value") and i.get("library"):
+            identity=resolve_declared_vs_compiled(i["value"],i["library"],pins)
+            if identity["state"]=="CONTRADICTION":
+                add("G2-SCH-IDENTITY-EVIDENCE-"+ref,"BLOCKER","schematic","FAIL",
+                    "%s Evidence=%s"%(identity["reason"],identity.get("evidence",[])),"VERIFIED",ref)
+            elif identity["state"]=="UNKNOWN" and declared!=_norm(i.get("library")):
+                add("G2-SCH-IDENTITY-UNRESOLVED-"+ref,"MEDIUM","schematic","WARN",
+                    "Declared value %r and compiled library %r cannot be distinguished from authoritative pin evidence: %s"
+                    %(i["value"],i["library"],identity["reason"]),"FACT",ref)
+
+        if declared=="HCPL0600":
+            lib=_norm(i.get("library"))
+            if "HCPL3120" in lib:
+                add("G2-SCH-IDENTITY-"+ref,"BLOCKER","schematic","FAIL",
+                    "Declared HCPL-0600 conflicts with compiled HCPL-3120 library identity; authoritative pin/function evidence must be reconciled.",
+                    "VERIFIED",ref)
+            for pin,want in HCPL0600_PINS.items():
+                actual=pins.get(pin,{}).get("name")
+                if actual and _norm(actual)!=_norm(want):
+                    add("G2-SCH-PIN-FUNCTION-%s-%s"%(ref,pin),"BLOCKER","schematic","FAIL",
+                        "HCPL-0600 pin %s must be %s, but compiled symbol exposes %r on net %r."
+                        %(pin,want,actual,pins.get(pin,{}).get("net")),"VERIFIED",ref+"."+pin)
+
+        if part in {"ESP"+"32S3WROOM1","ESP"+"32S3WROOM1U"}:
+            invalid=sorted(p for p in pins if p.isdigit() and not 1<=int(p)<=41)
+            if invalid:
+                add("G2-SCH-PIN-RANGE-"+ref,"BLOCKER","schematic","FAIL",
+                    "%r is a 41-pin module, but compiled schematic exposes invalid pin numbers %s."
+                    %(i["value"],invalid),"VERIFIED",ref)
+
+        if declared=="TL2904":
+            names={str(x.get("name") or "").upper() for x in pins.values()}
+            if len(pins)==16 and {"+","-","C","E"}.issubset(names):
+                add("G2-SCH-PIN-FUNCTION-"+ref,"BLOCKER","schematic","FAIL",
+                    "Value TL2904 is compiled as a 16-pin optocoupler pattern (+/-/C/E), not as its intended amplifier function.",
+                    "VERIFIED",ref)
+
+        if declared=="BCX56":
+            lib=_norm(i.get("library")); desc=(i.get("description") or "").lower()
+            if "C1815" in lib or "C9014" in desc:
+                add("G2-SCH-IDENTITY-"+ref,"BLOCKER","schematic","FAIL",
+                    "Value BCX56 conflicts with compiled transistor symbol/function evidence %r / %r."
+                    %(i.get("library"),i.get("description")),"VERIFIED",ref)
+
+        if declared in {"SMAJ15CA","SMAJ9CA"} and "SMAJ30CA" in _norm(i.get("library")):
+            add("G2-SCH-IDENTITY-"+ref,"BLOCKER","schematic","FAIL",
+                "Value %s conflicts with compiled library %r."%(i["value"],i["library"]),"VERIFIED",ref)
+
+    for n in (netlist or {}).get("nets",[]) or []:
+        name=_text(n.get("name")) or "<unnamed>"; terms=n.get("terminals",[]) or []
+        if not terms:
+            add("G2-NET-EMPTY-"+name,"HIGH","schematic","FAIL",
+                "Compiled net %r contains no terminals."%name,"VERIFIED",name); continue
+        outs=[t for t in terms if str(t.get("pin_type","")).upper()=="OUTPUT"]
+        ins=[t for t in terms if str(t.get("pin_type","")).upper() in {"INPUT","CLOCK","IO"}]
+        if len(outs)>1:
+            ids2=", ".join("%s.%s"%(t.get("designator"),t.get("pin")) for t in outs)
+            add("G2-NET-OUTPUT-CONFLICT-"+name,"BLOCKER","schematic","FAIL",
+                "Net %r has multiple OUTPUT terminals: %s."%(name,ids2),"VERIFIED",name)
+        if outs and not ins and len(terms)>1:
+            add("G2-NET-OUTPUT-NO-CONSUMER-"+name,"MEDIUM","schematic","WARN",
+                "Net %r has an OUTPUT but no INPUT/CLOCK/IO consumer among %d terminals."
+                %(name,len(terms)),"INFERRED",name)
     return ids
