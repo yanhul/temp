@@ -144,6 +144,15 @@ def component_geometry_points(pcb,i):
                         points.extend(((x0,y0),(x1,y0),(x1,y1),(x0,y1)))
                     except Exception:pass
     if not points:
+        # If component-body vertices are unavailable, reuse the same
+        # authoritative component envelope used by placement legality.
+        # This is conservative collision geometry; it does not authorize
+        # rotation because the exact footprint outline is still unknown.
+        env=envelope(pcb,i)
+        if env is not None:
+            x0,y0,x1,y1=env
+            points=[(x0,y0),(x1,y0),(x1,y1),(x0,y1)]
+    if not points:
         # Same authoritative PcbDoc footprint fallback used by audit_runner.
         # This prevents placement from declaring geometry unavailable merely
         # because component-body vertices are not exposed by the parser.
