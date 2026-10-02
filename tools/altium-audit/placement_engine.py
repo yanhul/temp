@@ -52,6 +52,18 @@ def orientation(c):
         except Exception: pass
     return 0.0
 
+def pcb_coord(v):
+    """Normalize low-level Altium PCB internal units to public mil coordinates."""
+    x=float(v)
+    # altium-monkey exposes low-level PCB record coordinates in internal units;
+    # its public PCB geometry is mil-based (10000 internal units per mil).
+    return x/10000.0 if abs(x) >= 100000.0 else x
+
+def pcb_box(bb):
+    if not isinstance(bb,(list,tuple)) or len(bb)<4:return None
+    try:return tuple(pcb_coord(x) for x in bb[:4])
+    except Exception:return None
+
 def layer(c):
     v=get(c,"layer","layer_name","side","layer_ref")
     s=str(v or "").upper()
@@ -73,7 +85,7 @@ def envelope(pcb,i):
             if name in ("regions","shapebased_regions") and "COURTYARD" not in lname:continue
             bb=get(body,"bounding_box","bbox","bounds")
             if isinstance(bb,(list,tuple)) and len(bb)>=4:
-                try:found.append(tuple(float(x) for x in bb[:4]))
+                try:found.append(pcb_box(bb))
                 except Exception:pass
     return found[0] if found else None
 
@@ -112,7 +124,7 @@ def collect_keepouts(pcb):
                 continue
             bb=get(obj,"bounding_box","bbox","bounds")
             if isinstance(bb,(list,tuple)) and len(bb)>=4:
-                try:out.append(tuple(float(x) for x in bb[:4]))
+                try:out.append(pcb_box(bb))
                 except Exception:pass
     return out
 
@@ -135,12 +147,12 @@ def component_geometry_points(pcb,i):
                 except Exception: vals=[]
                 for p in vals:
                     q=xy(p)
-                    if q is not None:points.append(q)
+                    if q is not None:points.append((pcb_coord(q[0]),pcb_coord(q[1])))
             if not points:
                 bb=get(body,"bounding_box","bbox","bounds")
                 if isinstance(bb,(list,tuple)) and len(bb)>=4:
                     try:
-                        x0,y0,x1,y1=(float(x) for x in bb[:4])
+                        x0,y0,x1,y1=pcb_box(bb)
                         points.extend(((x0,y0),(x1,y0),(x1,y1),(x0,y1)))
                     except Exception:pass
     if not points:
@@ -327,6 +339,15 @@ def run(pcb_path,authority_path,manifest_path,out_path):
         sw=sum(w for _,w,_ in evidence)
         target=(sum(positions[o][0]*w for o,w,_ in evidence)/sw,
                 sum(positions[o][1]*w for o,w,_ in evidence)/sw)
+        # Keep the affinity-derived target inside the authoritative board search
+        # domain. This is a geometric solver constraint, not design intent.
+        pts=geometry.get(ref,[])
+        if pts and board_box:
+            cb=points_bbox(pts)
+            if cb:
+                hw=abs(cb[2]-cb[0])/2.0; hh=abs(cb[3]-cb[1])/2.0
+                target=(min(max(target[0],board_box[0]+hw),board_box[2]-hw),
+                        min(max(target[1],board_box[1]+hh),board_box[3]-hh))
         anchor_neighbors=sorted({o for o,_,_ in evidence if o in fixed})
         basis_counts=defaultdict(int)
         for _,_,basis in evidence: basis_counts[basis]+=1
@@ -334,39 +355,56 @@ def run(pcb_path,authority_path,manifest_path,out_path):
         rotations=ROTATIONS if authority.get("optimization",{}).get("allow_rotation",True) else [orientations[ref]]
         sides=LAYERS if authority.get("optimization",{}).get("allow_top_bottom",True) else [layers[ref]]
         options=[]
-        for rot in rotations:
-            for side in sides:
-                delta=rot-orientations[ref]
-                rejection=[]
-                points=geometry.get(ref,[])
-                if not points:
-                    rejection.append({"reason":"COMPONENT_GEOMETRY_UNAVAILABLE"})
-                    box=None
-                else:
-                    moved_points=transform_points(points,current,target,delta)
-                    box=points_bbox(moved_points)
-                    if box[0] < board_box[0] or box[1] < board_box[1] or box[2] > board_box[2] or box[3] > board_box[3]:
-                        rejection.append({"reason":"BOARD_BOUNDS"})
-                    for ko in keepouts:
-                        if overlap(box,ko):
-                            rejection.append({"reason":"KEEPOUT_OVERLAP"})
-                    for other,other_box in envelopes.items():
-                        if other==ref or other_box is None:
-                            continue
-                        if side==layers.get(other) and overlap(box,other_box):
-                            rejection.append({"reason":"COMPONENT_COURTYARD_OVERLAP","other":other})
-                    if delta % 360 != 0 and not geometry_exact.get(ref,False):
-                        rejection.append({"reason":"ROTATION_GEOMETRY_UNAVAILABLE"})
-                distance=((target[0]-current[0])**2+(target[1]-current[1])**2)**0.5
-                options.append({
-                    "target_mils":[round(target[0],3),round(target[1],3)],
-                    "rotation":rot,"layer":side,
-                    "status":"CANDIDATE" if not rejection else "REJECTED_COLLISION",
-                    "anchor_neighbors":anchor_neighbors,
-                    "collision":bool(rejection),
-                    "rejections":rejection,
-                    "objective":{"target_distance_mils":round(distance,3)}
-                })
+        cb=points_bbox(geometry.get(ref,[])) if geometry.get(ref) else None
+        step=max(abs(cb[2]-cb[0]) if cb else 0.0, abs(cb[3]-cb[1]) if cb else 0.0, 100.0)
+        # Deterministic local-to-regional search: expand in envelope-sized
+        # increments so dense existing placement does not dead-end the solver.
+        offsets=[(x,y) for radius in range(0,4) for x in range(-radius,radius+1)
+                 for y in range(-radius,radius+1)
+                 if max(abs(x),abs(y))==radius]
+        search_targets=[]
+        for ox,oy in offsets:
+            tx=target[0]+ox*step; ty=target[1]+oy*step
+            if cb and board_box:
+                hw=abs(cb[2]-cb[0])/2.0; hh=abs(cb[3]-cb[1])/2.0
+                tx=min(max(tx,board_box[0]+hw),board_box[2]-hw)
+                ty=min(max(ty,board_box[1]+hh),board_box[3]-hh)
+            p=(round(tx,3),round(ty,3))
+            if p not in search_targets: search_targets.append(p)
+        for candidate_target in search_targets:
+            for rot in rotations:
+                for side in sides:
+                    delta=rot-orientations[ref]
+                    rejection=[]
+                    points=geometry.get(ref,[])
+                    if not points:
+                        rejection.append({"reason":"COMPONENT_GEOMETRY_UNAVAILABLE"})
+                        box=None
+                    else:
+                        moved_points=transform_points(points,current,candidate_target,delta)
+                        box=points_bbox(moved_points)
+                        if box[0] < board_box[0] or box[1] < board_box[1] or box[2] > board_box[2] or box[3] > board_box[3]:
+                            rejection.append({"reason":"BOARD_BOUNDS"})
+                        for ko in keepouts:
+                            if overlap(box,ko):
+                                rejection.append({"reason":"KEEPOUT_OVERLAP"})
+                        for other,other_box in envelopes.items():
+                            if other==ref or other_box is None:
+                                continue
+                            if side==layers.get(other) and overlap(box,other_box):
+                                rejection.append({"reason":"COMPONENT_COURTYARD_OVERLAP","other":other})
+                        if delta % 360 != 0 and not geometry_exact.get(ref,False):
+                            rejection.append({"reason":"ROTATION_GEOMETRY_UNAVAILABLE"})
+                    distance=((candidate_target[0]-current[0])**2+(candidate_target[1]-current[1])**2)**0.5
+                    options.append({
+                        "target_mils":[round(candidate_target[0],3),round(candidate_target[1],3)],
+                        "rotation":rot,"layer":side,
+                        "status":"CANDIDATE" if not rejection else "REJECTED_COLLISION",
+                        "anchor_neighbors":anchor_neighbors,
+                        "collision":bool(rejection),
+                        "rejections":rejection,
+                        "objective":{"target_distance_mils":round(distance,3)}
+                    })
 
         legal=[o for o in options if o["status"]=="CANDIDATE"]
         if not legal:

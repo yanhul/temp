@@ -25,7 +25,7 @@ AUTHORITATIVE_PIN_PROFILES = {
     "HCPL3120": {
         "source": "Broadcom HCPL-3120 datasheet/product page",
         "pins": {"1": "NC", "2": "ANODE", "3": "CATHODE", "4": "NC",
-                 "5": "VEE", "6": "VO", "7": "NC", "8": "VCC"},
+                 "5": "VEE", "6": "VO", "7": "VO", "8": "VCC"},
     },
     "BCX56": {
         "source": "Nexperia BCX56 series datasheet",
