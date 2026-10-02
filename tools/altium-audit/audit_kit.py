@@ -80,6 +80,17 @@ def main():
         if direct is not None:
             blocker={"id":"G2-PROJECT-COMPILE","severity":"BLOCKER","domain":"compile","status":"BLOCKED","object":prj.name,"evidence":"Project compile failed; structural SCH+PCB audit continued directly.","confidence":"FACT"}
             direct.setdefault("findings",[]).append(blocker); direct.setdefault("gates",{})["G2_COMPILE"]="BLOCKED"; direct["status"]="BLOCKED"; direct["project_compile_fallback"]=True; initial=direct; fallback=True
+    # Schematic authority is a hard prerequisite for every PCB operation.
+    # Do not let a geometrically valid PCB hide an unresolved component/pin/net
+    # or functional schematic problem.
+    schematic_gate = (initial.get("gates", {}) or {}).get("G2_SCHEMATIC")
+    if schematic_gate != "VERIFIED":
+        initial["status"] = "BLOCKED"
+        initial["design_status"] = "BLOCKED"
+        initial["terminal_reason"] = f"schematic authority gate is {schematic_gate or 'MISSING'}; PCB planning/repair is not authorized"
+        initial["pcb_execution_authorized"] = False
+        write_terminal(out, initial)
+        return 1
     evidence_out = out/"audit-direct-fallback" if fallback else audit_out
     manifest=write_connectivity_manifest(out,evidence_out,initial,sch,pcb)
     pp=out/"placement-routing-plan.json"; run([HERE/"placement_routing_plan.py","--pcb",project_root/pcb.name,"--out",pp,"--findings",evidence_out/"findings.json","--connectivity-manifest",manifest] + ([ "--config", str(a.config.resolve()) ] if a.config else []))
