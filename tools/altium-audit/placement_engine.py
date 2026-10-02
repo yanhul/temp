@@ -143,6 +143,35 @@ def component_geometry_points(pcb,i):
                         x0,y0,x1,y1=(float(x) for x in bb[:4])
                         points.extend(((x0,y0),(x1,y0),(x1,y1),(x0,y1)))
                     except Exception:pass
+    if not points:
+        # If component-body vertices are unavailable, reuse the same
+        # authoritative component envelope used by placement legality.
+        # This is conservative collision geometry; it does not authorize
+        # rotation because the exact footprint outline is still unknown.
+        env=envelope(pcb,i)
+        if env is not None:
+            x0,y0,x1,y1=env
+            points=[(x0,y0),(x1,y0),(x1,y1),(x0,y1)]
+    if not points:
+        # Same authoritative PcbDoc footprint fallback used by audit_runner.
+        # This prevents placement from declaring geometry unavailable merely
+        # because component-body vertices are not exposed by the parser.
+        try:
+            fp_lib=pcb.extract_footprint(get(c,"footprint"))
+            fp=list(getattr(fp_lib,"footprints",[]) or [None])[0]
+            local=[]
+            for attr in ("pads","tracks","arcs","regions","component_bodies"):
+                for obj in list(getattr(fp,attr,[]) or []):
+                    q=xy(obj)
+                    if q is not None: local.append(q)
+            p=center(pcb,c)
+            if local and p:
+                try: rot=math.radians(orientation(c))
+                except Exception: rot=0.0
+                co,si=math.cos(rot),math.sin(rot)
+                points=[(p[0]+lx*co-ly*si,p[1]+lx*si+ly*co) for lx,ly in local]
+        except Exception:
+            pass
     return points
 
 def transform_points(points,old,new,delta):

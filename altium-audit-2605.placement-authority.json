@@ -1,0 +1,67 @@
+{
+  "schema": "altium-placement-authority.v1",
+  "mode": "QI9",
+  "source": "QI9-2605 project fixed-anchor authority packet",
+  "evidence": {
+    "basis": "Existing QI9-2605 placement evidence plus project constraint that connectors and ESP32 anchor remain fixed.",
+    "source_artifacts": [
+      "audit-initial/placement-routing-plan.json",
+      "audit-initial/findings.json"
+    ],
+    "note": "Fixed-anchor coordinates/orientation are authoritative from the input PcbDoc at execution time; the packet intentionally does not duplicate mutable numeric coordinates."
+  },
+  "anchors": {
+    "J1": {
+      "state": "FIXED",
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
+      "mechanical_envelope": "PcbDoc-observed connector geometry"
+    },
+    "J2": {
+      "state": "FIXED",
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
+      "mechanical_envelope": "PcbDoc-observed connector geometry"
+    },
+    "J3": {
+      "state": "FIXED",
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
+      "mechanical_envelope": "PcbDoc-observed connector geometry"
+    },
+    "J4": {
+      "state": "FIXED",
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
+      "mechanical_envelope": "PcbDoc-observed connector geometry"
+    },
+    "J5": {
+      "state": "FIXED",
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
+      "mechanical_envelope": "PcbDoc-observed connector geometry"
+    },
+    "J7": {
+      "state": "FIXED",
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
+      "mechanical_envelope": "PcbDoc-observed connector geometry"
+    },
+    "U15": {
+      "state": "FIXED",
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
+      "mechanical_envelope": "PcbDoc-observed ESP32 module geometry"
+    }
+  },
+  "unlisted_component_policy": "FREE_IF_DISCOVERED",
+  "assembly_access": {
+    "status": "BASELINE_VERIFIED",
+    "scope": "generic SMT assembly-access baseline for planning; not a project/fabricator manufacturing approval",
+    "evidence": "Placement planner requires an explicit assembly-access authority before candidate placement is generated."
+  },
+  "optimization": {
+    "allow_rotation": true,
+    "allow_top_bottom": true
+  }
+}
