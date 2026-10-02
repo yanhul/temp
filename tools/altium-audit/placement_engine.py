@@ -339,6 +339,15 @@ def run(pcb_path,authority_path,manifest_path,out_path):
         sw=sum(w for _,w,_ in evidence)
         target=(sum(positions[o][0]*w for o,w,_ in evidence)/sw,
                 sum(positions[o][1]*w for o,w,_ in evidence)/sw)
+        # Keep the affinity-derived target inside the authoritative board search
+        # domain. This is a geometric solver constraint, not design intent.
+        pts=geometry.get(ref,[])
+        if pts and board_box:
+            cb=points_bbox(pts)
+            if cb:
+                hw=abs(cb[2]-cb[0])/2.0; hh=abs(cb[3]-cb[1])/2.0
+                target=(min(max(target[0],board_box[0]+hw),board_box[2]-hw),
+                        min(max(target[1],board_box[1]+hh),board_box[3]-hh))
         anchor_neighbors=sorted({o for o,_,_ in evidence if o in fixed})
         basis_counts=defaultdict(int)
         for _,_,basis in evidence: basis_counts[basis]+=1
