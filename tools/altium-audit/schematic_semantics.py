@@ -15,7 +15,8 @@ KNOWN_PIN_TYPES = {
     "INPUT", "OUTPUT", "BIDIRECTIONAL", "PASSIVE", "POWER",
     "OPENCOLLECTOR", "OPEN_COLLECTOR", "OPENDRAIN", "OPEN_DRAIN",
     "TRISTATE", "TRI_STATE", "HI_Z", "OPENEMITTER", "OPEN_EMITTER",
-    "UNSPECIFIED", "NO_CONNECT",
+    "UNSPECIFIED", "NO_CONNECT", "IO", "I/O", "I_O", "I/O/T", "I_O_T",
+    "P", "NC",
 }
 
 
@@ -60,18 +61,47 @@ def audit(design: dict[str, Any], netlist: dict[str, Any],
                  "FAIL", f"Design JSON contains {len(rows)} component records for {ref!r}.",
                  "VERIFIED", ref)
 
-    required_fields = ("value", "footprint", "library_ref")
+    required_fields = ("footprint", "library_ref")
     for row in components:
         ref = _text(row.get("designator")) or "<MISSING>"
         if ref == "<MISSING>":
             _add(findings, "SCH-COMP-MISSING-DESIGNATOR", "BLOCKER", "component_identity",
                  "FAIL", "A schematic component has no authoritative designator.", "VERIFIED", ref)
+        params = row.get("parameters") or {}
+        effective_value = _text(params.get("Value")) or _text(row.get("value")) or _text(params.get("Comment"))
+        if not effective_value:
+            _add(findings, f"SCH-COMP-MISSING-VALUE-{ref}", "BLOCKER", "component_identity",
+                 "BLOCKED", f"{ref} has no authoritative component value/MPN identity.", "FACT", ref)
         for key in required_fields:
             if not _text(row.get(key)):
                 _add(findings, f"SCH-COMP-MISSING-{key.upper()}-{ref}", "BLOCKER",
                      "component_identity", "BLOCKED",
                      f"{ref} has no authoritative {key}; component identity is incomplete.",
                      "FACT", ref)
+        # Detect semantic identity drift between the displayed part identity and
+        # concrete BOM/MPN metadata. Generic library aliases such as Res1/Cap2
+        # are intentionally ignored; concrete disagreements are not.
+        display = _text(row.get("value"))
+        concrete = []
+        for key in ("Value", "MPN", "Manufacturer_Part_Number", "Manufacturer Part Number",
+                    "ManufacturerPartNumber", "PartNumber"):
+            value = _text(params.get(key))
+            if value and value not in concrete:
+                concrete.append(value)
+        generic_display = display.upper() in {"RES1", "CAP", "CAP2", "INDUCTOR", "CONNECTOR 10", "*", "?"}
+        if display and not generic_display:
+            for value in concrete:
+                if value and value.lower() != display.lower():
+                    _add(findings, f"SCH-COMPONENT-IDENTITY-DRIFT-{ref}", "HIGH",
+                         "component_identity", "BLOCKED",
+                         f"{ref}: displayed value={display!r} conflicts with concrete parameter identity={value!r}.",
+                         "FACT", ref)
+                    break
+        if display in {"*", "?"}:
+            _add(findings, f"SCH-COMPONENT-PLACEHOLDER-VALUE-{ref}", "MEDIUM",
+                 "component_identity", "BLOCKED",
+                 f"{ref} uses placeholder value {display!r}; physical part identity is unresolved.",
+                 "FACT", ref)
         if row.get("ambiguous_physical_designator"):
             _add(findings, f"SCH-COMP-AMBIGUOUS-{ref}", "BLOCKER", "component_identity",
                  "BLOCKED", "Compiled component identity is explicitly ambiguous for this occurrence.",
