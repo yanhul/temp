@@ -487,6 +487,19 @@ def main():
         add(findings,"G2-COMPILE","INFO","compile","VERIFIED",
             "Compile metadata is present and diagnostics are empty.","VERIFIED")
 
+    try:
+        write_schematic_evidence(
+            out,
+            payload.get("components", []) if sch_components is None else sch_components,
+            netlist,
+            project_id=project_id,
+        )
+        add(findings, "G2-SCHEMATIC-EVIDENCE", "INFO", "schematic", "VERIFIED",
+            "Observed schematic identity and pin/net evidence packet emitted.", "VERIFIED")
+    except Exception as exc:
+        add(findings, "G2-SCHEMATIC-EVIDENCE", "BLOCKER", "schematic", "BLOCKED",
+            f"Could not emit required schematic evidence packet: {type(exc).__name__}: {exc}", "FACT")
+
     # In direct SCH+PCB mode keep the live parser objects for reference
     # reconciliation; payload["components"] is intentionally repr-only JSON.
     if sch_components is None:
