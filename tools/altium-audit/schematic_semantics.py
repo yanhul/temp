@@ -96,6 +96,9 @@ def _pins(netlist,ref):
 
 def _conflict(i):
     v=_norm(i["value"]); m=_norm(i["mpn"]); l=_norm(i["library"]); d=(i.get("description") or "").lower()
+    prop_value=_norm(i.get("properties",{}).get("value"))
+    if v and prop_value and v!=prop_value:
+        return "Display Value=%r conflicts with compiled Value property=%r."%(i["value"],i.get("properties",{}).get("value"))
     if v and m and v!=m:
         return "Value=%r conflicts with Manufacturer Part Number=%r."%(i["value"],i["mpn"])
     if v=="HCPL0600" and "HCPL3120" in l:
@@ -149,4 +152,4 @@ def run(components,netlist,add):
         if outs and not ins and len(terms)>1:
             add("G2-NET-OUTPUT-NO-CONSUMER-"+name,"MEDIUM","schematic","WARN",
                 "Net %r has an OUTPUT but no INPUT/CLOCK/IO consumer among %d terminals."%(name,len(terms)),"INFERRED",name)
-    return ids
+    return inspect_components(components)
