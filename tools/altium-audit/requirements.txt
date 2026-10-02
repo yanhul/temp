@@ -1,1 +1,2 @@
 altium-monkey>=2026.9.12
+pytest>=8.0
