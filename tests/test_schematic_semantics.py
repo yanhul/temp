@@ -90,3 +90,27 @@ def test_concrete_identity_drift_blocks():
          "nets": [_net("SIG", _t("Q2", "1"))]}
     findings = audit(d, n, {"schema": "intent/v1"})
     assert any(x["id"] == "SCH-COMPONENT-IDENTITY-DRIFT-Q2" and x["status"] == "BLOCKED" for x in findings)
+
+
+def test_library_identity_drift_blocks():
+    d = _design("U6")
+    d["components"][0]["value"] = "HCPL-0600"
+    d["components"][0]["library_ref"] = "IC_HCPL-3120-500E"
+    n = {"components": [{"designator": "U6", "value": "HCPL-0600", "footprint": "PKG", "library_ref": "IC_HCPL-3120-500E"}],
+         "nets": [_net("SIG", _t("U6", "2"))]}
+    findings = audit(d, n, {"schema": "intent/v1", "coverage": "critical_components",
+                            "components": {"U6": {"part_numbers": ["HCPL-0600"], "pin_count": 8,
+                                                   "pins": {"2": "ANODE"}}}})
+    assert any(x["id"] == "SCH-COMPONENT-LIBRARY-DRIFT-U6" for x in findings)
+
+
+def test_datasheet_pin_count_mismatch_blocks():
+    d = _design("U15")
+    d["components"][0]["value"] = "ESP32-S3-WROOM-1-N8"
+    d["components"][0]["classification"]["pin_count"] = 49
+    n = {"components": [{"designator": "U15", "value": "ESP32-S3-WROOM-1-N8", "footprint": "PKG", "library_ref": "ESP32-S3-WROOM-1"}],
+         "nets": [_net("SIG", _t("U15", "3", "INPUT", "EN"))]}
+    findings = audit(d, n, {"schema": "intent/v1", "coverage": "critical_components",
+                            "components": {"U15": {"part_numbers": ["ESP32-S3-WROOM-1-N8"], "pin_count": 41,
+                                                   "pins": {"3": "EN"}}}})
+    assert any(x["id"] == "SCH-CONTRACT-PINCOUNT-U15" and x["status"] == "FAIL" for x in findings)
