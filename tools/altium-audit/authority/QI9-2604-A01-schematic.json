@@ -1,0 +1,150 @@
+{
+  "schema": "altium-audit/schematic-intent/v1",
+  "project_id": "QI9-2604-A01",
+  "coverage": "critical_components",
+  "sources": [
+    {
+      "component": "U15",
+      "manufacturer": "Espressif Systems",
+      "part": "ESP32-S3-WROOM-1-N8",
+      "source": "Espressif ESP32-S3-WROOM-1 datasheet"
+    },
+    {
+      "component": "U6,U8,U11,U12,U13",
+      "manufacturer": "Broadcom",
+      "part": "HCPL-0600",
+      "source": "Broadcom HCPL-0600 datasheet"
+    }
+  ],
+  "components": {
+    "U15": {
+      "part_numbers": [
+        "ESP32-S3-WROOM-1-N8"
+      ],
+      "pin_count": 41,
+      "pins": {
+        "1": "GND",
+        "2": "3V3",
+        "3": "EN",
+        "4": "IO4",
+        "5": "IO5",
+        "6": "IO6",
+        "7": "IO7",
+        "8": "IO15",
+        "9": "IO16",
+        "10": "IO17",
+        "11": "IO18",
+        "12": "IO8",
+        "13": "IO19",
+        "14": "IO20",
+        "15": "IO3",
+        "16": "IO46",
+        "17": "IO9",
+        "18": "IO10",
+        "19": "IO11",
+        "20": "IO12",
+        "21": "IO13",
+        "22": "IO14",
+        "23": "IO21",
+        "24": "IO47",
+        "25": "IO48",
+        "26": "IO45",
+        "27": "IO0",
+        "28": "IO35",
+        "29": "IO36",
+        "30": "IO37",
+        "31": "IO38",
+        "32": "IO39",
+        "33": "IO40",
+        "34": "IO41",
+        "35": "IO42",
+        "36": "RXD0",
+        "37": "TXD0",
+        "38": "IO2",
+        "39": "IO1",
+        "40": "GND",
+        "41": "GND"
+      }
+    },
+    "U6": {
+      "part_numbers": [
+        "HCPL-0600"
+      ],
+      "pin_count": 8,
+      "pins": {
+        "1": "NC",
+        "2": "ANODE",
+        "3": "CATHODE",
+        "4": "NC",
+        "5": "GND",
+        "6": "V_O",
+        "7": "V_E",
+        "8": "V_CC"
+      }
+    },
+    "U8": {
+      "part_numbers": [
+        "HCPL-0600"
+      ],
+      "pin_count": 8,
+      "pins": {
+        "1": "NC",
+        "2": "ANODE",
+        "3": "CATHODE",
+        "4": "NC",
+        "5": "GND",
+        "6": "V_O",
+        "7": "V_E",
+        "8": "V_CC"
+      }
+    },
+    "U11": {
+      "part_numbers": [
+        "HCPL-0600"
+      ],
+      "pin_count": 8,
+      "pins": {
+        "1": "NC",
+        "2": "ANODE",
+        "3": "CATHODE",
+        "4": "NC",
+        "5": "GND",
+        "6": "V_O",
+        "7": "V_E",
+        "8": "V_CC"
+      }
+    },
+    "U12": {
+      "part_numbers": [
+        "HCPL-0600"
+      ],
+      "pin_count": 8,
+      "pins": {
+        "1": "NC",
+        "2": "ANODE",
+        "3": "CATHODE",
+        "4": "NC",
+        "5": "GND",
+        "6": "V_O",
+        "7": "V_E",
+        "8": "V_CC"
+      }
+    },
+    "U13": {
+      "part_numbers": [
+        "HCPL-0600"
+      ],
+      "pin_count": 8,
+      "pins": {
+        "1": "NC",
+        "2": "ANODE",
+        "3": "CATHODE",
+        "4": "NC",
+        "5": "GND",
+        "6": "V_O",
+        "7": "V_E",
+        "8": "V_CC"
+      }
+    }
+  }
+}

@@ -2,6 +2,7 @@ name: altium-audit-e2e
 
 on:
   workflow_dispatch:
+  pull_request:
   push:
     paths:
       - ".github/workflows/altium-audit-e2e.yml"

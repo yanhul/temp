@@ -15,6 +15,21 @@
 
 Parser success is not design PASS.
 
+## 2.1 Schematic semantic authority
+Before any PCB planning, mutation, placement lock, or routing repair, the compiled schematic must pass the semantic authority gate.
+
+The semantic sweep checks, at minimum:
+- component identity: designator, value, footprint, library reference and compiled identity;
+- component uniqueness and schematic/netlist identity reconciliation;
+- pin identity: component reference, pin number, pin name and electrical pin type;
+- one-pin/one-net consistency and multiple-driver conflicts;
+- single-terminal nets, which remain BLOCKED until intentional NC/testpoint/waiver intent is authoritative;
+- functional intent authority. Connectivity and parser output do not prove that a component, pin, net or topology performs the intended circuit function.
+
+Missing functional intent is BLOCKED, not PASS. The kit must therefore stop before PCB execution when G2_SCHEMATIC != VERIFIED.
+
+A functional-intent packet may be supplied through project configuration, but the generic engine never invents one from component names, popularity, or net-name heuristics. Heuristics can provide review evidence but cannot create authority.
+
 ## 3. Placement
 Placement evidence must come through the parser adapter/interface. Direct component geometry can support `VERIFIED` placement evidence. Pad-geometry fallback is evidence only and remains `UNKNOWN` for placement decision purposes until authoritative component placement evidence exists.
 The engine must not infer functional grouping, preferred component locations, routing corridors, or mechanical intent from a particular fixture.
