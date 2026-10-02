@@ -52,6 +52,18 @@ def orientation(c):
         except Exception: pass
     return 0.0
 
+def pcb_coord(v):
+    """Normalize low-level Altium PCB internal units to public mil coordinates."""
+    x=float(v)
+    # altium-monkey exposes low-level PCB record coordinates in internal units;
+    # its public PCB geometry is mil-based (10000 internal units per mil).
+    return x/10000.0 if abs(x) >= 100000.0 else x
+
+def pcb_box(bb):
+    if not isinstance(bb,(list,tuple)) or len(bb)<4:return None
+    try:return tuple(pcb_coord(x) for x in bb[:4])
+    except Exception:return None
+
 def layer(c):
     v=get(c,"layer","layer_name","side","layer_ref")
     s=str(v or "").upper()
@@ -73,7 +85,7 @@ def envelope(pcb,i):
             if name in ("regions","shapebased_regions") and "COURTYARD" not in lname:continue
             bb=get(body,"bounding_box","bbox","bounds")
             if isinstance(bb,(list,tuple)) and len(bb)>=4:
-                try:found.append(tuple(float(x) for x in bb[:4]))
+                try:found.append(pcb_box(bb))
                 except Exception:pass
     return found[0] if found else None
 
@@ -112,7 +124,7 @@ def collect_keepouts(pcb):
                 continue
             bb=get(obj,"bounding_box","bbox","bounds")
             if isinstance(bb,(list,tuple)) and len(bb)>=4:
-                try:out.append(tuple(float(x) for x in bb[:4]))
+                try:out.append(pcb_box(bb))
                 except Exception:pass
     return out
 
@@ -140,7 +152,7 @@ def component_geometry_points(pcb,i):
                 bb=get(body,"bounding_box","bbox","bounds")
                 if isinstance(bb,(list,tuple)) and len(bb)>=4:
                     try:
-                        x0,y0,x1,y1=(float(x) for x in bb[:4])
+                        x0,y0,x1,y1=pcb_box(bb)
                         points.extend(((x0,y0),(x1,y0),(x1,y1),(x0,y1)))
                     except Exception:pass
     if not points:
