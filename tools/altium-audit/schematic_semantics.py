@@ -88,7 +88,8 @@ def inspect_components(components):
 
 def _pins(netlist,ref):
     out={}
-    for n in netlist or []:
+    nets=(netlist or {}).get("nets",[]) if isinstance(netlist,dict) else (netlist or [])
+    for n in nets:
         for t in n.get("terminals",[]) or []:
             if str(t.get("designator"))==str(ref):
                 out[str(t.get("pin"))]={"name":_text(t.get("pin_name")),"net":_text(n.get("name")),"type":_text(t.get("pin_type"))}
