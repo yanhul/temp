@@ -66,3 +66,7 @@ Both profiles run the same sequence:
 `FIXED ANCHORS -> INPUT SUFFICIENCY -> FUNCTIONAL ZONES -> FREE COMPONENT PLACEMENT -> ROTATION/TOP-BOTTOM -> CLEARANCE/ASSEMBLY -> ROUTING FEASIBILITY -> VERIFY`
 
 The placement engine is planning-only until a separate mutation authority/backend is implemented. A placement candidate is not a manufacturing PASS.
+
+## PDF schematic input
+
+A schematic PDF can enter through `pdf_schematic.py`. The bridge reuses installed PDF/OCR/KiCad tools and delegates reconstruction to an external authoritative backend; it never guesses connectivity. See `PDF_SCHEMATIC.md`.
