@@ -23,6 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python -m pip install -r tools/altium-audit/requirements.txt
+      - run: python -m pip install pytest
       - name: Semantic regression tests
         run: python -m pytest -q tests/test_schematic_semantics.py
       - name: Audit QI9-2605
