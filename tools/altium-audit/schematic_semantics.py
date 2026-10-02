@@ -83,10 +83,11 @@ def audit(design: dict[str, Any], netlist: dict[str, Any],
         # are intentionally ignored; concrete disagreements are not.
         display = _text(row.get("value"))
         concrete = []
+        generic_parameter_values = {"*", "?", "CONNECTOR 10", "NONE", "N/A", "NA"}
         for key in ("Value", "MPN", "Manufacturer_Part_Number", "Manufacturer Part Number",
                     "ManufacturerPartNumber", "PartNumber"):
             value = _text(params.get(key))
-            if value and value not in concrete:
+            if value and value.upper() not in generic_parameter_values and value not in concrete:
                 concrete.append(value)
         generic_display = display.upper() in {"RES1", "CAP", "CAP2", "INDUCTOR", "CONNECTOR 10", "*", "?"}
         if display and not generic_display:
