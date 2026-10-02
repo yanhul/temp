@@ -3,6 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "altium-audit"))
 import schematic_semantics as ss
+from part_identity import resolve_declared_vs_compiled
 
 
 def run_checker(component, netlist):
@@ -39,5 +40,11 @@ def test_hcpl_pin_evidence_still_blocks_real_function_mismatch():
         {"designator":"U18","pin":"7","pin_name":"NC","pin_type":"PASSIVE"},
         {"designator":"U18","pin":"8","pin_name":"VCC","pin_type":"POWER"}
     ]}]
+    observed={
+        t["pin"]: {"name": t["pin_name"]}
+        for n in nl for t in n["terminals"]
+    }
+    identity=resolve_declared_vs_compiled("HCPL-0600", "HCPL-3120", observed)
+    assert identity["state"]=="CONTRADICTION"
     findings=run_checker(c, nl)
-    assert any(x[0]=="G2-SCH-IDENTITY-EVIDENCE-U18" and x[2]=="FAIL" for x in findings)
+    assert any(x[2]=="FAIL" and str(x[-1]).startswith("U18") for x in findings)
