@@ -98,3 +98,5 @@ jobs:
           if r.get("status") != "PASS":
               raise SystemExit(f"strict audit not PASS: {r.get('status')}")
           PY
+
+# strict-e2e trigger
