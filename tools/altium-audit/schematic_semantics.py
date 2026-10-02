@@ -139,6 +139,72 @@ def audit(design: dict[str, Any], netlist: dict[str, Any],
                      "component_identity", "FAIL",
                      f"{ref}: design={dv!r}, compiled_netlist={nv!r}.", "VERIFIED", ref)
 
+    # Library reference is another identity authority. A concrete displayed
+    # part name must not silently disagree with a concrete library symbol.
+    generic_library_tokens = {"RES1", "CAP", "CAP2", "INDUCTOR", "HEADER 2", "HEADER 3", "HEADER 13", "CON10"}
+    for row in components:
+        ref = _text(row.get("designator"))
+        display = _text(row.get("value"))
+        lib = _text(row.get("library_ref"))
+        if not ref or not display or not lib:
+            continue
+        if display.upper() in {"*", "?", *generic_library_tokens}:
+            continue
+        # Normalize package suffixes only for a conservative same-family test.
+        dnorm = "".join(ch for ch in display.upper() if ch.isalnum())
+        lnorm = "".join(ch for ch in lib.upper() if ch.isalnum())
+        if dnorm and lnorm and dnorm not in lnorm and lnorm not in dnorm:
+            _add(findings, f"SCH-COMPONENT-LIBRARY-DRIFT-{ref}", "HIGH",
+                 "component_identity", "BLOCKED",
+                 f"{ref}: displayed part={display!r} conflicts with library_ref={lib!r}.",
+                 "FACT", ref)
+
+    # Optional authoritative part/pin contracts are generated from datasheets or
+    # other identified manufacturer evidence. They are not inferred from names.
+    contracts = (functional_intent or {}).get("components", {}) if functional_intent else {}
+    for ref, contract in sorted(contracts.items()):
+        rows = cmap.get(ref, [])
+        if not rows:
+            _add(findings, f"SCH-CONTRACT-MISSING-COMP-{ref}", "BLOCKER", "functional",
+                 "BLOCKED", "Functional contract names a component absent from the compiled schematic.",
+                 "FACT", ref)
+            continue
+        row = rows[0]
+        expected_parts = [str(x).strip().lower() for x in contract.get("part_numbers", []) if str(x).strip()]
+        params = row.get("parameters") or {}
+        actual_ids = {_text(row.get("value")).lower(), _text(params.get("Value")).lower(),
+                      _text(params.get("MPN")).lower(), _text(params.get("Manufacturer_Part_Number")).lower(),
+                      _text(params.get("Manufacturer Part Number")).lower(), _text(params.get("PartNumber")).lower()}
+        actual_ids.discard("")
+        if expected_parts and not any(p in actual_ids for p in expected_parts):
+            _add(findings, f"SCH-CONTRACT-PART-MISMATCH-{ref}", "BLOCKER", "functional",
+                 "FAIL",
+                 f"{ref}: contract expects one of {expected_parts!r}; compiled identity fields are {sorted(actual_ids)!r}.",
+                 "VERIFIED", ref)
+        expected_pin_count = contract.get("pin_count")
+        actual_pin_count = (row.get("classification") or {}).get("pin_count")
+        if expected_pin_count is not None and actual_pin_count is not None and int(actual_pin_count) != int(expected_pin_count):
+            _add(findings, f"SCH-CONTRACT-PINCOUNT-{ref}", "BLOCKER", "functional",
+                 "FAIL",
+                 f"{ref}: contract pin_count={expected_pin_count}, schematic symbol pin_count={actual_pin_count}.",
+                 "VERIFIED", ref)
+        pin_contract = {str(k): str(v) for k, v in (contract.get("pins") or {}).items()}
+        if pin_contract:
+            for net in nets:
+                for term in net.get("terminals", []) or []:
+                    if _text(term.get("designator")) != ref:
+                        continue
+                    pin = _text(term.get("pin"))
+                    expected_name = pin_contract.get(pin)
+                    if expected_name is None:
+                        continue
+                    actual_name = _text(term.get("pin_name"))
+                    if actual_name and actual_name != expected_name:
+                        _add(findings, f"SCH-CONTRACT-PINNAME-{ref}-{pin}", "BLOCKER", "functional",
+                             "FAIL",
+                             f"{ref}.{pin}: contract={expected_name!r}, schematic={actual_name!r}.",
+                             "VERIFIED", f"{ref}.{pin}")
+
     # Terminal identity must be one-to-one. A pin appearing on two nets is a
     # concrete semantic contradiction even when every individual net is legal.
     pin_nets: dict[tuple[str, str], list[str]] = defaultdict(list)
@@ -234,8 +300,14 @@ def audit(design: dict[str, Any], netlist: dict[str, Any],
              "No authoritative functional-intent packet was supplied. Connectivity alone cannot prove that a component, pin, net, or topology performs the intended function.",
              "FACT")
     else:
-        _add(findings, "SCH-FUNCTIONAL-INTENT", "INFO", "functional", "VERIFIED",
-             "Functional-intent packet is present and available for contract checks.", "VERIFIED")
+        coverage = _text(functional_intent.get("coverage")).lower()
+        if coverage != "full_schematic":
+            _add(findings, "SCH-FUNCTIONAL-COVERAGE-INCOMPLETE", "BLOCKER", "functional", "BLOCKED",
+                 f"Functional authority coverage={coverage or 'unspecified'}; full_schematic coverage is required for authority PASS.",
+                 "FACT")
+        else:
+            _add(findings, "SCH-FUNCTIONAL-INTENT", "INFO", "functional", "VERIFIED",
+                 "Functional-intent packet declares full-schematic coverage.", "VERIFIED")
 
     if not findings:
         _add(findings, "SCH-SEMANTIC-SWEEP", "INFO", "schematic", "VERIFIED",
