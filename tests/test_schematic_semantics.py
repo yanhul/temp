@@ -47,4 +47,4 @@ def test_hcpl_pin_evidence_still_blocks_real_function_mismatch():
     identity=resolve_declared_vs_compiled("HCPL-0600", "HCPL-3120", observed)
     assert identity["state"]=="CONTRADICTION"
     findings=run_checker(c, nl)
-    assert any(x[2]=="FAIL" and str(x[-1]).startswith("U18") for x in findings)
+    assert any(x[3]=="FAIL" and str(x[-1]).startswith("U18") for x in findings)
