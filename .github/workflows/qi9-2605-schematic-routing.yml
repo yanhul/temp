@@ -7,6 +7,14 @@ on:
       - 'tools/altium-audit/**'
       - 'altium-audit-2605.config.json'
       - '.github/workflows/qi9-2605-schematic-routing.yml'
+  pull_request:
+    paths:
+      - 'audit-input-2605/**'
+      - 'tools/altium-audit/**'
+      - 'altium-audit-2605.config.json'
+      - 'altium-audit-2605.placement-authority.json'
+      - 'tests/**'
+      - '.github/workflows/qi9-2605-schematic-routing.yml'
   workflow_dispatch:
 
 jobs:
