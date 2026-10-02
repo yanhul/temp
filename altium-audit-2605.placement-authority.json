@@ -8,70 +8,49 @@
       "audit-initial/placement-routing-plan.json",
       "audit-initial/findings.json"
     ],
-    "note": "Anchor positions are observed from the PcbDoc; the engine must verify them again before any mutation."
+    "note": "Fixed-anchor coordinates/orientation are authoritative from the input PcbDoc at execution time; the packet intentionally does not duplicate mutable numeric coordinates."
   },
   "anchors": {
     "J1": {
       "state": "FIXED",
-      "position": [
-        5231.1024,
-        1659.4094
-      ],
-      "orientation": 0,
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
       "mechanical_envelope": "PcbDoc-observed connector geometry"
     },
     "J2": {
       "state": "FIXED",
-      "position": [
-        4971.1024,
-        4524.4094
-      ],
-      "orientation": 0,
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
       "mechanical_envelope": "PcbDoc-observed connector geometry"
     },
     "J3": {
       "state": "FIXED",
-      "position": [
-        3319.6851,
-        4338.5039
-      ],
-      "orientation": 0,
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
       "mechanical_envelope": "PcbDoc-observed connector geometry"
     },
     "J4": {
       "state": "FIXED",
-      "position": [
-        4446.1024,
-        4349.4094
-      ],
-      "orientation": 0,
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
       "mechanical_envelope": "PcbDoc-observed connector geometry"
     },
     "J5": {
       "state": "FIXED",
-      "position": [
-        2301.9292,
-        4376.496
-      ],
-      "orientation": 0,
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
       "mechanical_envelope": "PcbDoc-observed connector geometry"
     },
     "J7": {
       "state": "FIXED",
-      "position": [
-        3211.1024,
-        1649.4094
-      ],
-      "orientation": 0,
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
       "mechanical_envelope": "PcbDoc-observed connector geometry"
     },
     "U15": {
       "state": "FIXED",
-      "position": [
-        5674.9276,
-        3032.7628
-      ],
-      "orientation": 0,
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
       "mechanical_envelope": "PcbDoc-observed ESP32 module geometry"
     }
   },
