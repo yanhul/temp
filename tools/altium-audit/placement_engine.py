@@ -147,7 +147,7 @@ def component_geometry_points(pcb,i):
                 except Exception: vals=[]
                 for p in vals:
                     q=xy(p)
-                    if q is not None:points.append(q)
+                    if q is not None:points.append((pcb_coord(q[0]),pcb_coord(q[1])))
             if not points:
                 bb=get(body,"bounding_box","bbox","bounds")
                 if isinstance(bb,(list,tuple)) and len(bb)>=4:
