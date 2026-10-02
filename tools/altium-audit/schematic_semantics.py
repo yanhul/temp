@@ -2,7 +2,7 @@
 """Evidence-first schematic semantic checks."""
 from __future__ import annotations
 import re
-from typing import Any
+from typing import Any\n\ntry:\n    from part_identity import resolve_declared_vs_compiled\nexcept Exception:\n    resolve_declared_vs_compiled = None
 
 def _field(obj: Any, *keys: str):
     if isinstance(obj, dict):
@@ -123,6 +123,16 @@ def run(components,netlist,add):
             add("G2-SCH-IDENTITY-"+ref,"BLOCKER","schematic","FAIL",conflict,"VERIFIED",ref)
 
         pins=_pins(netlist,ref)
+        pins=_pins(netlist,ref)
+        if resolve_declared_vs_compiled is not None and i.get("value") and i.get("library"):
+            identity = resolve_declared_vs_compiled(i.get("value"), i.get("library"), pins)
+            if identity["state"] == "CONTRADICTION":
+                add("G2-SCH-IDENTITY-EVIDENCE-"+ref,"BLOCKER","schematic","FAIL",
+                    "%s Evidence=%s"%(identity["reason"], identity.get("evidence",[])), "VERIFIED", ref)
+            elif identity["state"] == "UNKNOWN" and _norm(i.get("value")) != _norm(i.get("library")):
+                add("G2-SCH-IDENTITY-EVIDENCE-"+ref,"BLOCKER","schematic","BLOCKED",
+                    "Declared value %r and compiled library %r cannot be resolved from authoritative pin evidence: %s"%(i.get("value"),i.get("library"),identity["reason"]), "FACT", ref)
+
         if part in {"ESP32S3WROOM1","ESP32S3WROOM1U"}:
             invalid=sorted(p for p in pins if p.isdigit() and not 1<=int(p)<=41)
             if invalid:
