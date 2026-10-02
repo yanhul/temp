@@ -7,6 +7,10 @@ Unsupported checks are reported as UNKNOWN/BLOCKED, never PASS.
 from __future__ import annotations
 import argparse, hashlib, json, math, pathlib, sys, zipfile
 from typing import Any
+try:
+    from schematic_semantics import run as run_schematic_semantics
+except Exception:
+    run_schematic_semantics = None
 
 try:
     from altium_monkey import AltiumDesign, AltiumSchDoc, AltiumPcbDoc, PcbLayer
@@ -393,6 +397,22 @@ def main():
 
     diagnostics = payload.get("diagnostics") or []
     compile_data = payload.get("compile")
+
+    # Semantic schematic gate: identity/library contradictions and provable
+    # net-level electrical contradictions are checked before connectivity,
+    # placement, or routing can be authorized.
+    schematic_semantic_identities = []
+    if run_schematic_semantics is not None:
+        def _semantic_add(fid, severity, domain, status, evidence, confidence="VERIFIED", obj=None):
+            add(findings, fid, severity, domain, status, evidence, confidence, obj)
+        schematic_semantic_identities = run_schematic_semantics(
+            payload.get("components", []) if sch_components is None else sch_components,
+            netlist,
+            _semantic_add,
+        )
+    else:
+        add(findings, "G2-SCHEMATIC-SEMANTICS", "BLOCKER", "schematic", "BLOCKED",
+            "Schematic semantic checker could not be loaded; functional authorization is blocked.", "FACT")
     if compile_data is None:
         add(findings,"G2-COMPILE","BLOCKER","compile","BLOCKED",
             "No authoritative compiled schematic/netlist evidence is available. Direct SchDoc parsing is structural-only and cannot authorize connectivity, placement, or routing.","FACT")
@@ -834,8 +854,8 @@ def main():
         "G0_INTAKE": "VERIFIED" if not any(f["id"]=="G0-ARCHIVE-HASH" and f["status"]=="FAIL" for f in findings) else "BLOCKED",
         "G1_PARSE":"VERIFIED",
         "G2_COMPILE": (
-            "FAIL" if diagnostics else
-            "BLOCKED" if any(f["id"]=="G2-COMPILE" and f["status"]=="BLOCKED" for f in findings) else
+            "FAIL" if diagnostics or any(f["id"].startswith("G2-SCH-") or f["id"].startswith("G2-NET-") for f in findings if f["status"]=="FAIL") else
+            "BLOCKED" if any(f["id"]=="G2-COMPILE" and f["status"]=="BLOCKED" for f in findings) or any(f["status"]=="BLOCKED" and f["domain"]=="schematic" for f in findings) else
             "VERIFIED"
         ),
         "G3_CONNECTIVITY":"VERIFIED" if not any(f["id"].startswith("G3-") and f["status"] in ("FAIL","UNKNOWN","BLOCKED") for f in findings) else "BLOCKED",
@@ -864,6 +884,7 @@ def main():
                    "pcb_files":[str(x) for x in pcbs]}
     }
     (out/"design.json").write_text(json.dumps(payload,indent=2,ensure_ascii=False),encoding="utf-8")
+    (out/"schematic_semantics.json").write_text(json.dumps(schematic_semantic_identities,indent=2,ensure_ascii=False),encoding="utf-8")
     (out/"netlist.json").write_text(netlist_text,encoding="utf-8")
     (out/"pcb_probe.txt").write_text(json.dumps({"counts":counts,"rules":len(rules),
         "pcb_attributes":sorted(x for x in dir(pcb) if not x.startswith("_"))},indent=2),encoding="utf-8")
