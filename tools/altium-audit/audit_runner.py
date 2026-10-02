@@ -328,6 +328,57 @@ def reconstruct(parts, out):
     out.write_bytes(base64.b64decode(raw, validate=True))
     return parts
 
+def write_schematic_evidence(out, components, netlist, project_id=None):
+    """Emit observed schematic identity and pin/net evidence; never infer identity."""
+    def f(obj, *keys):
+        if isinstance(obj, dict):
+            for k in keys:
+                if obj.get(k) is not None: return obj[k]
+        for k in keys:
+            try:
+                v=getattr(obj,k)
+                if v is not None: return v
+            except Exception: pass
+        return None
+    def txt(v):
+        return None if v is None else (str(v).strip() or None)
+    def props(obj):
+        raw=f(obj,"parameters")
+        return {str(k).strip().lower():txt(v) for k,v in raw.items() if v is not None} if isinstance(raw,dict) else {}
+    def ref(obj):
+        return txt(f(obj,"designator","refdes","reference","logical_designator","physical_designator"))
+    def rec(obj):
+        p=props(obj)
+        return {"reference":ref(obj),
+                "declared_value":txt(f(obj,"value","component_value","display_value")) or p.get("value"),
+                "compiled_value":p.get("value"),
+                "library_id":txt(f(obj,"library_reference","library_ref","lib_reference","library_name","symbol_name")),
+                "footprint":txt(f(obj,"footprint","footprint_name")) or p.get("footprint"),
+                "mpn":next((p.get(k) for k in ("manufacturer part number","manufacturer_part_number","manufacturerpartnumber","mpn","partnumber","part_number") if p.get(k)),None),
+                "description":txt(f(obj,"description","desc")) or p.get("description"),
+                "pin_count":f(obj,"pin_count"),"properties":p}
+    by_ref={str(ref(x)):rec(x) for x in components or [] if ref(x)}
+    pins={}
+    for n in (netlist or {}).get("nets",[]) or []:
+        nn=txt(f(n,"name","uid"))
+        for t in f(n,"terminals") or []:
+            rr,pp=txt(f(t,"designator","refdes","reference")),txt(f(t,"pin","pin_designator","number"))
+            if rr and pp:
+                pins.setdefault(rr,{})[pp]={"pin":pp,"pin_name":txt(f(t,"pin_name","name")),
+                    "electrical_type":txt(f(t,"pin_type","electrical_type")),"connected_net":nn}
+    for rr,x in by_ref.items():
+        x["pins"]=sorted(pins.get(rr,{}).values(),key=lambda z:(str(z["pin"]),str(z.get("pin_name") or "")))
+        x["observed_pin_count"]=len(x["pins"])
+        x["evidence_state"]="VERIFIED" if x["pins"] else "UNKNOWN"
+    evidence={"schema":"altium-schematic-evidence.v1","status":"VERIFIED" if by_ref else "UNKNOWN",
+              "project_id":project_id,
+              "authority_note":"Parser/compiled observations only. No datasheet identity or functional intent is inferred.",
+              "components":sorted(by_ref.values(),key=lambda x:str(x["reference"]))}
+    path=out/"schematic-evidence.json"
+    path.write_text(json.dumps(evidence,indent=2,ensure_ascii=False),encoding="utf-8")
+    return path
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", required=True, type=pathlib.Path)
