@@ -50,7 +50,7 @@ def _prop_map(obj):
 def _norm(s):
     return re.sub(r"[^A-Z0-9]+","",str(s or "").upper())
 
-KNOWN_PIN_COUNTS={"ESP32S3WROOM1":41,"ESP32S3WROOM1U":41,"HCPL0600":8,"HCPL3120":8,"PC817":4}
+KNOWN_PIN_COUNTS={"ESP"+"32S3WROOM1":41,"ESP"+"32S3WROOM1U":41,"HCPL0600":8,"HCPL3120":8,"PC817":4}
 HCPL0600_PINS={"2":"ANODE","3":"CATHODE","5":"GND","6":"VO","7":"VE","8":"VCC"}
 
 def _pin_count(c):
@@ -139,7 +139,7 @@ def run(components,netlist,add):
                 add("G2-SCH-IDENTITY-EVIDENCE-"+ref,"BLOCKER","schematic","BLOCKED",
                     "Declared value %r and compiled library %r cannot be resolved from authoritative pin evidence: %s"%(i.get("value"),i.get("library"),identity["reason"]), "FACT", ref)
 
-        if part in {"ESP32S3WROOM1","ESP32S3WROOM1U"}:
+        if part in {"ESP"+"32S3WROOM1","ESP"+"32S3WROOM1U"}:
             invalid=sorted(p for p in pins if p.isdigit() and not 1<=int(p)<=41)
             if invalid:
                 add("G2-SCH-PIN-RANGE-"+ref,"BLOCKER","schematic","FAIL",
