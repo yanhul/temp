@@ -355,39 +355,53 @@ def run(pcb_path,authority_path,manifest_path,out_path):
         rotations=ROTATIONS if authority.get("optimization",{}).get("allow_rotation",True) else [orientations[ref]]
         sides=LAYERS if authority.get("optimization",{}).get("allow_top_bottom",True) else [layers[ref]]
         options=[]
-        for rot in rotations:
-            for side in sides:
-                delta=rot-orientations[ref]
-                rejection=[]
-                points=geometry.get(ref,[])
-                if not points:
-                    rejection.append({"reason":"COMPONENT_GEOMETRY_UNAVAILABLE"})
-                    box=None
-                else:
-                    moved_points=transform_points(points,current,target,delta)
-                    box=points_bbox(moved_points)
-                    if box[0] < board_box[0] or box[1] < board_box[1] or box[2] > board_box[2] or box[3] > board_box[3]:
-                        rejection.append({"reason":"BOARD_BOUNDS"})
-                    for ko in keepouts:
-                        if overlap(box,ko):
-                            rejection.append({"reason":"KEEPOUT_OVERLAP"})
-                    for other,other_box in envelopes.items():
-                        if other==ref or other_box is None:
-                            continue
-                        if side==layers.get(other) and overlap(box,other_box):
-                            rejection.append({"reason":"COMPONENT_COURTYARD_OVERLAP","other":other})
-                    if delta % 360 != 0 and not geometry_exact.get(ref,False):
-                        rejection.append({"reason":"ROTATION_GEOMETRY_UNAVAILABLE"})
-                distance=((target[0]-current[0])**2+(target[1]-current[1])**2)**0.5
-                options.append({
-                    "target_mils":[round(target[0],3),round(target[1],3)],
-                    "rotation":rot,"layer":side,
-                    "status":"CANDIDATE" if not rejection else "REJECTED_COLLISION",
-                    "anchor_neighbors":anchor_neighbors,
-                    "collision":bool(rejection),
-                    "rejections":rejection,
-                    "objective":{"target_distance_mils":round(distance,3)}
-                })
+        cb=points_bbox(geometry.get(ref,[])) if geometry.get(ref) else None
+        step=max(abs(cb[2]-cb[0]) if cb else 0.0, abs(cb[3]-cb[1]) if cb else 0.0, 50.0)
+        offsets=[(0,0),(1,0),(-1,0),(0,1),(0,-1),(2,0),(-2,0),(0,2),(0,-2),
+                 (1,1),(1,-1),(-1,1),(-1,-1)]
+        search_targets=[]
+        for ox,oy in offsets:
+            tx=target[0]+ox*step; ty=target[1]+oy*step
+            if cb and board_box:
+                hw=abs(cb[2]-cb[0])/2.0; hh=abs(cb[3]-cb[1])/2.0
+                tx=min(max(tx,board_box[0]+hw),board_box[2]-hw)
+                ty=min(max(ty,board_box[1]+hh),board_box[3]-hh)
+            p=(round(tx,3),round(ty,3))
+            if p not in search_targets: search_targets.append(p)
+        for candidate_target in search_targets:
+            for rot in rotations:
+                for side in sides:
+                    delta=rot-orientations[ref]
+                    rejection=[]
+                    points=geometry.get(ref,[])
+                    if not points:
+                        rejection.append({"reason":"COMPONENT_GEOMETRY_UNAVAILABLE"})
+                        box=None
+                    else:
+                        moved_points=transform_points(points,current,candidate_target,delta)
+                        box=points_bbox(moved_points)
+                        if box[0] < board_box[0] or box[1] < board_box[1] or box[2] > board_box[2] or box[3] > board_box[3]:
+                            rejection.append({"reason":"BOARD_BOUNDS"})
+                        for ko in keepouts:
+                            if overlap(box,ko):
+                                rejection.append({"reason":"KEEPOUT_OVERLAP"})
+                        for other,other_box in envelopes.items():
+                            if other==ref or other_box is None:
+                                continue
+                            if side==layers.get(other) and overlap(box,other_box):
+                                rejection.append({"reason":"COMPONENT_COURTYARD_OVERLAP","other":other})
+                        if delta % 360 != 0 and not geometry_exact.get(ref,False):
+                            rejection.append({"reason":"ROTATION_GEOMETRY_UNAVAILABLE"})
+                    distance=((candidate_target[0]-current[0])**2+(candidate_target[1]-current[1])**2)**0.5
+                    options.append({
+                        "target_mils":[round(candidate_target[0],3),round(candidate_target[1],3)],
+                        "rotation":rot,"layer":side,
+                        "status":"CANDIDATE" if not rejection else "REJECTED_COLLISION",
+                        "anchor_neighbors":anchor_neighbors,
+                        "collision":bool(rejection),
+                        "rejections":rejection,
+                        "objective":{"target_distance_mils":round(distance,3)}
+                    })
 
         legal=[o for o in options if o["status"]=="CANDIDATE"]
         if not legal:
