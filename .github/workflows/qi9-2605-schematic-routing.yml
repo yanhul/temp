@@ -25,6 +25,9 @@ jobs:
           cat work-2605/kit/audit-initial/findings.json || true
           echo "=== schematic evidence ==="
           cat work-2605/kit/audit-initial/schematic-evidence.json || true
+          echo "=== placement plan ==="
+          cat work-2605/kit/placement-routing-plan.json || true
+          cat work-2605/kit/anchor-first-placement-plan.json || true
           echo "=== summary ==="
           cat work-2605/kit/summary.json || true
           exit $rc
