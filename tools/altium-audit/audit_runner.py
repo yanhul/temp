@@ -346,7 +346,20 @@ def write_schematic_evidence(out, components, netlist, project_id=None):
         raw=f(obj,"parameters")
         return {str(k).strip().lower():txt(v) for k,v in raw.items() if v is not None} if isinstance(raw,dict) else {}
     def ref(obj):
-        return txt(f(obj,"designator","refdes","reference","logical_designator","physical_designator"))
+        direct=txt(f(obj,"designator","refdes","reference","logical_designator","physical_designator"))
+        if direct: return direct
+        for container in (f(obj,"parameters"), f(obj,"children")):
+            if isinstance(container,dict):
+                items=container.items()
+                for k,v in items:
+                    if str(k).strip().lower()=="designator" and txt(v): return txt(v)
+            else:
+                for child in list(container or []):
+                    name=txt(f(child,"name","parameter_name","key","key_name"))
+                    if name and name.lower()=="designator":
+                        value=txt(f(child,"text","value","parameter_value"))
+                        if value: return value
+        return None
     def rec(obj):
         p=props(obj)
         return {"reference":ref(obj),
