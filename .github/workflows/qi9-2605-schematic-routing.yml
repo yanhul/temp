@@ -5,6 +5,7 @@ on:
     paths:
       - 'audit-input-2605/**'
       - 'tools/altium-audit/**'
+      - 'altium-audit-2605.config.json'
       - '.github/workflows/qi9-2605-schematic-routing.yml'
   workflow_dispatch:
 
@@ -15,7 +16,18 @@ jobs:
       - uses: actions/checkout@v4
       - run: python -m pip install -r tools/altium-audit/requirements.txt
       - name: Audit QI9-2605
-        run: python tools/altium-audit/audit_kit.py --input audit-input-2605 --output work-2605/kit --repair --max-retries 3
+        run: |
+          set +e
+          python tools/altium-audit/audit_kit.py --input audit-input-2605 --output work-2605/kit --config altium-audit-2605.config.json --repair --max-retries 3
+          rc=$?
+          echo "audit_rc=$rc"
+          echo "=== findings ==="
+          cat work-2605/kit/audit-initial/findings.json || true
+          echo "=== schematic evidence ==="
+          cat work-2605/kit/audit-initial/schematic-evidence.json || true
+          echo "=== summary ==="
+          cat work-2605/kit/summary.json || true
+          exit $rc
       - name: Upload audit evidence
         if: always()
         uses: actions/upload-artifact@v4
