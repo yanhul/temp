@@ -1,4 +1,11 @@
-from tools.altium_audit.schematic_semantics import audit
+import importlib.util
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location("schematic_semantics", ROOT / "tools" / "altium-audit" / "schematic_semantics.py")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+audit = module.audit
 
 
 def _design(*refs):
