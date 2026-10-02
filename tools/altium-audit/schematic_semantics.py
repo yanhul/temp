@@ -50,6 +50,28 @@ def _prop_map(obj):
             out[name.strip().lower()]=value
     return out
 
+KNOWN_PIN_COUNTS = {
+    "ESP32S3WROOM1": 41,
+    "ESP32S3WROOM1U": 41,
+    "HCPL0600": 8,
+    "HCPL3120": 8,
+    "PC817": 4,
+}
+
+def _pin_count(c):
+    pins=_field(c,"pins")
+    if pins is not None:
+        try:
+            return len(list(pins))
+        except Exception:
+            pass
+    vals=[]
+    for x in _children(c):
+        kind=type(x).__name__.lower()
+        if "pin" in kind:
+            vals.append(x)
+    return len(vals) if vals else None
+
 def _component_identity(c):
     props=_prop_map(c)
     ref=_text(_field(c,"designator","refdes","reference")) or props.get("designator")
@@ -62,7 +84,7 @@ def _component_identity(c):
             mpn=props[k]; break
     if mpn is None:
         mpn=_text(_field(c,"mpn","partnumber","part_number","manufacturer_part_number"))
-    return {"ref":ref,"value":value,"library":lib,"footprint":footprint,"mpn":mpn,"properties":props}
+    return {"ref":ref,"value":value,"library":lib,"footprint":footprint,"mpn":mpn,"properties":props,"pin_count":_pin_count(c)}
 
 def _norm_part(s):
     if not s: return None
@@ -82,6 +104,11 @@ def run(components, netlist, add):
     for i in identities:
         ref=i["ref"]
         part=_norm_part(i["mpn"] or i["value"])
+        if part in KNOWN_PIN_COUNTS and i["pin_count"] is not None and i["pin_count"] != KNOWN_PIN_COUNTS[part]:
+            add(
+                f"G2-SCH-PINCOUNT-{ref}","BLOCKER","schematic","FAIL",
+                f"Authoritative part {i['mpn'] or i['value']!r} is documented as {KNOWN_PIN_COUNTS[part]} pins, but the parsed schematic symbol exposes {i['pin_count']} pins.",
+                "VERIFIED",ref)
         lib=_norm_part(i["library"])
         if part and lib and part != lib:
             generic={"RES","R","CAP","C","IND","L","DIODE","LED","D","TRANSISTOR","Q","CONN","CONNECTOR"}
