@@ -356,9 +356,12 @@ def run(pcb_path,authority_path,manifest_path,out_path):
         sides=LAYERS if authority.get("optimization",{}).get("allow_top_bottom",True) else [layers[ref]]
         options=[]
         cb=points_bbox(geometry.get(ref,[])) if geometry.get(ref) else None
-        step=max(abs(cb[2]-cb[0]) if cb else 0.0, abs(cb[3]-cb[1]) if cb else 0.0, 50.0)
-        offsets=[(0,0),(1,0),(-1,0),(0,1),(0,-1),(2,0),(-2,0),(0,2),(0,-2),
-                 (1,1),(1,-1),(-1,1),(-1,-1)]
+        step=max(abs(cb[2]-cb[0]) if cb else 0.0, abs(cb[3]-cb[1]) if cb else 0.0, 100.0)
+        # Deterministic local-to-regional search: expand in envelope-sized
+        # increments so dense existing placement does not dead-end the solver.
+        offsets=[(x,y) for radius in range(0,4) for x in range(-radius,radius+1)
+                 for y in range(-radius,radius+1)
+                 if max(abs(x),abs(y))==radius]
         search_targets=[]
         for ox,oy in offsets:
             tx=target[0]+ox*step; ty=target[1]+oy*step
