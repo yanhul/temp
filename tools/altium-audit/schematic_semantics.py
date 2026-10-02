@@ -142,6 +142,7 @@ def audit(design: dict[str, Any], netlist: dict[str, Any],
     # Library reference is another identity authority. A concrete displayed
     # part name must not silently disagree with a concrete library symbol.
     generic_library_tokens = {"RES1", "CAP", "CAP2", "INDUCTOR", "HEADER 2", "HEADER 3", "HEADER 13", "CON10"}
+    generic_library_markers = ("HEADER", "DB9", "SCHOTTKY", "FUSE", "XTAL", "CON", "CONNECTOR", "RES", "CAP", "INDUCTOR", "DIODE")
     for row in components:
         ref = _text(row.get("designator"))
         display = _text(row.get("value"))
@@ -149,6 +150,9 @@ def audit(design: dict[str, Any], netlist: dict[str, Any],
         if not ref or not display or not lib:
             continue
         if display.upper() in {"*", "?", *generic_library_tokens}:
+            continue
+        lupper = lib.upper()
+        if any(marker in lupper for marker in generic_library_markers):
             continue
         # Normalize package suffixes only for a conservative same-family test.
         dnorm = "".join(ch for ch in display.upper() if ch.isalnum())
