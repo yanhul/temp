@@ -61,7 +61,7 @@ jobs:
         if: ${{ always() }}
         run: |
           set -euo pipefail
-          for f in summary.json netlist.json design.json pcb_probe.txt g4_probe.json findings.json report.md; do
+          for f in summary.json netlist.json design.json schematic-evidence.json pcb_probe.txt g4_probe.json findings.json report.md; do
             test -s "work/audit/$f"
           done
 
