@@ -9,6 +9,12 @@ import argparse, hashlib, json, math, pathlib, sys, zipfile
 from typing import Any
 
 try:
+    from schematic_semantics import audit as audit_schematic_semantics
+except Exception as exc:
+    print(f"BLOCKED G2: cannot import schematic semantic auditor: {exc}", file=sys.stderr)
+    raise
+
+try:
     from altium_monkey import AltiumDesign, AltiumSchDoc, AltiumPcbDoc, PcbLayer
 except Exception as exc:
     print(f"BLOCKED G1: cannot import altium_monkey: {exc}", file=sys.stderr)
@@ -390,6 +396,25 @@ def main():
             f"Authoritative parser load failed: {type(exc).__name__}: {exc}","FACT")
         write_outputs(out, {"status":"BLOCKED","gates":{"G0_INTAKE":"VERIFIED","G1_PARSE":"UNKNOWN"},"findings":findings})
         return 2
+
+    # Schematic semantic authority sits before PCB planning. Parser/compile/connectivity
+    # do not prove component identity, pin semantics, or functional intent.
+    functional_intent = None
+    if project_config.get("functional_authority"):
+        intent_path = pathlib.Path(project_config["functional_authority"])
+        candidates = [intent_path, root / intent_path, args.config.parent / intent_path if args.config else intent_path]
+        intent_path = next((p for p in candidates if p.exists()), None)
+        if intent_path is not None:
+            try:
+                functional_intent = json.loads(intent_path.read_text(encoding="utf-8-sig"))
+            except Exception as exc:
+                add(findings, "SCH-FUNCTIONAL-INTENT-PARSE", "BLOCKER", "functional", "BLOCKED",
+                    f"Functional-intent authority exists but cannot be parsed: {type(exc).__name__}: {exc}", "FACT")
+        else:
+            add(findings, "SCH-FUNCTIONAL-INTENT-PATH", "BLOCKER", "functional", "BLOCKED",
+                f"Configured functional authority file not found: {project_config['functional_authority']!r}", "FACT")
+    semantic_findings = audit_schematic_semantics(payload, netlist or {}, functional_intent)
+    findings.extend(semantic_findings)
 
     diagnostics = payload.get("diagnostics") or []
     compile_data = payload.get("compile")
@@ -838,6 +863,11 @@ def main():
             "BLOCKED" if any(f["id"]=="G2-COMPILE" and f["status"]=="BLOCKED" for f in findings) else
             "VERIFIED"
         ),
+        "G2_SCHEMATIC": (
+            "FAIL" if any(f["domain"] in ("component_identity","pin_semantics","electrical","net_semantics") and f["status"]=="FAIL" and f["severity"] in ("HIGH","BLOCKER") for f in findings)
+            else "BLOCKED" if any(f["domain"] in ("component_identity","pin_semantics","electrical","net_semantics","functional") and f["status"] in ("UNKNOWN","BLOCKED") and f["severity"] in ("HIGH","BLOCKER") for f in findings)
+            else "VERIFIED"
+        ),
         "G3_CONNECTIVITY":"VERIFIED" if not any(f["id"].startswith("G3-") and f["status"] in ("FAIL","UNKNOWN","BLOCKED") for f in findings) else "BLOCKED",
         "G4_PCB":"VERIFIED" if not any(f["id"].startswith("G4-") and f["status"] in ("FAIL","UNKNOWN","BLOCKED") for f in findings) else "BLOCKED",
         "G5_ELECTRICAL":gate_for("G5-"),
@@ -849,7 +879,11 @@ def main():
             else "PARTIAL" if any(f["domain"]=="routing" and f["status"]=="UNKNOWN" for f in findings)
             else "VERIFIED"
         ),
-        "G7_FUNCTIONAL":"PARTIAL" if any(f["id"]=="G7-FUNCTIONAL" and f["status"]=="UNKNOWN" for f in findings) else "VERIFIED",
+        "G7_FUNCTIONAL": (
+            "FAIL" if any(f["domain"]=="functional" and f["status"]=="FAIL" and f["severity"] in ("HIGH","BLOCKER") for f in findings)
+            else "BLOCKED" if any(f["domain"]=="functional" and f["status"] in ("UNKNOWN","BLOCKED") and f["severity"]=="BLOCKER" for f in findings)
+            else "VERIFIED"
+        ),
         "G8_REPORT":"VERIFIED"
     }
     hard_fail = any(f["status"]=="FAIL" and f["severity"] in ("HIGH","BLOCKER") for f in findings)
