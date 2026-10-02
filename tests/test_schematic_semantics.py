@@ -62,3 +62,31 @@ def test_missing_functional_intent_is_blocked():
          "nets": [_net("SIG", _t("U1", "1"))]}
     findings = audit(d, n, None)
     assert any(x["id"] == "SCH-FUNCTIONAL-INTENT-MISSING" and x["status"] == "BLOCKED" for x in findings)
+
+
+def test_real_altium_io_pin_type_is_supported():
+    d = _design("U1")
+    n = {"components": [{"designator": "U1", "value": "TEST", "footprint": "PKG", "library_ref": "Lib:Part"}],
+         "nets": [_net("SIG", _t("U1", "1", "IO"))]}
+    findings = audit(d, n, {"schema": "intent/v1"})
+    assert not any(x["id"] == "SCH-PIN-UNKNOWN-TYPE-U1-1" for x in findings)
+
+
+def test_parameter_value_satisfies_component_identity():
+    d = _design("C2")
+    d["components"][0]["value"] = "Cap2"
+    d["components"][0]["parameters"] = {"Value": "220uF,16V"}
+    n = {"components": [{"designator": "C2", "value": "Cap2", "footprint": "PKG", "library_ref": "Lib:Part"}],
+         "nets": [_net("GND", _t("C2", "1"))]}
+    findings = audit(d, n, {"schema": "intent/v1"})
+    assert not any(x["id"] == "SCH-COMP-MISSING-VALUE-C2" for x in findings)
+
+
+def test_concrete_identity_drift_blocks():
+    d = _design("Q2")
+    d["components"][0]["value"] = "BCX56"
+    d["components"][0]["parameters"] = {"Value": "C9014"}
+    n = {"components": [{"designator": "Q2", "value": "BCX56", "footprint": "PKG", "library_ref": "Lib:Part"}],
+         "nets": [_net("SIG", _t("Q2", "1"))]}
+    findings = audit(d, n, {"schema": "intent/v1"})
+    assert any(x["id"] == "SCH-COMPONENT-IDENTITY-DRIFT-Q2" and x["status"] == "BLOCKED" for x in findings)
