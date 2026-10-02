@@ -37,7 +37,7 @@ def test_hcpl_pin_evidence_still_blocks_real_function_mismatch():
         {"designator":"U18","pin":"4","pin_name":"NC","pin_type":"PASSIVE"},
         {"designator":"U18","pin":"5","pin_name":"VEE","pin_type":"POWER"},
         {"designator":"U18","pin":"6","pin_name":"VO","pin_type":"OUTPUT"},
-        {"designator":"U18","pin":"7","pin_name":"NC","pin_type":"PASSIVE"},
+        {"designator":"U18","pin":"7","pin_name":"VO","pin_type":"OUTPUT"},
         {"designator":"U18","pin":"8","pin_name":"VCC","pin_type":"POWER"}
     ]}]
     observed={
