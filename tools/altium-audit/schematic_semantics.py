@@ -2,7 +2,12 @@
 """Evidence-first schematic semantic checks."""
 from __future__ import annotations
 import re
-from typing import Any\n\ntry:\n    from part_identity import resolve_declared_vs_compiled\nexcept Exception:\n    resolve_declared_vs_compiled = None
+from typing import Any
+
+try:
+    from part_identity import resolve_declared_vs_compiled
+except Exception:
+    resolve_declared_vs_compiled = None
 
 def _field(obj: Any, *keys: str):
     if isinstance(obj, dict):
