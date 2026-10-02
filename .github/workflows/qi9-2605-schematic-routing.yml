@@ -1,0 +1,25 @@
+name: qi9-2605-schematic-routing
+
+on:
+  push:
+    paths:
+      - 'audit-input-2605/**'
+      - 'tools/altium-audit/**'
+      - '.github/workflows/qi9-2605-schematic-routing.yml'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -m pip install -r tools/altium-audit/requirements.txt
+      - name: Audit QI9-2605
+        run: python tools/altium-audit/audit_kit.py --input audit-input-2605 --output work-2605/kit --repair --max-retries 3
+      - name: Upload audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qi9-2605-audit
+          path: work-2605/kit
+          if-no-files-found: warn
