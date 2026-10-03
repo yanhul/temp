@@ -104,9 +104,9 @@ def test_unresolved_identity_is_unknown_review_evidence_not_warning():
 
 
 def test_canonical_evidence_is_required_and_raw_component_is_rejected():
-    findings=[]
-    ss.run({"schema":"wrong","components":[]}, None, lambda *args: findings.append(args))
-    assert findings and findings[0][3] in ("BLOCKED","UNKNOWN")
+    import pytest
+    with pytest.raises(TypeError):
+        ss.run({"schema":"wrong","components":[]}, None, lambda *args: None)
 
 
 def test_canonical_pin_net_evidence_drives_identity():
