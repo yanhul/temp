@@ -331,6 +331,11 @@ def run(pcb_path,authority_path,manifest_path,out_path):
         basis_counts=defaultdict(int)
         for _,_,basis in evidence: basis_counts[basis]+=1
 
+        # Clamp weighted targets so edge components remain inside the board.
+        points0=geometry.get(ref,[])
+        if points0:
+            bx0=points_bbox(points0); hw=max(0.0,(bx0[2]-bx0[0])/2.0); hh=max(0.0,(bx0[3]-bx0[1])/2.0)
+            target=(min(max(target[0],board_box[0]+hw),board_box[2]-hw), min(max(target[1],board_box[1]+hh),board_box[3]-hh))
         rotations=ROTATIONS if authority.get("optimization",{}).get("allow_rotation",True) else [orientations[ref]]
         sides=LAYERS if authority.get("optimization",{}).get("allow_top_bottom",True) else [layers[ref]]
         options=[]
