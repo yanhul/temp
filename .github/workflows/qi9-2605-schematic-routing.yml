@@ -52,3 +52,5 @@ jobs:
 
 # e2e-kickoff 2026-10-02
 # 2026-10-03: rerun after layer-aware placement, SMAJ semantic, and net-index routing fixes
+
+# 2026-10-03: force QI9-2605 strict evidence rebuild
