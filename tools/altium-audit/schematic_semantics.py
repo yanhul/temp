@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Evidence-first schematic semantic checks.
 
-Metadata/display mismatches are review evidence, not functional contradictions.\n# 2026-10-03: trigger QI9-2605 audit on the corrected semantic-test commit.
+Metadata/display mismatches are review evidence, not functional contradictions.\n# 2026-10-03: canonical semantic checks; identity families normalized by part_identity.
 A hard schematic blocker requires authoritative pin/function evidence.
 """
 from __future__ import annotations
