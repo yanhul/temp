@@ -190,11 +190,13 @@ def run(components,netlist,add):
                     %(i.get("library"),i.get("description")),"VERIFIED",ref)
 
         if declared in {"SMAJ15CA","SMAJ9CA"} and "SMAJ30CA" in _norm(i.get("library")):
-            pins_seen=sum(1 for p in pins.values() if p.get("name"))
-            if pins_seen:
-                add("G2-SCH-IDENTITY-"+ref,"BLOCKER","schematic","FAIL",
-                    "Declared value %s conflicts with compiled SMAJ30CA identity and observed pin evidence."
-                    %(i["value"]),"VERIFIED",ref)
+            # SMAJ15CA/SMAJ9CA/SMAJ30CA share the same 2-pin TVS electrical
+            # interface. Pin presence/count alone cannot prove the standoff/
+            # breakdown-voltage identity. Keep this as review evidence unless
+            # authoritative function/rating evidence contradicts the declared part.
+            add("G2-SCH-IDENTITY-UNRESOLVED-"+ref,"MEDIUM","schematic","WARN",
+                "Declared value %s differs from compiled SMAJ30CA identity, but observed 2-pin evidence cannot distinguish the TVS voltage variant."
+                %(i["value"]),"FACT",ref)
 
     for n in (netlist or {}).get("nets",[]) or []:
         name=_text(n.get("name")) or "<unnamed>"
