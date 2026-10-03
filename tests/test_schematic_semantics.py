@@ -101,3 +101,26 @@ def test_unresolved_identity_is_unknown_review_evidence_not_warning():
     findings=run_checker(c, [])
     x=next(v for v in findings if v[0]=="G2-SCH-IDENTITY-UNRESOLVED-R99")
     assert x[1]=="INFO" and x[2]=="schematic" and x[3]=="UNKNOWN"
+
+
+def test_canonical_evidence_is_required_and_raw_component_is_rejected():
+    findings=[]
+    ss.run({"schema":"wrong","components":[]}, None, lambda *args: findings.append(args))
+    assert findings and findings[0][3] in ("BLOCKED","UNKNOWN")
+
+
+def test_canonical_pin_net_evidence_drives_identity():
+    evidence={"schema":"altium-schematic-evidence.v1","status":"VERIFIED","components":[
+        {"reference":"U18","declared_value":"HCPL-0600","compiled_value":"HCPL-3120",
+         "library_id":"HCPL-3120","pin_count":8,"pins":[
+            {"pin":"1","pin_name":"NC","electrical_type":"PASSIVE","connected_net":"N1"},
+            {"pin":"2","pin_name":"ANODE","electrical_type":"INPUT","connected_net":"LED"},
+            {"pin":"3","pin_name":"CATHODE","electrical_type":"INPUT","connected_net":"LEDK"},
+            {"pin":"4","pin_name":"NC","electrical_type":"PASSIVE","connected_net":"N2"},
+            {"pin":"5","pin_name":"VEE","electrical_type":"POWER","connected_net":"GND"},
+            {"pin":"6","pin_name":"VO","electrical_type":"OUTPUT","connected_net":"OUT"},
+            {"pin":"7","pin_name":"NC","electrical_type":"PASSIVE","connected_net":None},
+            {"pin":"8","pin_name":"VCC","electrical_type":"POWER","connected_net":"+5V"}]}
+    ]}
+    ss.run(evidence, None, lambda *args: findings.append(args))
+    assert any(x[3]=="FAIL" for x in findings)
