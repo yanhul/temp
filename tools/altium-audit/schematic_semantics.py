@@ -123,50 +123,50 @@ def _pins(netlist,ref):
     return out
 
 def _peer_group_findings(ids, netlist, add):
-    """Compare structurally equivalent schematic instances across designators.
-    Net names are intentionally excluded: peers may legitimately connect to
-    different nets. Pin number/name/type and footprint/library identity are
-    the authoritative peer fingerprint.
-    """
+    """Compare equivalent instances without mistaking per-instance connectivity
+    (including intentionally unconnected/NC pins) for symbol identity drift."""
     groups={}
     for i in ids:
-        key=(
-            _norm(i.get("value")),
-            _norm(i.get("library")),
-            _norm(i.get("footprint")),
-            i.get("pin_count"),
-        )
+        key=(_norm(i.get("value")),_norm(i.get("library")),
+             _norm(i.get("footprint")),i.get("pin_count"))
         if not any(key):
             continue
         groups.setdefault(key,[]).append(i)
     for key, peers in groups.items():
         if len(peers)<2:
             continue
-        fps={}
+        fingerprints={}
         for i in peers:
             pins=_pins(netlist,i["ref"])
-            fp=tuple(sorted(
-                (str(pn),_norm(p.get("name")),str(p.get("type") or "").upper())
-                for pn,p in pins.items()
-            ))
-            fps.setdefault(fp,[]).append(i["ref"])
-        if len(fps)<=1:
+            fp=tuple(sorted((str(pn),_norm(p.get("name")),str(p.get("type") or "").upper())
+                            for pn,p in pins.items()))
+            fingerprints.setdefault(fp,[]).append(i["ref"])
+        if len(fingerprints)<=1:
             continue
-        canonical=max(fps.values(), key=len)
-        for fp, refs in fps.items():
-            if refs==canonical:
-                continue
-            for ref in refs:
-                add(
-                    "G2-SCH-PEER-DIFF-"+str(ref),
-                    "BLOCKER",
-                    "schematic",
-                    "FAIL",
-                    "Peer-group structural mismatch: equivalent instances %s do not share the same compiled pin fingerprint; outlier=%s."
-                    % (", ".join(sorted(r for rs in fps.values() for r in rs)), ref),
-                    "VERIFIED",
-                    ref,
-                )
+        # Compare only pins that are present on multiple peers. A missing pin
+        # terminal means "unconnected", not a different symbol pin.
+        by_ref={i["ref"]:_pins(netlist,i["ref"]) for i in peers}
+        refs=sorted(by_ref)
+        base=by_ref[refs[0]]
+        for ref in refs[1:]:
+            other=by_ref[ref]
+            for pn in sorted(set(base)&set(other), key=str):
+                a=base[pn]; b=other[pn]
+                af=(_norm(a.get("name")),str(a.get("type") or "").upper())
+                bf=(_norm(b.get("name")),str(b.get("type") or "").upper())
+                if af!=bf:
+                    add("G2-SCH-PEER-PIN-DIFF-"+str(ref),"BLOCKER","schematic","FAIL",
+                        "Peer-group pin function mismatch at pin %s: %s=%r versus %s=%r."
+                        %(pn,refs[0],af,ref,bf),"VERIFIED",ref)
+                    break
+            else:
+                # Extra connected pins are instance wiring evidence. Surface it
+                # as review unless the pin function itself differs.
+                extras=sorted(set(other)-set(base), key=str)
+                if extras:
+                    add("G2-SCH-PEER-CONNECTIVITY-"+str(ref),"MEDIUM","schematic","WARN",
+                        "Peer instance has additional connected pin(s) %s absent from comparison peer; connectivity may be intentional and is not an identity contradiction."
+                        % extras,"FACT",ref)
 
 def _metadata_findings(i,add):
     ref=i["ref"]
