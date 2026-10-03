@@ -64,8 +64,9 @@ def main():
     pcb=AltiumPcbDoc.from_file(args.pcb)
     wanted=set(args.nets)
     nets=list(getattr(pcb,"nets",[]) or [])
-    result={"schema":"altium-routing-repair-plan.v1","source":str(args.pcb),
+    result={"schema":"altium-routing-repair-plan.v2","source":str(args.pcb),
             "mode":"PLAN_ONLY_NO_MUTATION","nets":[]}
+
     for idx,n in enumerate(nets):
         name=f(n,"name","net_name","netname","uid")
         if name is None or (wanted and str(name) not in wanted): continue
@@ -77,87 +78,117 @@ def main():
         vias=list(data.get("vias",[]) or [])
         tracks=list(data.get("tracks",[]) or [])
         arcs=list(data.get("arcs",[]) or [])
-        nodes=[]
-        meta=[]
+
+        nodes=[]; meta=[]; tolerances=[]
         for p in pads:
             q=xy(p)
-            if q: nodes.append(q); meta.append({"kind":"pad","designator":f(p,"designator","component","refdes"),"pin":f(p,"designator","pin","pad_name"),"xy":q,"layer":f(p,"layer","layer_name")})
+            if q:
+                w=num(f(p,"width_mils","width")) or 0.0
+                h=num(f(p,"height_mils","height")) or 0.0
+                nodes.append(q)
+                meta.append({"kind":"pad","designator":f(p,"designator","component","refdes"),
+                             "pin":f(p,"designator","pin","pad_name"),"xy":q,
+                             "layer":f(p,"layer","layer_name")})
+                tolerances.append(max(1.0,math.hypot(w,h)/2.0))
         for v in vias:
             q=xy(v)
-            if q: nodes.append(q); meta.append({"kind":"via","xy":q,"layer_start":f(v,"layer_start"),"layer_end":f(v,"layer_end")})
+            if q:
+                dia=num(f(v,"diameter_mils","diameter")) or 0.0
+                nodes.append(q)
+                meta.append({"kind":"via","xy":q,"layer_start":f(v,"layer_start"),
+                             "layer_end":f(v,"layer_end")})
+                tolerances.append(max(1.0,dia/2.0))
         for typ,items in (("track",tracks),("arc",arcs)):
             for obj in items:
                 z=ep(obj)
                 if z:
-                    nodes.extend(z); meta.extend([{"kind":typ,"xy":z[0],"layer":f(obj,"layer","layer_name")},{"kind":typ,"xy":z[1],"layer":f(obj,"layer","layer_name")}])
+                    nodes.extend(z)
+                    meta.extend([
+                        {"kind":typ,"xy":z[0],"layer":f(obj,"layer","layer_name")},
+                        {"kind":typ,"xy":z[1],"layer":f(obj,"layer","layer_name")}
+                    ])
+                    tolerances.extend([1.0,1.0])
+
         if len(nodes)<2: continue
+
         parent=list(range(len(nodes)))
         def find(i):
             while parent[i]!=i:
-                parent[i]=parent[parent[i]]; i=parent[i]
+                parent[i]=parent[parent[i]]
+                i=parent[i]
             return i
         def union(a,b):
             a,b=find(a),find(b)
             if a!=b: parent[b]=a
+
+        # Conservative coincidence join. Keep the same 1 mil base tolerance
+        # used by the audit graph, while allowing pad/via copper diameter to
+        # connect a route endpoint that lands inside the actual terminal.
         snap=defaultdict(list)
-        for i,p in enumerate(nodes): snap[(round(p[0]),round(p[1]))].append(i)
+        for i,p in enumerate(nodes):
+            snap[(round(p[0]),round(p[1]))].append(i)
         for ids in snap.values():
             for j in ids[1:]: union(ids[0],j)
+
+        route_edges=[]
         for obj in tracks+arcs:
             z=ep(obj)
             if not z: continue
-            ia=next((i for i,p in enumerate(nodes) if p==z[0]),None)
-            ib=next((i for i,p in enumerate(nodes) if p==z[1]),None)
-            if ia is not None and ib is not None: union(ia,ib)
+            ia=next((i for i,p in enumerate(nodes) if meta[i]["kind"]=="track" and p==z[0]),None)
+            if ia is None:
+                ia=next((i for i,p in enumerate(nodes) if meta[i]["kind"]=="arc" and p==z[0]),None)
+            ib=next((i for i,p in enumerate(nodes) if meta[i]["kind"]=="track" and p==z[1]),None)
+            if ib is None:
+                ib=next((i for i,p in enumerate(nodes) if meta[i]["kind"]=="arc" and p==z[1]),None)
+            if ia is not None and ib is not None:
+                route_edges.append((ia,ib,z[0],z[1]))
+
         def point_segment_distance(p,a,b):
             dx,dy=b[0]-a[0],b[1]-a[1]
             if dx==dy==0:return d(p,a)
             t=max(0,min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/(dx*dx+dy*dy)))
             q=(a[0]+t*dx,a[1]+t*dy)
             return d(p,q)
-        for i,p in enumerate(nodes):
-            for obj in tracks+arcs:
-                z=ep(obj)
-                if not z or p==z[0] or p==z[1]: continue
-                if point_segment_distance(p,z[0],z[1])<=1.0:
-                    ia=next((j for j,x in enumerate(nodes) if x==z[0]),None)
-                    ib=next((j for j,x in enumerate(nodes) if x==z[1]),None)
-                    if ia is not None: union(i,ia)
-                    if ib is not None: union(i,ib)
+
+        # Join pads/vias to route interiors using their actual copper envelope.
+        # This is the critical difference from v1, which produced false
+        # "disconnected" reports for essentially every routed net.
+        for i,(p,kind) in enumerate(zip(nodes,meta)):
+            if kind["kind"] not in ("pad","via"): continue
+            tol=tolerances[i]
+            for ia,ib,a,b in route_edges:
+                if point_segment_distance(p,a,b)<=tol:
+                    union(i,ia); union(i,ib)
+
         comps=defaultdict(list)
         for i in range(len(nodes)): comps[find(i)].append(i)
         if len(comps)<=1: continue
-        groups=[]
-        for ids in comps.values():
-            groups.append([meta[i] for i in ids])
-        # Build a conservative spanning set: one shortest pad/via bridge
-        # from the already-connected component set to the nearest unconnected
-        # component. This produces component_count-1 candidates rather than
-        # the old single bridge, so multi-component nets can actually converge.
+
+        groups=[[meta[i] for i in ids] for ids in comps.values()]
         bridges=[]
-        if len(groups)>1:
-            connected={0}
-            while len(connected)<len(groups):
-                best=None
-                best_b=None
-                for a in sorted(connected):
-                    for b in range(len(groups)):
-                        if b in connected: continue
-                        for u in groups[a]:
-                            if u["kind"] not in ("pad","via"): continue
-                            for v in groups[b]:
-                                if v["kind"] not in ("pad","via"): continue
-                                dist=d(u["xy"],v["xy"])
-                                if best is None or dist<best["distance_mils"]:
-                                    best={"from":u,"to":v,"distance_mils":dist}
-                                    best_b=b
-                if best is None: break
-                bridges.append(best)
-                connected.add(best_b)
-        result["nets"].append({"name":name,"component_count":len(groups),
-            "components":groups,"nearest_component_bridges":bridges,
-            "tracks":len(tracks),"vias":len(vias)})
+        connected={0}
+        while len(connected)<len(groups):
+            best=None; best_b=None
+            for a in sorted(connected):
+                for b in range(len(groups)):
+                    if b in connected: continue
+                    for u in groups[a]:
+                        if u["kind"] not in ("pad","via"): continue
+                        for v in groups[b]:
+                            if v["kind"] not in ("pad","via"): continue
+                            dist=d(u["xy"],v["xy"])
+                            if best is None or dist<best["distance_mils"]:
+                                best={"from":u,"to":v,"distance_mils":dist}; best_b=b
+            if best is None: break
+            bridges.append(best); connected.add(best_b)
+
+        result["nets"].append({
+            "name":name,"component_count":len(groups),"components":groups,
+            "nearest_component_bridges":bridges,"tracks":len(tracks),"vias":len(vias}
+        )
+
     args.out.parent.mkdir(parents=True,exist_ok=True)
     args.out.write_text(json.dumps(result,indent=2,sort_keys=True),encoding="utf-8")
     print(json.dumps({"nets_with_disconnected_graph":len(result["nets"]),"out":str(args.out)}))
+
 if __name__=="__main__": main()
