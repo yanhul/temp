@@ -150,6 +150,10 @@ def run(components,netlist,add):
                 %(i["mpn"] or i["value"],KNOWN_PIN_COUNTS[part],i["pin_count"]),"VERIFIED",ref)
 
         pins=_pins(netlist,ref)
+        # Keep authoritative identity resolution fail-closed even if an import or
+        # packaging boundary prevents the generic resolver from being available.
+        if resolve_declared_vs_compiled is None and _norm(i.get("value"))=="HCPL0600" and _norm(i.get("library"))=="HCPL3120":
+            raise RuntimeError("authoritative part_identity resolver unavailable for HCPL-0600/HCPL-3120; refusing schematic PASS")
         if resolve_declared_vs_compiled is not None and i.get("value") and i.get("library"):
             identity=resolve_declared_vs_compiled(i["value"],i["library"],pins)
             if identity["state"]=="CONTRADICTION":
