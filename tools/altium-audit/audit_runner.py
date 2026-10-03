@@ -152,13 +152,78 @@ def net_name(obj, net_by_idx=None):
             pass
     return str(v) if v is not None else None
 
-def route_net_counts(pcb):
+def pad_net_labels_from_netlist(pcb, netlist):
+    if not isinstance(netlist, dict): return {}
+    terminal_net = {}
+    for n in list(netlist.get('nets', []) or []):
+        name = n.get('name')
+        if not name: continue
+        for t in list(n.get('terminals', []) or []):
+            ref, pin = t.get('designator'), t.get('pin')
+            if ref is not None and pin is not None: terminal_net[(str(ref), str(pin))] = str(name)
+    refs = {}
+    for idx, c in enumerate(list(getattr(pcb, 'components', []) or [])):
+        ref = field(c, 'designator', 'refdes', 'reference', 'logical_designator', 'physical_designator')
+        if ref is not None: refs[idx] = str(ref)
+    labels = {}
+    for p in list(getattr(pcb, 'pads', []) or []):
+        ci, pn = field(p, 'component_index'), field(p, 'designator', 'name', 'pad_number', 'number', 'pin')
+        try: ref = refs.get(int(ci))
+        except Exception: ref = None
+        n = terminal_net.get((ref, str(pn))) if ref is not None and pn is not None else None
+        if n: labels[id(p)] = n
+    return labels
+
+def geometry_route_net_counts(pcb, netlist):
+    pad_labels = pad_net_labels_from_netlist(pcb, netlist)
+    segs = []
+    for obj in list(getattr(pcb, 'tracks', []) or []) + list(getattr(pcb, 'arcs', []) or []):
+        ep = segment_endpoints(obj)
+        if ep is not None: segs.append((obj, ep[0], ep[1], str(field(obj, 'layer', 'layer_id'))))
+    if not segs: return {}
+    parent=list(range(len(segs)))
+    def find(i):
+        while parent[i] != i: parent[i]=parent[parent[i]]; i=parent[i]
+        return i
+    def union(a,b):
+        a,b=find(a),find(b)
+        if a!=b: parent[b]=a
+    def near(a,b,tol=1.0): return abs(a[0]-b[0])<=tol and abs(a[1]-b[1])<=tol
+    em={}
+    for i,(_,a,b,l) in enumerate(segs):
+        em.setdefault((round(a[0]),round(a[1]),l),[]).append(i); em.setdefault((round(b[0]),round(b[1]),l),[]).append(i)
+    for ids in em.values():
+        for j in ids[1:]: union(ids[0],j)
+    pads=list(getattr(pcb,'pads',[]) or [])
+    for p in pads:
+        n=pad_labels.get(id(p)); pp=xy(p)
+        if not n or pp is None: continue
+        pl=str(field(p,'layer','layer_id')); hits=[]
+        for i,(_,a,b,l) in enumerate(segs):
+            if (pl in ('74','MULTILAYER','MULTI-LAYER') or pl==l) and (near(pp,a) or near(pp,b)): hits.append(i)
+        for j in hits[1:]: union(hits[0],j)
+        for i in hits:
+            r=find(i); setattr(p,'_audit_net_name',n) if False else None
+    labels={}
+    for p in pads:
+        n=pad_labels.get(id(p)); pp=xy(p)
+        if not n or pp is None: continue
+        pl=str(field(p,'layer','layer_id'))
+        for i,(_,a,b,l) in enumerate(segs):
+            if (pl in ('74','MULTILAYER','MULTI-LAYER') or pl==l) and (near(pp,a) or near(pp,b)): labels.setdefault(find(i),set()).add(n)
+    counts={}
+    for r,nets in labels.items():
+        if len(nets)==1:
+            n=next(iter(nets)); counts[n]=counts.get(n,0)+sum(1 for i in range(len(segs)) if find(i)==r)
+    return counts
+def route_net_counts(pcb, netlist=None):
     net_by_idx=build_net_index_map(pcb)
     routed={}
     for attr in ("tracks","arcs","vias","regions"):
         for item in list(getattr(pcb,attr,[]) or []):
             n=net_name(item, net_by_idx)
             if n: routed[n]=routed.get(n,0)+1
+    if not routed and netlist is not None: return geometry_route_net_counts(pcb, netlist)
     return routed
 
 def extract_unrouted(pcb):
@@ -906,7 +971,7 @@ def main():
         add(findings,"G7-UNROUTED","INFO","routing","VERIFIED",
             "Authoritative PCB unrouted/ratsnest collection is empty.","VERIFIED")
 
-    routed_counts=route_net_counts(pcb)
+    routed_counts=route_net_counts(pcb, netlist)
     pcb_net_names={str(field(n,"name","net_name","netname","uid")) for n in list(getattr(pcb,"nets",[]) or []) if field(n,"name","net_name","netname","uid") is not None}
     unrouted_candidates=sorted(pcb_net_names-set(routed_counts))
     if unrouted_candidates:
@@ -932,7 +997,7 @@ def main():
     # Per-net route topology and layer transitions where fields are available.
     net_layers={}
     for t in list(getattr(pcb,"tracks",[]) or []):
-        n=net_name(t); layer=field(t,"layer")
+        n=net_name(t, build_net_index_map(pcb)); layer=field(t,"layer")
         if n and layer is not None:
             net_layers.setdefault(n,set()).add(str(layer))
     for n,layers in sorted(net_layers.items()):
