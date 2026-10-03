@@ -183,6 +183,9 @@ def pad_net_labels_from_netlist(pcb, netlist):
     labels = {}
     for p in list(getattr(pcb, 'pads', []) or []):
         ci, pn = field(p, 'component_index'), field(p, 'designator', 'name', 'pad_number', 'number', 'pin')
+        if pn is None:
+            raw=field(p,'raw_record','record')
+            if isinstance(raw,dict): pn=raw.get('DESIGNATOR') or raw.get('Designator') or raw.get('PIN') or raw.get('Pin')
         try: ref = refs.get(int(ci))
         except Exception: ref = None
         n = terminal_net.get((ref, str(pn))) if ref is not None and pn is not None else None
