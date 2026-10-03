@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Evidence-first schematic semantic checks.
 
-Metadata/display mismatches are review evidence, not functional contradictions.\n# 2026-10-03: canonical semantic checks; identity families normalized by part_identity.
+Metadata/display mismatches are review evidence, not functional contradictions.\n# 2026-10-03: canonical semantic checks; pin aliases normalized by part_identity.
 A hard schematic blocker requires authoritative pin/function evidence.
 """
 from __future__ import annotations
