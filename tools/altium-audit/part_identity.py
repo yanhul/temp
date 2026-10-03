@@ -46,6 +46,11 @@ def profile_key(identity: Any) -> str:
     return n
 
 
+def pin_key(identity: Any) -> str:
+    n = norm(identity)
+    return "VO" if n == "V0" else n
+
+
 def resolve_declared_vs_compiled(
     declared_value: str | None,
     compiled_library: str | None,
@@ -88,7 +93,7 @@ def resolve_declared_vs_compiled(
     compiled_matches = 0
 
     for pin, obs in observed_pins.items():
-        actual = norm(obs.get("name") or obs.get("pin_name"))
+        actual = pin_key(obs.get("name") or obs.get("pin_name"))
         if not actual:
             continue
         dp = norm(declared_profile["pins"].get(str(pin)))
