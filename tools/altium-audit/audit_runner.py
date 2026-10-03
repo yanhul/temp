@@ -748,7 +748,26 @@ def main():
         try: p=(float(comp.get_x_mils()),float(comp.get_y_mils()))
         except Exception: p=xy(comp)
         if p: comp_points[ref]=p
-        comp_sides[ref]=str(getattr(comp,"layer","")).upper()
+        # Resolve component mounting side from the parser's V7-aware layer
+        # projection before falling back to legacy numeric layer ids. XY overlap
+        # across Top/Bottom is not a 2D collision.
+        side = None
+        try:
+            ls = getattr(comp, "layer_state", None)
+            if callable(ls):
+                state = ls()
+                rr = getattr(state, "ref", None)
+                side = str(getattr(rr, "token", rr) or "").upper()
+        except Exception:
+            side = None
+        if not side:
+            raw_layer = field(comp, "layer", "v7_layer", "v7_layer_id")
+            try:
+                li = int(raw_layer)
+                side = {1: "TOP", 32: "BOTTOM"}.get(li, str(raw_layer).upper())
+            except Exception:
+                side = str(raw_layer or "").upper() or None
+        comp_sides[ref]=side
         pts=[]
         for pad in pads:
             ci=field(pad,"component_index")
@@ -807,8 +826,11 @@ def main():
         for b in sorted(comp_boxes)[i+1:]:
             # Opposite-side SMT bodies do not directly collide in 2D. Through-hole
             # / full-stack mechanical interaction remains covered by G6_PHYSICAL.
-            if comp_sides.get(a) and comp_sides.get(b) and comp_sides[a] != comp_sides[b]:
-                continue
+            sa, sb = comp_sides.get(a), comp_sides.get(b)
+            if sa and sb:
+                opposite = {sa, sb} in ({"TOP", "BOTTOM"}, {"TOP LAYER", "BOTTOM LAYER"})
+                if opposite:
+                    continue
             ba,bb=comp_boxes[a],comp_boxes[b]
             gap_x=max(0.0,max(ba[0],bb[0])-min(ba[2],bb[2]))
             gap_y=max(0.0,max(ba[1],bb[1])-min(ba[3],bb[3]))
