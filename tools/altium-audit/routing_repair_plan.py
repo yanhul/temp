@@ -184,7 +184,7 @@ def main():
 
         result["nets"].append({
             "name":name,"component_count":len(groups),"components":groups,
-            "nearest_component_bridges":bridges,"tracks":len(tracks),"vias":len(vias}
+            "nearest_component_bridges":bridges,"tracks":len(tracks),"vias":len(vias)}
         )
 
     args.out.parent.mkdir(parents=True,exist_ok=True)
