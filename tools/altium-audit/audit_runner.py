@@ -329,6 +329,34 @@ def topology_components(pcb, netlist=None):
                         vhits.append(i)
                 for j in vhits[1:]: union0(vhits[0],j)
 
+            # Net-scoped copper fills/regions can bridge otherwise separate track islands.
+            route_idx=build_net_index_map(pcb)
+            def point_in_poly(pt, poly):
+                if len(poly)<3: return False
+                x,y=pt; inside=False; j=len(poly)-1
+                for i in range(len(poly)):
+                    xi,yi=poly[i]; xj,yj=poly[j]
+                    if ((yi>y)!=(yj>y)) and x < (xj-xi)*(y-yi)/(yj-yi+1e-12)+xi: inside=not inside
+                    j=i
+                return inside
+            areas=[]
+            for rg in list(getattr(pcb,"regions",[]) or []):
+                ni=primitive_net_index(rg); n=route_idx.get(ni); verts=[]
+                for v in list(field(rg,"outline_vertices") or []):
+                    q=xy(v)
+                    if q is not None: verts.append(q)
+                if n and len(verts)>=3: areas.append((str(n),layer_token(field(rg,"layer","layer_id")),verts))
+            for fl in list(getattr(pcb,"fills",[]) or []):
+                ni=primitive_net_index(fl); n=route_idx.get(ni)
+                x1=num(field(fl,"pos1_x_mils","pos1_x")); y1=num(field(fl,"pos1_y_mils","pos1_y")); x2=num(field(fl,"pos2_x_mils","pos2_x")); y2=num(field(fl,"pos2_y_mils","pos2_y"))
+                if n is not None and None not in (x1,y1,x2,y2): areas.append((str(n),layer_token(field(fl,"layer","layer_id")),[(x1,y1),(x2,y1),(x2,y2),(x1,y2)]))
+            for n,alayer,poly in areas:
+                hits=[]
+                for i,(_,a,b,l) in enumerate(segs):
+                    if alayer not in ("74","MULTILAYER","MULTI-LAYER") and alayer != layer_token(l): continue
+                    if point_in_poly(a,poly) or point_in_poly(b,poly): hits.append(i)
+                for j in hits[1:]: union0(hits[0],j)
+
             pads=list(getattr(pcb, "pads", []) or [])
             for p in pads:
                 if id(p) not in pad_labels: continue
