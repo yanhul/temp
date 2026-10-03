@@ -8,7 +8,24 @@ from part_identity import resolve_declared_vs_compiled
 
 def run_checker(component, netlist):
     findings=[]
-    ss.run([component], {"nets": netlist}, lambda *args: findings.append(args))
+    pins=[]
+    ref=component.get("designator")
+    for n in netlist:
+        for t in n.get("terminals",[]):
+            if str(t.get("designator"))==str(ref):
+                pins.append({"pin":str(t.get("pin")),"pin_name":t.get("pin_name"),
+                             "electrical_type":t.get("pin_type"),"connected_net":n.get("name")})
+    record={"reference":ref,"declared_value":component.get("value"),
+            "compiled_value":(component.get("parameters") or {}).get("Value"),
+            "library_id":component.get("library_reference"),
+            "footprint":component.get("footprint"),
+            "mpn":(component.get("parameters") or {}).get("MPN"),
+            "description":component.get("description"),
+            "pin_count":component.get("pin_count"),
+            "properties":{str(k).lower():v for k,v in (component.get("parameters") or {}).items()},
+            "pins":pins}
+    evidence={"schema":"altium-schematic-evidence.v1","status":"VERIFIED","components":[record]}
+    ss.run(evidence, None, lambda *args: findings.append(args))
     return findings
 
 
