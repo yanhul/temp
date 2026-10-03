@@ -762,8 +762,13 @@ def main():
         def _semantic_add(fid, severity, domain, status, evidence, confidence="VERIFIED", obj=None):
             add(findings, fid, severity, domain, status, evidence, confidence, obj)
         schematic_semantic_identities = run_schematic_semantics(
-            payload.get("components", []) if sch_components is None else sch_components,
-            netlist,
+            write_schematic_evidence(
+                out,
+                payload.get("components", []) if sch_components is None else sch_components,
+                netlist,
+                project_id=project_id,
+            ),
+            None,
             _semantic_add,
         )
     else:
