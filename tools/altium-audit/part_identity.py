@@ -34,6 +34,18 @@ AUTHORITATIVE_PIN_PROFILES = {
 }
 
 
+def profile_key(identity: Any) -> str:
+    """Map compiled library/order-code strings onto authoritative families."""
+    n = norm(identity)
+    if "HCPL3120" in n:
+        return "HCPL3120"
+    if "HCPL0600" in n:
+        return "HCPL0600"
+    if "BCX56" in n:
+        return "BCX56"
+    return n
+
+
 def resolve_declared_vs_compiled(
     declared_value: str | None,
     compiled_library: str | None,
@@ -46,8 +58,8 @@ def resolve_declared_vs_compiled(
     avoids treating arbitrary symbol/library naming as proof of electrical
     identity.
     """
-    declared = norm(declared_value)
-    compiled = norm(compiled_library)
+    declared = profile_key(declared_value)
+    compiled = profile_key(compiled_library)
     observed_pins = observed_pins or {}
 
     if not declared or not compiled:
