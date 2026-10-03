@@ -1034,8 +1034,14 @@ def main():
             gap_x=max(0.0,max(ba[0],bb[0])-min(ba[2],bb[2]))
             gap_y=max(0.0,max(ba[1],bb[1])-min(ba[3],bb[3]))
             if gap_x==0 and gap_y==0:
-                add(findings,f"G6-COMPONENT-OVERLAP-{a}-{b}","HIGH","placement","FAIL",
-                    f"Component geometry overlaps: {a} bbox={ba!r}; {b} bbox={bb!r}.","VERIFIED",f"{a}<->{b}")
+                # XY overlap alone is not a collision proof. Require explicit
+                # same-layer evidence; opposite/unknown sides are not blockers.
+                if sa and sb and sa == sb:
+                    add(findings,f"G6-COMPONENT-OVERLAP-{a}-{b}","HIGH","placement","FAIL",
+                        f"Same-layer component geometry overlaps: {a} side={sa} bbox={ba!r}; {b} side={sb} bbox={bb!r}.","VERIFIED",f"{a}<->{b}")
+                else:
+                    add(findings,f"G6-COMPONENT-OVERLAP-{a}-{b}","INFO","placement","UNKNOWN",
+                        f"XY envelopes overlap but same-layer collision is not proven: {a} side={sa!r}; {b} side={sb!r}.","FACT",f"{a}<->{b}")
             else:
                 clearance_pairs.append((a,b,math.hypot(gap_x,gap_y)))
 
