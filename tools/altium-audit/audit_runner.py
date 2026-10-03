@@ -437,7 +437,7 @@ def topology_components(pcb, netlist=None):
             for i,(_,a,b,l) in enumerate(segs2):
                 for j in range(i):
                     _,c1,c2,l2=segs2[j]
-                    if l==l2 and (distance(a,c1)<=1 or distance(a,c2)<=1 or distance(b,c1)<=1 or distance(b,c2)<=1): u2(i,j)
+                    if l==l2 and (distance(a,c1)<=5 or distance(a,c2)<=5 or distance(b,c1)<=5 or distance(b,c2)<=5): u2(i,j)
             for v in data["vias"]:
                 vp=xy(v)
                 if vp is None: continue
