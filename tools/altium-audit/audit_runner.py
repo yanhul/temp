@@ -939,6 +939,22 @@ def main():
                 side = {1: "TOP", 32: "BOTTOM"}.get(li, str(raw_layer).upper())
             except Exception:
                 side = str(raw_layer or "").upper() or None
+        # Pad layer is stronger evidence for SMT side than the component
+        # projection. Use it to distinguish intentional Top/Bottom XY overlap.
+        pad_layers=set()
+        for pad in pads:
+            ci=field(pad,"component_index")
+            try:
+                if ci is None or int(ci)!=idx: continue
+            except Exception:
+                continue
+            pl=field(pad,"layer","layer_id")
+            if pl is not None: pad_layers.add(str(pl).upper())
+        if pad_layers:
+            if pad_layers.issubset({"1","TOP","TOP LAYER"}):
+                side="TOP"
+            elif pad_layers.issubset({"32","BOTTOM","BOTTOM LAYER"}):
+                side="BOTTOM"
         comp_sides[ref]=side
         pts=[]
         for pad in pads:
