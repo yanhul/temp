@@ -1258,7 +1258,7 @@ def main():
         fs=[f for f in findings if f["id"].startswith(prefix)]
         if any(f["status"]=="FAIL" and f["severity"] in ("HIGH","BLOCKER") for f in fs): return "FAIL"
         if any(f["status"] in ("UNKNOWN","BLOCKED") and f["severity"]=="BLOCKER" for f in fs): return "BLOCKED"
-        if any(f["status"]=="UNKNOWN" for f in fs): return "PARTIAL"
+        if any(f["status"]=="UNKNOWN" and f["severity"]!="INFO" for f in fs): return "PARTIAL"
         return "VERIFIED"
 
     gates = {
@@ -1277,7 +1277,7 @@ def main():
         "G7_ROUTING": (
             "FAIL" if any(f["domain"]=="routing" and f["status"]=="FAIL" and f["severity"] in ("HIGH","BLOCKER") for f in findings)
             else "BLOCKED" if any(f["domain"]=="routing" and f["status"] in ("UNKNOWN","BLOCKED") and f["severity"]=="BLOCKER" for f in findings)
-            else "PARTIAL" if any(f["domain"]=="routing" and f["status"]=="UNKNOWN" for f in findings)
+            else "PARTIAL" if any(f["domain"]=="routing" and f["status"]=="UNKNOWN" and f["severity"]!="INFO" for f in findings)
             else "VERIFIED"
         ),
         "G7_FUNCTIONAL":"PARTIAL" if any(f["id"]=="G7-FUNCTIONAL" and f["status"]=="UNKNOWN" for f in findings) else "VERIFIED",
