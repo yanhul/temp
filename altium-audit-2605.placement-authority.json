@@ -41,7 +41,25 @@
       "orientation": "PcbDoc-current",
       "mechanical_envelope": "PcbDoc-observed connector geometry"
     },
+    "J6": {
+      "state": "FIXED",
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
+      "mechanical_envelope": "PcbDoc-observed connector geometry"
+    },
     "J7": {
+      "state": "FIXED",
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
+      "mechanical_envelope": "PcbDoc-observed connector geometry"
+    },
+    "J8": {
+      "state": "FIXED",
+      "position": "PcbDoc-current",
+      "orientation": "PcbDoc-current",
+      "mechanical_envelope": "PcbDoc-observed connector geometry"
+    },
+    "J9": {
       "state": "FIXED",
       "position": "PcbDoc-current",
       "orientation": "PcbDoc-current",
