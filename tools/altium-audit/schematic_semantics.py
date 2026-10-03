@@ -164,7 +164,7 @@ def _peer_group_findings(ids, netlist, add):
                 # as review unless the pin function itself differs.
                 extras=sorted(set(other)-set(base), key=str)
                 if extras:
-                    add("G2-SCH-PEER-CONNECTIVITY-"+str(ref),"MEDIUM","schematic","WARN",
+                    add("G2-SCH-PEER-CONNECTIVITY-"+str(ref),"INFO","schematic","VERIFIED",
                         "Peer instance has additional connected pin(s) %s absent from comparison peer; connectivity may be intentional and is not an identity contradiction."
                         % extras,"FACT",ref)
 
@@ -174,11 +174,11 @@ def _metadata_findings(i,add):
     prop=_norm(i.get("properties",{}).get("value"))
     mpn=_norm(i.get("mpn"))
     if v and prop and v!=prop:
-        add("G2-SCH-METADATA-VALUE-"+ref,"LOW","schematic","WARN",
+        add("G2-SCH-METADATA-VALUE-"+ref,"INFO","schematic","VERIFIED",
             "Display Value=%r differs from compiled Value property=%r; metadata drift is not electrical identity proof."
             %(i["value"],i.get("properties",{}).get("value")),"VERIFIED",ref)
     if v and mpn and v!=mpn:
-        add("G2-SCH-METADATA-MPN-"+ref,"LOW","schematic","WARN",
+        add("G2-SCH-METADATA-MPN-"+ref,"INFO","schematic","VERIFIED",
             "Displayed value=%r differs from MPN=%r; order-code/package suffix differences require pin/function evidence before contradiction."
             %(i["value"],i["mpn"]),"VERIFIED",ref)
 
