@@ -79,6 +79,10 @@ def xy(obj):
         if x is not None and y is not None:
             a,b=num(x),num(y)
             if a is not None and b is not None:
+                # Normalize raw Altium database coordinates (1/10000 mil)
+                # so pads/vias join track endpoints exposed in mils.
+                if (abs(a) > 100000 or abs(b) > 100000) and not (keys[0].endswith("_mils") or keys[1].endswith("_mils")):
+                    a,b=a/10000.0,b/10000.0
                 return (a,b)
     p=field(obj,"position","location","center","start")
     if p is not None:
