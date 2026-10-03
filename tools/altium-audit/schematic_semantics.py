@@ -183,8 +183,45 @@ def _metadata_findings(i,add):
             %(i["value"],i["mpn"]),"VERIFIED",ref)
 
 def run(components,netlist,add):
-    ids=inspect_components(components)
-    _peer_group_findings(ids, netlist, add)
+    # Semantic layer consumes the canonical parsed evidence contract only.
+    # Raw Altium objects are intentionally rejected here so parser/reconstruction
+    # logic cannot be duplicated in the semantic checker.
+    if not isinstance(components, dict) or components.get("schema") != "altium-schematic-evidence.v1":
+        raise TypeError("schematic_semantics.run requires canonical altium-schematic-evidence.v1 input")
+    canonical = components
+    records = list(canonical.get("components") or [])
+    if not records:
+        return []
+    canonical_netlist = {"nets": []}
+    nets_by_name = {}
+    for comp in records:
+        ref = comp.get("reference")
+        for pin in list(comp.get("pins") or []):
+            net = pin.get("connected_net")
+            if not ref or not pin.get("pin") or not net:
+                continue
+            nets_by_name.setdefault(str(net), []).append({
+                "designator": str(ref),
+                "pin": str(pin.get("pin")),
+                "pin_name": pin.get("pin_name"),
+                "pin_type": pin.get("electrical_type"),
+            })
+    canonical_netlist["nets"] = [
+        {"name": name, "terminals": terms} for name, terms in sorted(nets_by_name.items())
+    ]
+    ids = []
+    for c in records:
+        ids.append({
+            "ref": _text(c.get("reference")),
+            "value": _text(c.get("declared_value")),
+            "library": _text(c.get("library_id")),
+            "footprint": _text(c.get("footprint")),
+            "mpn": _text(c.get("mpn")),
+            "description": _text(c.get("description")),
+            "pin_count": c.get("pin_count"),
+            "properties": dict(c.get("properties") or {}),
+        })
+    _peer_group_findings(ids, canonical_netlist, add)
 
     for i in ids:
         ref=i["ref"]
