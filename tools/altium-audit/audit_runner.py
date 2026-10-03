@@ -681,7 +681,7 @@ def write_schematic_evidence(out, components, netlist, project_id=None):
               "components":sorted(by_ref.values(),key=lambda x:str(x["reference"]))}
     path=out/"schematic-evidence.json"
     path.write_text(json.dumps(evidence,indent=2,ensure_ascii=False),encoding="utf-8")
-    return path
+    return evidence
 
 
 def main():
