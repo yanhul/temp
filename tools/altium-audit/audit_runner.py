@@ -110,11 +110,42 @@ def object_bbox(obj):
 def distance(a,b):
     return math.hypot(a[0]-b[0],a[1]-b[1])
 
+def primitive_net_index(obj):
+    for key in ("net_index","_net_index","net","net_id"):
+        v=field(obj,key)
+        if isinstance(v,dict): v=field(v,"index","id","uid")
+        try:
+            if v is not None: return int(v)
+        except Exception:
+            pass
+    raw=field(obj,"raw_record","record")
+    if isinstance(raw,dict):
+        for key in ("NET","Net","NETINDEX","NetIndex"):
+            try:
+                if raw.get(key) is not None: return int(raw[key])
+            except Exception:
+                pass
+    return None
+
+def build_net_index_map(pcb):
+    nets=list(getattr(pcb,"nets",[]) or [])
+    names=[field(n,"name","net_name","netname","uid") for n in nets]
+    candidates=[]
+    for offset in (0,1):
+        m={i+offset:n for i,n in enumerate(names) if n is not None}
+        score=0
+        for obj in list(getattr(pcb,"pads",[]) or [])+list(getattr(pcb,"tracks",[]) or []):
+            ni=primitive_net_index(obj)
+            if ni is not None and ni in m: score+=1
+        candidates.append((score,m,offset))
+    candidates.sort(key=lambda x:x[0],reverse=True)
+    return candidates[0][1] if candidates else {}
+
 def net_name(obj, net_by_idx=None):
-    v=field(obj,"net_name","netname","net")
+    v=field(obj,"net_name","netname")
     if isinstance(v,dict): v=field(v,"name","uid")
     if v is None:
-        ni=field(obj,"net_index")
+        ni=primitive_net_index(obj)
         try:
             if ni is not None and net_by_idx is not None: v=net_by_idx.get(int(ni))
         except Exception:
@@ -122,7 +153,7 @@ def net_name(obj, net_by_idx=None):
     return str(v) if v is not None else None
 
 def route_net_counts(pcb):
-    net_by_idx={i: field(n,"name","net_name","netname","uid") for i,n in enumerate(list(getattr(pcb,"nets",[]) or []))}
+    net_by_idx=build_net_index_map(pcb)
     routed={}
     for attr in ("tracks","arcs","vias","regions"):
         for item in list(getattr(pcb,attr,[]) or []):
@@ -267,19 +298,19 @@ def topology_components(pcb):
 
     # Fallback for parser versions where get_net_primitives() returns pad-only
     # shells: reconstruct named routing evidence from global PCB primitives.
-    net_by_idx={i: field(n,"name","net_name","netname","uid") for i,n in enumerate(nets)}
+    net_by_idx=build_net_index_map(pcb)
     buckets={}
     def bucket(name):
         if name is None: return None
         return buckets.setdefault(str(name), {"pads":[],"vias":[],"segments":[]})
     for pad in list(getattr(pcb,"pads",[]) or []):
-        ni=field(pad,"net_index")
+        ni=primitive_net_index(pad)
         try: name=net_by_idx.get(int(ni))
         except Exception: name=None
         p=xy(pad)
         if name is not None and p is not None: bucket(name)["pads"].append(p)
     for via in list(getattr(pcb,"vias",[]) or []):
-        ni=field(via,"net_index")
+        ni=primitive_net_index(via)
         try: name=net_by_idx.get(int(ni))
         except Exception: name=None
         p=xy(via)
