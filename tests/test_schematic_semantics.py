@@ -72,7 +72,21 @@ def test_metadata_and_peer_wiring_are_review_evidence_not_warnings():
     c2={"designator":"U2","value":"X","library_reference":"X","parameters":{"Value":"X"},"pin_count":2}
     nl=[{"name":"N1","terminals":[{"designator":"U1","pin":"1","pin_name":"A","pin_type":"PASSIVE"},{"designator":"U2","pin":"1","pin_name":"A","pin_type":"PASSIVE"},{"designator":"U2","pin":"2","pin_name":"B","pin_type":"PASSIVE"}]}]
     findings=[]
-    ss.run([c1,c2], {"nets":nl}, lambda *args: findings.append(args))
+    evidence={"schema":"altium-schematic-evidence.v1","status":"VERIFIED","components":[]}
+    for c in (c1,c2):
+        pins=[]
+        for n in nl:
+            for t in n.get("terminals",[]):
+                if str(t.get("designator"))==str(c.get("designator")):
+                    pins.append({"pin":str(t.get("pin")),"pin_name":t.get("pin_name"),
+                                 "electrical_type":t.get("pin_type"),"connected_net":n.get("name")})
+        evidence["components"].append({
+            "reference":c.get("designator"),"declared_value":c.get("value"),
+            "compiled_value":(c.get("parameters") or {}).get("Value"),
+            "library_id":c.get("library_reference"),"pin_count":c.get("pin_count"),
+            "properties":{str(k).lower():v for k,v in (c.get("parameters") or {}).items()},
+            "pins":pins})
+    ss.run(evidence, None, lambda *args: findings.append(args))
     assert any(x[0]=="G2-SCH-PEER-CONNECTIVITY-U2" and x[1]=="INFO" and x[2]=="schematic" and x[3]=="VERIFIED" for x in findings)
 
 
