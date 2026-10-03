@@ -244,6 +244,10 @@ def run(components,netlist,add):
             if identity["state"]=="CONTRADICTION":
                 add("G2-SCH-IDENTITY-EVIDENCE-"+ref,"BLOCKER","schematic","FAIL",
                     "%s Evidence=%s"%(identity["reason"],identity.get("evidence",[])),"VERIFIED",ref)
+            if identity.get("connected_nc_pins"):
+                add("G2-SCH-NC-PIN-CONNECTED-"+ref,"BLOCKER","schematic","FAIL",
+                    "Authoritative NC pin(s) are connected: %s." % identity["connected_nc_pins"],
+                    "VERIFIED",ref)
             elif identity["state"]=="UNKNOWN" and _norm(i.get("value"))!=_norm(i.get("library")):
                 add("G2-SCH-IDENTITY-UNRESOLVED-"+ref,"INFO","schematic","UNKNOWN",
                     "Declared value %r and compiled library %r cannot be distinguished from authoritative pin evidence: %s"
@@ -273,15 +277,6 @@ def run(components,netlist,add):
                 add("G2-SCH-IDENTITY-"+ref,"BLOCKER","schematic","FAIL",
                     "Value BCX56 conflicts with compiled transistor symbol/function evidence %r / %r."
                     %(i.get("library"),i.get("description")),"VERIFIED",ref)
-
-        if declared in {"SMAJ15CA","SMAJ9CA"} and "SMAJ30CA" in _norm(i.get("library")):
-            # SMAJ15CA/SMAJ9CA/SMAJ30CA share the same 2-pin TVS electrical
-            # interface. Pin presence/count alone cannot prove the standoff/
-            # breakdown-voltage identity. Keep this as review evidence unless
-            # authoritative function/rating evidence contradicts the declared part.
-            add("G2-SCH-IDENTITY-UNRESOLVED-"+ref,"INFO","schematic","UNKNOWN",
-                "Declared value %s differs from compiled SMAJ30CA identity, but observed 2-pin evidence cannot distinguish the TVS voltage variant."
-                %(i["value"]),"FACT",ref)
 
     for n in (netlist or {}).get("nets",[]) or []:
         name=_text(n.get("name")) or "<unnamed>"
