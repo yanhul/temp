@@ -48,3 +48,18 @@ def test_hcpl_pin_evidence_still_blocks_real_function_mismatch():
     assert identity["state"]=="CONTRADICTION"
     findings=run_checker(c, nl)
     assert any(x[3]=="FAIL" and str(x[-1]).startswith("U18") for x in findings)
+
+
+def test_metadata_and_peer_wiring_are_review_evidence_not_warnings():
+    c1={"designator":"U1","value":"X","library_reference":"X","parameters":{"Value":"X"},"pin_count":2}
+    c2={"designator":"U2","value":"X","library_reference":"X","parameters":{"Value":"X"},"pin_count":2}
+    nl=[{"name":"N1","terminals":[{"designator":"U1","pin":"1","pin_name":"A","pin_type":"PASSIVE"},{"designator":"U2","pin":"1","pin_name":"A","pin_type":"PASSIVE"},{"designator":"U2","pin":"2","pin_name":"B","pin_type":"PASSIVE"}]}]
+    findings=[]
+    ss.run([c1,c2], {"nets":nl}, lambda *args: findings.append(args))
+    assert any(x[0]=="G2-SCH-PEER-CONNECTIVITY-U2" and x[1]=="INFO" and x[2]=="schematic" and x[3]=="VERIFIED" for x in findings)
+
+
+def test_metadata_value_review_evidence_is_verified_info():
+    c={"designator":"R1","value":"Res1","library_reference":"Res1","parameters":{"Value":"2K2"},"pin_count":2}
+    findings=run_checker(c, [])
+    assert any(x[0]=="G2-SCH-METADATA-VALUE-R1" and x[1]=="INFO" and x[3]=="VERIFIED" for x in findings)
