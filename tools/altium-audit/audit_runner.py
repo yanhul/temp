@@ -818,6 +818,11 @@ def main():
             parse_basis = f"direct {schs[0].name} + {pcbs[0].name}"
         add(findings,"G1-PARSE","INFO","parse","VERIFIED",
             f"Loaded {parse_basis}; schematic count={len(schs)}, PCB count={len(pcbs)}.","VERIFIED")
+    except Exception as exc:
+        add(findings,"G1-PARSE","BLOCKER","parse","BLOCKED",
+            f"Parser load failed: {type(exc).__name__}: {exc}","FACT")
+        write_outputs(out, {"status":"BLOCKED","gates":{"G0_INTAKE":"UNKNOWN","G1_PARSE":"BLOCKED"},"findings":findings})
+        return 2
     # Parser load success is not parser-contract success. Validate the canonical
     # compiled model and its net terminal references before any semantic consumer.
     parse_contract_ok = False
