@@ -236,6 +236,20 @@ def geometry_route_net_counts(pcb, netlist):
     return counts
 def route_net_counts(pcb, netlist=None):
     net_by_idx=build_net_index_map(pcb)
+    # Calibrate primitive net_index -> compiled net name from actual PCB pads
+    # joined to the compiled schematic netlist. This avoids relying on the
+    # parser's global net ordering (which can be 0- or 1-based).
+    if netlist is not None:
+        pad_labels=pad_net_labels_from_netlist(pcb, netlist)
+        calibrated={}
+        for p in list(getattr(pcb,"pads",[]) or []):
+            n=pad_labels.get(id(p))
+            ni=primitive_net_index(p)
+            if n is not None and ni is not None:
+                calibrated.setdefault(int(ni),set()).add(str(n))
+        for ni,names in calibrated.items():
+            if len(names)==1:
+                net_by_idx[ni]=next(iter(names))
     routed={}
     for attr in ("tracks","arcs","vias","regions"):
         for item in list(getattr(pcb,attr,[]) or []):
