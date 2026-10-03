@@ -262,7 +262,8 @@ def topology_components(pcb, netlist=None):
     authoritative and avoids relying on global primitive net-index conventions.
     """
     nets=list(getattr(pcb,"nets",[]) or [])
-    result={}\n    # If parser net-scoping exposes pad-only shells, reconstruct topology from
+    result={}
+    # If parser net-scoping exposes pad-only shells, reconstruct topology from
     # compiled netlist pad labels plus the global layer-aware copper geometry.
     if netlist is not None:
         pad_labels = pad_net_labels_from_netlist(pcb, netlist)
