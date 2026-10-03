@@ -161,6 +161,7 @@ def component_envelope(pcb, comp_index):
                     min(xs), min(ys), max(xs), max(ys),
                     "COURTYARD_GEOMETRY" if semantic_courtyard else source,
                     layer,
+                    ("TOP" if "TOP" in layer_name else "BOTTOM" if "BOTTOM" in layer_name else "UNKNOWN"),
                 ))
     if not found:
         return None, "UNAVAILABLE"
@@ -168,10 +169,14 @@ def component_envelope(pcb, comp_index):
     # explicitly component-owned body envelope. No copper fallback.
     found.sort(key=lambda x: x[4] != "COURTYARD_GEOMETRY")
     env = found[0]
-    return env[:4], env[4]
+    return env, env[4]
 
 def boxes_overlap(a,b):
     return not (a[2] < b[0] or b[2] < a[0] or a[3] < b[1] or b[3] < a[1])
+def same_assembly_side(a,b):
+    sa = a[5] if len(a) > 5 else "UNKNOWN"
+    sb = b[5] if len(b) > 5 else "UNKNOWN"
+    return not (sa in ("TOP","BOTTOM") and sb in ("TOP","BOTTOM") and sa != sb)
 
 def endpoint(o):
     q=[num(f(o,k)) for k in ("x1","y1","x2","y2")]
@@ -271,7 +276,7 @@ def main():
     refs=sorted(envelopes)
     for i,ra in enumerate(refs):
         for rb in refs[i+1:]:
-            if boxes_overlap(envelopes[ra],envelopes[rb]): overlap_pairs.append((ra,rb))
+            if same_assembly_side(envelopes[ra],envelopes[rb]) and boxes_overlap(envelopes[ra],envelopes[rb]): overlap_pairs.append((ra,rb))
     placement_checks={"all_positions_authoritative":all(x["placement_status"]=="VERIFIED" for x in placement),
                       "board_bounds_available":board_box is not None,"component_envelope_count":len(envelopes),
                       "overlap_count":len(overlap_pairs),"overlap_pairs":overlap_pairs[:200],"overlap_evidence":"authoritative_component_body_or_courtyard_geometry" if envelopes else "UNAVAILABLE",
@@ -328,7 +333,7 @@ def main():
             if legal:
                 for other,other_env in envelopes.items():
                     if other==ref: continue
-                    if boxes_overlap(moved,other_env):
+                    if same_assembly_side(envelopes[ref],other_env) and boxes_overlap(moved,other_env):
                         legal=False; reasons.append("COMPONENT_BBOX_OVERLAP"); break
         else:
             legal=False
@@ -361,12 +366,15 @@ def main():
     # Body/courtyard bbox overlap is retained as diagnostic evidence only.
     # Without explicit same-layer 3D/copper/keepout collision evidence it must
     # not prevent the placement lock (Top/Bottom and assembly height are distinct).
+    anchor_refs = set(str(x) for x in locked_refs)
+    anchor_records = [x for x in placement if x.get("reference") in anchor_refs]
+    anchors_verified = bool(anchor_records) and all(x.get("placement_status") == "VERIFIED" for x in anchor_records)
     placement_status="VERIFIED" if (
-        placement_checks["all_positions_authoritative"]
+        anchors_verified
         and placement_checks["board_bounds_available"]
     ) else "BLOCKED"
     placement_lock={"schema":"altium-placement-lock.v1","status":"LOCKED" if placement_status=="VERIFIED" else "BLOCKED",
-                    "basis":"authoritative component position + board bounds; envelope overlap retained as non-blocking review evidence",
+                    "basis":"authoritative fixed-anchor positions + board bounds; free components are optimization candidates and do not block phase planning",
                     "checks":placement_checks,
                     "locked_references":sorted(x["reference"] for x in placement if x["placement_status"]=="VERIFIED")}
     routing=[]; unresolved=[]
