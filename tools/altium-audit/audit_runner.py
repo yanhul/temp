@@ -167,7 +167,7 @@ def pad_net_labels_from_netlist(pcb, netlist):
             if ref is not None and pin is not None: terminal_net[(str(ref), str(pin))] = str(name)
     refs = {}
     for idx, c in enumerate(list(getattr(pcb, 'components', []) or [])):
-        ref = field(c, 'designator', 'refdes', 'reference', 'logical_designator', 'physical_designator')
+        ref = as_name(c)
         if ref is not None: refs[idx] = str(ref)
     labels = {}
     for p in list(getattr(pcb, 'pads', []) or []):
@@ -256,13 +256,84 @@ def segment_endpoints(obj):
 def _snap_point(p, tolerance_mils=1.0):
     return (round(p[0] / tolerance_mils), round(p[1] / tolerance_mils))
 
-def topology_components(pcb):
+def topology_components(pcb, netlist=None):
     """Build a conservative per-net copper graph from parser-owned primitives.
     Prefer get_net_primitives(index), because its net-local primitive join is
     authoritative and avoids relying on global primitive net-index conventions.
     """
     nets=list(getattr(pcb,"nets",[]) or [])
-    result={}
+    result={}\n    # If parser net-scoping exposes pad-only shells, reconstruct topology from
+    # compiled netlist pad labels plus the global layer-aware copper geometry.
+    if netlist is not None:
+        pad_labels = pad_net_labels_from_netlist(pcb, netlist)
+        segs=[]
+        for obj in list(getattr(pcb, "tracks", []) or []) + list(getattr(pcb, "arcs", []) or []):
+            ep=segment_endpoints(obj)
+            if ep is not None:
+                segs.append((obj, ep[0], ep[1], str(field(obj, "layer", "layer_id"))))
+        if segs and pad_labels:
+            parent=list(range(len(segs)))
+            def find0(i):
+                while parent[i]!=i:
+                    parent[i]=parent[parent[i]]
+                    i=parent[i]
+                return i
+            def union0(a,b):
+                a,b=find0(a),find0(b)
+                if a!=b: parent[b]=a
+            endpoint_map={}
+            for i,(_,a,b,l) in enumerate(segs):
+                endpoint_map.setdefault((round(a[0]),round(a[1]),l),[]).append(i)
+                endpoint_map.setdefault((round(b[0]),round(b[1]),l),[]).append(i)
+            for ids in endpoint_map.values():
+                for j in ids[1:]: union0(ids[0],j)
+            pads=list(getattr(pcb, "pads", []) or [])
+            for p in pads:
+                if id(p) not in pad_labels: continue
+                pp=xy(p)
+                if pp is None: continue
+                pl=str(field(p,"layer","layer_id"))
+                hits=[]
+                for i,(_,a,b,l) in enumerate(segs):
+                    if (pl in ("74","MULTILAYER","MULTI-LAYER") or pl==l):
+                        dx,dy=b[0]-a[0],b[1]-a[1]
+                        if dx==0 and dy==0:
+                            d=distance(pp,a)
+                        else:
+                            t=max(0.0,min(1.0,((pp[0]-a[0])*dx+(pp[1]-a[1])*dy)/(dx*dx+dy*dy)))
+                            d=distance(pp,(a[0]+t*dx,a[1]+t*dy))
+                        w=num(field(segs[i][0],"width_mils","width")) or 0.0
+                        if d <= max(1.0,w/2.0):
+                            hits.append(i)
+                for j in hits[1:]: union0(hits[0],j)
+            groups={}
+            for i in range(len(segs)): groups.setdefault(find0(i),[]).append(i)
+            named={}
+            for p in pads:
+                n=pad_labels.get(id(p)); pp=xy(p)
+                if not n or pp is None: continue
+                pl=str(field(p,"layer","layer_id"))
+                for i,(_,a,b,l) in enumerate(segs):
+                    if pl not in ("74","MULTILAYER","MULTI-LAYER") and pl!=l: continue
+                    dx,dy=b[0]-a[0],b[1]-a[1]
+                    if dx==0 and dy==0: d=distance(pp,a)
+                    else:
+                        t=max(0.0,min(1.0,((pp[0]-a[0])*dx+(pp[1]-a[1])*dy)/(dx*dx+dy*dy)))
+                        d=distance(pp,(a[0]+t*dx,a[1]+t*dy))
+                    w=num(field(segs[i][0],"width_mils","width")) or 0.0
+                    if d <= max(1.0,w/2.0):
+                        named.setdefault(str(n),[]).append(find0(i))
+            out={}
+            for n,roots in named.items():
+                roots=set(roots)
+                comps=len(roots)
+                pads_n=sum(1 for p in pads if pad_labels.get(id(p))==n)
+                out[n]={"terminal_nodes":pads_n,"graph_components":comps,
+                        "route_segments":sum(len(groups[r]) for r in roots),
+                        "vias":0,"has_copper_area":False}
+            if out:
+                return out
+
     def graph_for(name, data):
         pads=list(data.get("pads",[]) or [])
         vias=list(data.get("vias",[]) or [])
@@ -1009,7 +1080,7 @@ def main():
             add(findings,f"G7-LAYER-TRANSITION-{n}","INFO","routing","VERIFIED",
                 f"Net {n!r} is routed on {len(layers)} parsed layer identifiers: {sorted(layers)!r}.","VERIFIED",n)
 
-    topo=topology_components(pcb)
+    topo=topology_components(pcb, netlist)
     topo_bad=[(n,i) for n,i in sorted(topo.items()) if i["terminal_nodes"]>=2 and i["graph_components"]>1]
     if topo_bad:
         for n,info in topo_bad[:200]:
