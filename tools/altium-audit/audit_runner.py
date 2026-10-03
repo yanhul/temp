@@ -745,25 +745,82 @@ def main():
             parse_basis = f"direct {schs[0].name} + {pcbs[0].name}"
         add(findings,"G1-PARSE","INFO","parse","VERIFIED",
             f"Loaded {parse_basis}; schematic count={len(schs)}, PCB count={len(pcbs)}.","VERIFIED")
-    # Loading the parser is not enough: the canonical compiled model must be
-    # structurally complete before semantic/placement/routing consumers proceed.
+    # Parser load success is not parser-contract success. Validate the canonical
+    # compiled model and its net terminal references before any semantic consumer.
+    parse_contract_ok = False
     try:
         parsed_components = list(payload.get("components") or [])
-        missing_refs = [i for i,x in enumerate(parsed_components) if not as_name(x)]
-        if prjs and (not parsed_components or missing_refs):
-            add(findings,"G1-PARSE-CONTRACT","BLOCKER","parse","BLOCKED",
-                f"Canonical parser model is incomplete: components={len(parsed_components)}, missing_designators={len(missing_refs)}.","FACT")
-        else:
+        parsed_nets = list((netlist or {}).get("nets") or [])
+        refs = [as_name(x) for x in parsed_components]
+        missing_refs = [i for i, ref in enumerate(refs) if not ref]
+        ref_set = {str(ref) for ref in refs if ref}
+        duplicate_count = len(refs) - len(ref_set)
+        terminal_keys = set()
+        bad_terminals = []
+        orphan_terminals = []
+        observed_by_ref = {}
+        for net in parsed_nets:
+            if not isinstance(net, dict) or not net.get("name"):
+                bad_terminals.append("net-without-name")
+                continue
+            for term in list(net.get("terminals") or []):
+                if not isinstance(term, dict):
+                    bad_terminals.append("non-object-terminal")
+                    continue
+                ref = term.get("designator") or term.get("refdes") or term.get("reference")
+                pin = term.get("pin") or term.get("pin_designator") or term.get("number")
+                if not ref or pin is None:
+                    bad_terminals.append(f"missing-ref-or-pin:{ref}:{pin}")
+                    continue
+                key = (str(ref), str(pin))
+                if key in terminal_keys:
+                    bad_terminals.append(f"duplicate-terminal:{ref}.{pin}")
+                terminal_keys.add(key)
+                observed_by_ref[str(ref)] = observed_by_ref.get(str(ref), 0) + 1
+                if str(ref) not in ref_set:
+                    orphan_terminals.append(f"{ref}.{pin}")
+
+        missing_pin_count = []
+        missing_pin_inventory = []
+        for obj, ref in zip(parsed_components, refs):
+            pc = field(obj, "pin_count")
+            if pc is None:
+                cl = field(obj, "classification")
+                pc = cl.get("pin_count") if isinstance(cl, dict) else None
+            try:
+                if pc is None or int(pc) < 0:
+                    missing_pin_count.append(str(ref) if ref else "<missing-ref>")
+            except Exception:
+                missing_pin_count.append(str(ref) if ref else "<missing-ref>")
+            if ref and field(obj, "pins") is None:
+                missing_pin_inventory.append(str(ref))
+
+        missing_connected_refs = sorted(ref_set - set(observed_by_ref))
+        parse_contract_ok = bool(
+            prjs and parsed_components and parsed_nets
+            and not missing_refs
+            and duplicate_count == 0
+            and not bad_terminals
+            and not orphan_terminals
+            and not missing_pin_count
+            and not missing_pin_inventory
+            and not missing_connected_refs
+        )
+        if parse_contract_ok:
             add(findings,"G1-PARSE-CONTRACT","INFO","parse","VERIFIED",
-                f"Canonical parser model exposes {len(parsed_components)} component records with authoritative designators.","VERIFIED")
+                f"Canonical model verified: components={len(parsed_components)}, nets={len(parsed_nets)}, terminals={len(terminal_keys)}, unique designators/pin references, no orphan terminals.","VERIFIED")
+        else:
+            add(findings,"G1-PARSE-CONTRACT","BLOCKER","parse","BLOCKED",
+                "Canonical parser contract incomplete: "
+                f"components={len(parsed_components)}, nets={len(parsed_nets)}, "
+                f"missing_designators={len(missing_refs)}, duplicate_designators={duplicate_count}, "
+                f"bad_terminals={len(bad_terminals)}, orphan_terminals={len(orphan_terminals)}, "
+                f"missing_pin_count={len(missing_pin_count)}, missing_pin_inventory={len(missing_pin_inventory)}, "
+                f"components_without_connected_terminals={len(missing_connected_refs)}.","FACT")
     except Exception as exc:
         add(findings,"G1-PARSE-CONTRACT","BLOCKER","parse","BLOCKED",
-            f"Canonical parser model validation failed: {type(exc).__name__}: {exc}","FACT")
-    except Exception as exc:
-        add(findings,"G1-PARSE","BLOCKER","parse","UNKNOWN",
-            f"Authoritative parser load failed: {type(exc).__name__}: {exc}","FACT")
-        write_outputs(out, {"status":"BLOCKED","gates":{"G0_INTAKE":"VERIFIED","G1_PARSE":"UNKNOWN"},"findings":findings})
-        return 2
+            f"Canonical parser contract validation failed: {type(exc).__name__}: {exc}","FACT")
+        parse_contract_ok = False
 
     diagnostics = payload.get("diagnostics") or []
     compile_data = payload.get("compile")
@@ -1282,7 +1339,7 @@ def main():
 
     gates = {
         "G0_INTAKE": "VERIFIED" if not any(f["id"]=="G0-ARCHIVE-HASH" and f["status"]=="FAIL" for f in findings) else "BLOCKED",
-        "G1_PARSE":"VERIFIED",
+        "G1_PARSE":"VERIFIED" if parse_contract_ok else "BLOCKED",
         "G2_COMPILE": (
             "FAIL" if diagnostics or any(f["id"].startswith("G2-SCH-") or f["id"].startswith("G2-NET-") for f in findings if f["status"]=="FAIL") else
             "BLOCKED" if any(f["id"]=="G2-COMPILE" and f["status"]=="BLOCKED" for f in findings) or any(f["status"]=="BLOCKED" and f["domain"]=="schematic" for f in findings) else
