@@ -51,4 +51,4 @@ jobs:
           if-no-files-found: warn
 
 # e2e-kickoff 2026-10-02
-# 2026-10-03: rerun after layer-aware placement and SMAJ semantic fixes
+# 2026-10-03: rerun after layer-aware placement, SMAJ semantic, and net-index routing fixes
