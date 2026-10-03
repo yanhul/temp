@@ -122,6 +122,52 @@ def _pins(netlist,ref):
                 }
     return out
 
+def _peer_group_findings(ids, netlist, add):
+    """Compare structurally equivalent schematic instances across designators.
+    Net names are intentionally excluded: peers may legitimately connect to
+    different nets. Pin number/name/type and footprint/library identity are
+    the authoritative peer fingerprint.
+    """
+    groups={}
+    for i in ids:
+        key=(
+            _norm(i.get("value")),
+            _norm(i.get("library")),
+            _norm(i.get("footprint")),
+            i.get("pin_count"),
+        )
+        if not any(key):
+            continue
+        groups.setdefault(key,[]).append(i)
+    for key, peers in groups.items():
+        if len(peers)<2:
+            continue
+        fps={}
+        for i in peers:
+            pins=_pins(netlist,i["ref"])
+            fp=tuple(sorted(
+                (str(pn),_norm(p.get("name")),str(p.get("type") or "").upper())
+                for pn,p in pins.items()
+            ))
+            fps.setdefault(fp,[]).append(i["ref"])
+        if len(fps)<=1:
+            continue
+        canonical=max(fps.values(), key=len)
+        for fp, refs in fps.items():
+            if refs==canonical:
+                continue
+            for ref in refs:
+                add(
+                    "G2-SCH-PEER-DIFF-"+str(ref),
+                    "BLOCKER",
+                    "schematic",
+                    "FAIL",
+                    "Peer-group structural mismatch: equivalent instances %s do not share the same compiled pin fingerprint; outlier=%s."
+                    % (", ".join(sorted(r for rs in fps.values() for r in rs)), ref),
+                    "VERIFIED",
+                    ref,
+                )
+
 def _metadata_findings(i,add):
     ref=i["ref"]
     v=_norm(i.get("value"))
@@ -138,6 +184,8 @@ def _metadata_findings(i,add):
 
 def run(components,netlist,add):
     ids=inspect_components(components)
+    _peer_group_findings(ids, netlist, add)
+
     for i in ids:
         ref=i["ref"]
         declared=_norm(i.get("value"))
