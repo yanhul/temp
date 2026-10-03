@@ -234,7 +234,7 @@ def run(components,netlist,add):
                 "Authoritative part %r is documented as %d pins, but compiled schematic exposes %d."
                 %(i["mpn"] or i["value"],KNOWN_PIN_COUNTS[part],i["pin_count"]),"VERIFIED",ref)
 
-        pins=_pins(netlist,ref)
+        pins=_pins(canonical_netlist,ref)
         # Keep authoritative identity resolution fail-closed even if an import or
         # packaging boundary prevents the generic resolver from being available.
         if resolve_declared_vs_compiled is None and _norm(i.get("value"))=="HCPL0600" and _norm(i.get("library"))=="HCPL3120":
