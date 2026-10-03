@@ -404,6 +404,49 @@ def topology_components(pcb, netlist=None):
             if out:
                 return out
 
+    # Prefer parser-authoritative net_index for topology identity, cross-checked against compiled pad labels.
+    explicit_nets={}
+    for p in list(getattr(pcb,"pads",[]) or []):
+        ni=primitive_net_index(p)
+        if ni is not None: explicit_nets.setdefault(int(ni),{"pads":[],"tracks":[],"arcs":[],"vias":[]})["pads"].append(p)
+    for attr in ("tracks","arcs","vias"):
+        for obj in list(getattr(pcb,attr,[]) or []):
+            ni=primitive_net_index(obj)
+            if ni is not None: explicit_nets.setdefault(int(ni),{"pads":[],"tracks":[],"arcs":[],"vias":[]})[attr].append(obj)
+    if explicit_nets:
+        idx_to_name={}
+        pad_labels=pad_net_labels_from_netlist(pcb,netlist or {})
+        for p in list(getattr(pcb,"pads",[]) or []):
+            ni=primitive_net_index(p); n=pad_labels.get(id(p))
+            if ni is not None and n: idx_to_name.setdefault(int(ni),set()).add(str(n))
+        out={}
+        for ni,data in explicit_nets.items():
+            names=idx_to_name.get(ni,set())
+            if len(names)!=1: continue
+            name=next(iter(names)); segs2=[]
+            for obj in data["tracks"]+data["arcs"]:
+                ep=segment_endpoints(obj)
+                if ep is not None: segs2.append((obj,ep[0],ep[1],layer_token(field(obj,"layer","layer_id"))))
+            parent=list(range(len(segs2)))
+            def f2(i):
+                while parent[i]!=i: parent[i]=parent[parent[i]]; i=parent[i]
+                return i
+            def u2(a,b):
+                a,b=f2(a),f2(b)
+                if a!=b: parent[b]=a
+            for i,(_,a,b,l) in enumerate(segs2):
+                for j in range(i):
+                    _,c1,c2,l2=segs2[j]
+                    if l==l2 and (distance(a,c1)<=1 or distance(a,c2)<=1 or distance(b,c1)<=1 or distance(b,c2)<=1): u2(i,j)
+            for v in data["vias"]:
+                vp=xy(v)
+                if vp is None: continue
+                hits=[i for i,(_,a,b,l) in enumerate(segs2) if distance(vp,a)<=3 or distance(vp,b)<=3]
+                for j in hits[1:]: u2(hits[0],j)
+            roots={f2(i) for i in range(len(segs2))}
+            if roots: out[name]={"terminal_nodes":len(data["pads"]),"graph_components":len(roots),"route_segments":len(segs2),"vias":len(data["vias"]),"has_copper_area":False}
+        if out: return out
+
     def graph_for(name, data):
         pads=list(data.get("pads",[]) or [])
         vias=list(data.get("vias",[]) or [])
