@@ -940,14 +940,14 @@ def main():
             if callable(ls):
                 state = ls()
                 rr = getattr(state, "ref", None)
-                side = str(getattr(rr, "token", rr) or "").upper()
+                side = layer_token(rr)
         except Exception:
             side = None
         if not side:
             raw_layer = field(comp, "layer", "v7_layer", "v7_layer_id")
             try:
                 li = int(raw_layer)
-                side = {1: "TOP", 32: "BOTTOM"}.get(li, str(raw_layer).upper())
+                side = {1: "TOP", 32: "BOTTOM"}.get(li, layer_token(raw_layer))
             except Exception:
                 side = layer_token(raw_layer) or None
         # Pad layer is stronger evidence for SMT side than the component
