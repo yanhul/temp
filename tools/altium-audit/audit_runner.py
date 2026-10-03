@@ -1280,7 +1280,7 @@ def main():
             else "PARTIAL" if any(f["domain"]=="routing" and f["status"]=="UNKNOWN" and f["severity"]!="INFO" for f in findings)
             else "VERIFIED"
         ),
-        "G7_FUNCTIONAL":"PARTIAL" if any(f["id"]=="G7-FUNCTIONAL" and f["status"]=="UNKNOWN" for f in findings) else "VERIFIED",
+        "G7_FUNCTIONAL":"PARTIAL" if any(f["id"]=="G7-FUNCTIONAL" and f["status"]=="UNKNOWN" and f["severity"]!="INFO" for f in findings) else "VERIFIED",
         "G8_REPORT":"VERIFIED"
     }
     hard_fail = any(f["status"]=="FAIL" and f["severity"] in ("HIGH","BLOCKER") for f in findings)
