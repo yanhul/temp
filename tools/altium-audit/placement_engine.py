@@ -348,37 +348,37 @@ def run(pcb_path,authority_path,manifest_path,out_path):
         for rot in rotations:
             for side in sides:
                 for candidate_target in target_points:
-                delta=rot-orientations[ref]
-                rejection=[]
-                points=geometry.get(ref,[])
-                if not points:
-                    rejection.append({"reason":"COMPONENT_GEOMETRY_UNAVAILABLE"})
-                    box=None
-                else:
-                    moved_points=transform_points(points,current,candidate_target,delta)
-                    box=points_bbox(moved_points)
-                    if box[0] < board_box[0] or box[1] < board_box[1] or box[2] > board_box[2] or box[3] > board_box[3]:
-                        rejection.append({"reason":"BOARD_BOUNDS"})
-                    for ko in keepouts:
-                        if overlap(box,ko):
-                            rejection.append({"reason":"KEEPOUT_OVERLAP"})
-                    for other,other_box in envelopes.items():
-                        if other==ref or other_box is None:
-                            continue
-                        if side==layers.get(other) and overlap(box,other_box):
-                            rejection.append({"reason":"COMPONENT_COURTYARD_OVERLAP","other":other})
-                    if delta % 360 != 0 and not geometry_exact.get(ref,False):
-                        rejection.append({"reason":"ROTATION_GEOMETRY_UNAVAILABLE"})
-                distance=((candidate_target[0]-current[0])**2+(candidate_target[1]-current[1])**2)**0.5
-                options.append({
-                    "target_mils":[round(candidate_target[0],3),round(candidate_target[1],3)],
-                    "rotation":rot,"layer":side,
-                    "status":"CANDIDATE" if not rejection else "REJECTED_COLLISION",
-                    "anchor_neighbors":anchor_neighbors,
-                    "collision":bool(rejection),
-                    "rejections":rejection,
-                    "objective":{"target_distance_mils":round(distance,3)}
-                })
+                    delta=rot-orientations[ref]
+                    rejection=[]
+                    points=geometry.get(ref,[])
+                    if not points:
+                        rejection.append({"reason":"COMPONENT_GEOMETRY_UNAVAILABLE"})
+                        box=None
+                    else:
+                        moved_points=transform_points(points,current,candidate_target,delta)
+                        box=points_bbox(moved_points)
+                        if box[0] < board_box[0] or box[1] < board_box[1] or box[2] > board_box[2] or box[3] > board_box[3]:
+                            rejection.append({"reason":"BOARD_BOUNDS"})
+                        for ko in keepouts:
+                            if overlap(box,ko):
+                                rejection.append({"reason":"KEEPOUT_OVERLAP"})
+                        for other,other_box in envelopes.items():
+                            if other==ref or other_box is None:
+                                continue
+                            if side==layers.get(other) and overlap(box,other_box):
+                                rejection.append({"reason":"COMPONENT_COURTYARD_OVERLAP","other":other})
+                        if delta % 360 != 0 and not geometry_exact.get(ref,False):
+                            rejection.append({"reason":"ROTATION_GEOMETRY_UNAVAILABLE"})
+                    distance=((candidate_target[0]-current[0])**2+(candidate_target[1]-current[1])**2)**0.5
+                    options.append({
+                        "target_mils":[round(candidate_target[0],3),round(candidate_target[1],3)],
+                        "rotation":rot,"layer":side,
+                        "status":"CANDIDATE" if not rejection else "REJECTED_COLLISION",
+                        "anchor_neighbors":anchor_neighbors,
+                        "collision":bool(rejection),
+                        "rejections":rejection,
+                        "objective":{"target_distance_mils":round(distance,3)}
+                    })
 
         legal=[o for o in options if o["status"]=="CANDIDATE"]
         if not legal:
