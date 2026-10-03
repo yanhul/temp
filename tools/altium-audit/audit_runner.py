@@ -745,6 +745,20 @@ def main():
             parse_basis = f"direct {schs[0].name} + {pcbs[0].name}"
         add(findings,"G1-PARSE","INFO","parse","VERIFIED",
             f"Loaded {parse_basis}; schematic count={len(schs)}, PCB count={len(pcbs)}.","VERIFIED")
+    # Loading the parser is not enough: the canonical compiled model must be
+    # structurally complete before semantic/placement/routing consumers proceed.
+    try:
+        parsed_components = list(payload.get("components") or [])
+        missing_refs = [i for i,x in enumerate(parsed_components) if not as_name(x)]
+        if prjs and (not parsed_components or missing_refs):
+            add(findings,"G1-PARSE-CONTRACT","BLOCKER","parse","BLOCKED",
+                f"Canonical parser model is incomplete: components={len(parsed_components)}, missing_designators={len(missing_refs)}.","FACT")
+        else:
+            add(findings,"G1-PARSE-CONTRACT","INFO","parse","VERIFIED",
+                f"Canonical parser model exposes {len(parsed_components)} component records with authoritative designators.","VERIFIED")
+    except Exception as exc:
+        add(findings,"G1-PARSE-CONTRACT","BLOCKER","parse","BLOCKED",
+            f"Canonical parser model validation failed: {type(exc).__name__}: {exc}","FACT")
     except Exception as exc:
         add(findings,"G1-PARSE","BLOCKER","parse","UNKNOWN",
             f"Authoritative parser load failed: {type(exc).__name__}: {exc}","FACT")
