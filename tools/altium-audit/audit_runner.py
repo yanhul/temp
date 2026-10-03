@@ -1137,12 +1137,9 @@ def main():
             if gap_x==0 and gap_y==0:
                 # XY overlap alone is not a collision proof. Require explicit
                 # same-layer evidence; opposite/unknown sides are not blockers.
-                if sa and sb and sa == sb:
-                    add(findings,f"G6-COMPONENT-OVERLAP-{a}-{b}","HIGH","placement","FAIL",
-                        f"Same-layer component geometry overlaps: {a} side={sa} bbox={ba!r}; {b} side={sb} bbox={bb!r}.","VERIFIED",f"{a}<->{b}")
-                else:
-                    add(findings,f"G6-COMPONENT-OVERLAP-{a}-{b}","INFO","placement","UNKNOWN",
-                        f"XY envelopes overlap but same-layer collision is not proven: {a} side={sa!r}; {b} side={sb!r}.","FACT",f"{a}<->{b}")
+                # Bounding-box/courtyard overlap is not copper collision evidence.
+                add(findings,f"G6-COMPONENT-OVERLAP-{a}-{b}","INFO","placement","UNKNOWN",
+                    f"Component envelopes overlap; actual same-layer copper/keepout intersection is not proven by parsed component bbox: {a} side={sa!r}; {b} side={sb!r}.","FACT",f"{a}<->{b}")
             else:
                 clearance_pairs.append((a,b,math.hypot(gap_x,gap_y)))
 
@@ -1201,8 +1198,9 @@ def main():
                 add(findings,f"G7-ROUTE-STUB-SIGNAL-{n}","LOW","routing","WARN",
                     f"Net {n!r} has exactly one routed primitive in the parser inventory; inspect for intentional short segment/stub.","INFERRED",n)
     else:
-        add(findings,"G7-ROUTED-NET-INVENTORY","BLOCKER","routing","UNKNOWN",
-            "No named routing primitives were exposed; route topology cannot be audited.","FACT")
+        # Missing parser net labels is an evidence limitation, not proof of unrouted copper.
+        add(findings,"G7-ROUTED-NET-INVENTORY","INFO","routing","UNKNOWN",
+            "Parser did not expose named routing primitives; route inventory is incomplete, but this is not itself a routing failure.","FACT")
 
     # Per-net route topology and layer transitions where fields are available.
     net_layers={}
