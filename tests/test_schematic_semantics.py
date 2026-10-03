@@ -63,3 +63,10 @@ def test_metadata_value_review_evidence_is_verified_info():
     c={"designator":"R1","value":"Res1","library_reference":"Res1","parameters":{"Value":"2K2"},"pin_count":2}
     findings=run_checker(c, [])
     assert any(x[0]=="G2-SCH-METADATA-VALUE-R1" and x[1]=="INFO" and x[3]=="VERIFIED" for x in findings)
+
+
+def test_unresolved_identity_is_unknown_review_evidence_not_warning():
+    c={"designator":"R99","value":"Foo","library_reference":"Bar","pin_count":2}
+    findings=run_checker(c, [])
+    x=next(v for v in findings if v[0]=="G2-SCH-IDENTITY-UNRESOLVED-R99")
+    assert x[1]=="INFO" and x[2]=="schematic" and x[3]=="UNKNOWN"
