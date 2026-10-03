@@ -174,8 +174,8 @@ def component_envelope(pcb, comp_index):
 def boxes_overlap(a,b):
     return not (a[2] < b[0] or b[2] < a[0] or a[3] < b[1] or b[3] < a[1])
 def same_assembly_side(a,b):
-    sa = a[5] if len(a) > 5 else "UNKNOWN"
-    sb = b[5] if len(b) > 5 else "UNKNOWN"
+    sa = a[6] if len(a) > 6 else "UNKNOWN"
+    sb = b[6] if len(b) > 6 else "UNKNOWN"
     return not (sa in ("TOP","BOTTOM") and sb in ("TOP","BOTTOM") and sa != sb)
 
 def endpoint(o):
