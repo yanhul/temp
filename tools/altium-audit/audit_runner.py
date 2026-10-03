@@ -114,6 +114,17 @@ def object_bbox(obj):
 def distance(a,b):
     return math.hypot(a[0]-b[0],a[1]-b[1])
 
+def layer_token(v):
+    if v is None: return ""
+    for k in ("token","name","value","id"):
+        try:
+            q=getattr(v,k)
+            if q is not None: return str(q).upper()
+        except Exception:
+            pass
+    return str(v).upper()
+
+
 def primitive_net_index(obj):
     for key in ("net_index","_net_index","net","net_id"):
         v=field(obj,key)
@@ -938,7 +949,7 @@ def main():
                 li = int(raw_layer)
                 side = {1: "TOP", 32: "BOTTOM"}.get(li, str(raw_layer).upper())
             except Exception:
-                side = str(raw_layer or "").upper() or None
+                side = layer_token(raw_layer) or None
         # Pad layer is stronger evidence for SMT side than the component
         # projection. Use it to distinguish intentional Top/Bottom XY overlap.
         pad_layers=set()
