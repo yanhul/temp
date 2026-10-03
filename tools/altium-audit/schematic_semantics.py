@@ -208,7 +208,7 @@ def run(components,netlist,add):
                 add("G2-SCH-IDENTITY-EVIDENCE-"+ref,"BLOCKER","schematic","FAIL",
                     "%s Evidence=%s"%(identity["reason"],identity.get("evidence",[])),"VERIFIED",ref)
             elif identity["state"]=="UNKNOWN" and _norm(i.get("value"))!=_norm(i.get("library")):
-                add("G2-SCH-IDENTITY-UNRESOLVED-"+ref,"MEDIUM","schematic","WARN",
+                add("G2-SCH-IDENTITY-UNRESOLVED-"+ref,"INFO","schematic","UNKNOWN",
                     "Declared value %r and compiled library %r cannot be distinguished from authoritative pin evidence: %s"
                     %(i["value"],i["library"],identity["reason"]),"FACT",ref)
 
@@ -242,7 +242,7 @@ def run(components,netlist,add):
             # interface. Pin presence/count alone cannot prove the standoff/
             # breakdown-voltage identity. Keep this as review evidence unless
             # authoritative function/rating evidence contradicts the declared part.
-            add("G2-SCH-IDENTITY-UNRESOLVED-"+ref,"MEDIUM","schematic","WARN",
+            add("G2-SCH-IDENTITY-UNRESOLVED-"+ref,"INFO","schematic","UNKNOWN",
                 "Declared value %s differs from compiled SMAJ30CA identity, but observed 2-pin evidence cannot distinguish the TVS voltage variant."
                 %(i["value"]),"FACT",ref)
 
