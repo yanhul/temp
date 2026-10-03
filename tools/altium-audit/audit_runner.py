@@ -255,10 +255,18 @@ def topology_components(pcb):
                 info=graph_for(str(name),data)
                 if info is not None:
                     result[str(name)]=info
-        if result:
+        # A net-scoped object can exist while exposing only pads. Do not treat
+        # pad-only shells as routing evidence; fall back to global PCB primitives.
+        if result and any(
+            int(v.get("route_segments",0) or 0) > 0
+            or int(v.get("vias",0) or 0) > 0
+            or bool(v.get("has_copper_area"))
+            for v in result.values()
+        ):
             return result
 
-    # Fallback for parser versions without the per-net primitive API.
+    # Fallback for parser versions where get_net_primitives() returns pad-only
+    # shells: reconstruct named routing evidence from global PCB primitives.
     net_by_idx={i: field(n,"name","net_name","netname","uid") for i,n in enumerate(nets)}
     buckets={}
     def bucket(name):
