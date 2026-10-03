@@ -792,10 +792,14 @@ def main():
                     missing_pin_count.append(str(ref) if ref else "<missing-ref>")
             except Exception:
                 missing_pin_count.append(str(ref) if ref else "<missing-ref>")
-            if ref and field(obj, "pins") is None:
-                missing_pin_inventory.append(str(ref))
+            # Pin inventory is validated through canonical evidence, not raw parser objects.
 
-        missing_connected_refs = sorted(ref_set - set(observed_by_ref))
+        canonical_evidence = write_schematic_evidence(out, payload.get("components", []) if sch_components is None else sch_components, netlist, project_id=project_id)
+        evidence_records = list(canonical_evidence.get("components") or [])
+        evidence_refs = {str(x.get("reference")) for x in evidence_records if x.get("reference")}
+        missing_evidence_refs = sorted(ref_set - evidence_refs)
+        missing_pin_inventory = sorted(str(x.get("reference")) for x in evidence_records if x.get("reference") and not isinstance(x.get("pins"), list))
+        missing_observed_pins = sorted(str(x.get("reference")) for x in evidence_records if x.get("reference") and not x.get("pins"))
         parse_contract_ok = bool(
             prjs and parsed_components and parsed_nets
             and not missing_refs
@@ -804,7 +808,10 @@ def main():
             and not orphan_terminals
             and not missing_pin_count
             and not missing_pin_inventory
-            and not missing_connected_refs
+            and not missing_evidence_refs
+            and not missing_pin_inventory
+            and not missing_observed_pins
+            and len(evidence_records) == len(parsed_components)
         )
         if parse_contract_ok:
             add(findings,"G1-PARSE-CONTRACT","INFO","parse","VERIFIED",
@@ -815,8 +822,9 @@ def main():
                 f"components={len(parsed_components)}, nets={len(parsed_nets)}, "
                 f"missing_designators={len(missing_refs)}, duplicate_designators={duplicate_count}, "
                 f"bad_terminals={len(bad_terminals)}, orphan_terminals={len(orphan_terminals)}, "
-                f"missing_pin_count={len(missing_pin_count)}, missing_pin_inventory={len(missing_pin_inventory)}, "
-                f"components_without_connected_terminals={len(missing_connected_refs)}.","FACT")
+                f"missing_pin_count={len(missing_pin_count)}, missing_evidence_refs={len(missing_evidence_refs)}, "
+                f"missing_pin_inventory={len(missing_pin_inventory)}, missing_observed_pins={len(missing_observed_pins)}, "
+                f"evidence_record_count={len(evidence_records)}.","FACT")
     except Exception as exc:
         add(findings,"G1-PARSE-CONTRACT","BLOCKER","parse","BLOCKED",
             f"Canonical parser contract validation failed: {type(exc).__name__}: {exc}","FACT")
@@ -833,12 +841,7 @@ def main():
         def _semantic_add(fid, severity, domain, status, evidence, confidence="VERIFIED", obj=None):
             add(findings, fid, severity, domain, status, evidence, confidence, obj)
         schematic_semantic_identities = run_schematic_semantics(
-            write_schematic_evidence(
-                out,
-                payload.get("components", []) if sch_components is None else sch_components,
-                netlist,
-                project_id=project_id,
-            ),
+            canonical_evidence,
             None,
             _semantic_add,
         )
