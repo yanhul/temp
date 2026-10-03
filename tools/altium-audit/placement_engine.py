@@ -338,9 +338,16 @@ def run(pcb_path,authority_path,manifest_path,out_path):
             target=(min(max(target[0],board_box[0]+hw),board_box[2]-hw), min(max(target[1],board_box[1]+hh),board_box[3]-hh))
         rotations=ROTATIONS if authority.get("optimization",{}).get("allow_rotation",True) else [orientations[ref]]
         sides=LAYERS if authority.get("optimization",{}).get("allow_top_bottom",True) else [layers[ref]]
+        target_points=[target]
+        for step in (25.0,50.0,100.0,175.0,250.0):
+            for dx,dy in ((step,0),(-step,0),(0,step),(0,-step),(step,step),(step,-step),(-step,step),(-step,-step)):
+                q=(target[0]+dx,target[1]+dy)
+                if points0: q=(min(max(q[0],board_box[0]+hw),board_box[2]-hw),min(max(q[1],board_box[1]+hh),board_box[3]-hh))
+                target_points.append(q)
         options=[]
         for rot in rotations:
             for side in sides:
+                for candidate_target in target_points:
                 delta=rot-orientations[ref]
                 rejection=[]
                 points=geometry.get(ref,[])
@@ -348,7 +355,7 @@ def run(pcb_path,authority_path,manifest_path,out_path):
                     rejection.append({"reason":"COMPONENT_GEOMETRY_UNAVAILABLE"})
                     box=None
                 else:
-                    moved_points=transform_points(points,current,target,delta)
+                    moved_points=transform_points(points,current,candidate_target,delta)
                     box=points_bbox(moved_points)
                     if box[0] < board_box[0] or box[1] < board_box[1] or box[2] > board_box[2] or box[3] > board_box[3]:
                         rejection.append({"reason":"BOARD_BOUNDS"})
@@ -362,9 +369,9 @@ def run(pcb_path,authority_path,manifest_path,out_path):
                             rejection.append({"reason":"COMPONENT_COURTYARD_OVERLAP","other":other})
                     if delta % 360 != 0 and not geometry_exact.get(ref,False):
                         rejection.append({"reason":"ROTATION_GEOMETRY_UNAVAILABLE"})
-                distance=((target[0]-current[0])**2+(target[1]-current[1])**2)**0.5
+                distance=((candidate_target[0]-current[0])**2+(candidate_target[1]-current[1])**2)**0.5
                 options.append({
-                    "target_mils":[round(target[0],3),round(target[1],3)],
+                    "target_mils":[round(candidate_target[0],3),round(candidate_target[1],3)],
                     "rotation":rot,"layer":side,
                     "status":"CANDIDATE" if not rejection else "REJECTED_COLLISION",
                     "anchor_neighbors":anchor_neighbors,
