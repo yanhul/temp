@@ -316,6 +316,19 @@ def topology_components(pcb, netlist=None):
                 endpoint_map.setdefault((round(b[0]),round(b[1]),l),[]).append(i)
             for ids in endpoint_map.values():
                 for j in ids[1:]: union0(ids[0],j)
+            # Vias bridge routed layers; connect track endpoints touching each via.
+            vias=list(getattr(pcb, "vias", []) or [])
+            for v in vias:
+                vp=xy(v)
+                if vp is None: continue
+                vdia=num(field(v,"diameter_mils","diameter","size_mils","size")) or 0.0
+                vt=max(2.0, vdia/2.0)
+                vhits=[]
+                for i,(_,a,b,l) in enumerate(segs):
+                    if distance(vp,a)<=vt or distance(vp,b)<=vt:
+                        vhits.append(i)
+                for j in vhits[1:]: union0(vhits[0],j)
+
             pads=list(getattr(pcb, "pads", []) or [])
             for p in pads:
                 if id(p) not in pad_labels: continue
