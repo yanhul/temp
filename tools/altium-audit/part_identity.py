@@ -25,7 +25,7 @@ AUTHORITATIVE_PIN_PROFILES = {
     "HCPL3120": {
         "source": "Broadcom HCPL-3120 datasheet/product page",
         "pins": {"1": "NC", "2": "ANODE", "3": "CATHODE", "4": "NC",
-                 "5": "VEE", "6": "VO", "7": "NC", "8": "VCC"},
+                 "5": "VEE", "6": "VO", "7": "VO", "8": "VCC"},
     },
     "BCX56": {
         "source": "Nexperia BCX56 series datasheet",
@@ -70,6 +70,7 @@ def resolve_declared_vs_compiled(
         }
 
     evidence = []
+    connected_nc_pins = []
     comparable = 0
     declared_matches = 0
     compiled_matches = 0
@@ -87,6 +88,8 @@ def resolve_declared_vs_compiled(
             declared_matches += 1
         if cp == actual:
             compiled_matches += 1
+        if (dp == "NC" and cp == "NC" and obs.get("net")):
+            connected_nc_pins.append({"pin": str(pin), "net": obs.get("net")})
         evidence.append({
             "pin": str(pin),
             "observed": obs.get("name") or obs.get("pin_name"),
@@ -117,6 +120,7 @@ def resolve_declared_vs_compiled(
                 "profile and conflict with the declared-part profile."
             ),
             "evidence": evidence,
+            "connected_nc_pins": connected_nc_pins,
             "declared_profile_source": declared_profile["source"],
             "compiled_profile_source": compiled_profile["source"],
         }
@@ -137,6 +141,7 @@ def resolve_declared_vs_compiled(
         "state": "UNKNOWN",
         "reason": "Observed pin functions do not uniquely identify either candidate.",
         "evidence": evidence,
+        "connected_nc_pins": connected_nc_pins,
         "declared_profile_source": declared_profile["source"],
         "compiled_profile_source": compiled_profile["source"],
     }
