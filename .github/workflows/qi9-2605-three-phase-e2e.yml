@@ -53,3 +53,5 @@ jobs:
           path: e2e/routing
 
 # strict-e2e trigger 2026-10-04
+
+# strict-hcpl-path-receipt 2026-10-04
