@@ -255,7 +255,7 @@ def run(components,netlist,add):
 
         # Emit a per-instance isolation path receipt. This is diagnostic evidence only:
         # it never downgrades an authoritative identity/NC blocker and never repairs wiring.
-        if part in {"HCPL0600","HCPL3120"} and i.get("pin_count") == 8:
+        if (_norm(i.get("value")) in {"HCPL0600","HCPL3120"} or _norm(i.get("library")) in {"HCPL0600","HCPL3120"}) and i.get("pin_count") == 8:
             path_pins = {}
             for pn in ("2","3","4","5","6","7","8"):
                 p = pins.get(pn)
