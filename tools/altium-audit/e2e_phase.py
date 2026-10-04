@@ -46,6 +46,12 @@ def main():
   ok=all(v=="VERIFIED" for v in req.values()) and not blocking
   return receipt(out,"SCHEMATIC","PASS" if ok else "BLOCKED",{"runner_rc":rc,"required_gates":req,"finding_inventory":inv,"finding_policy":"Blocking FAIL/BLOCKED findings prevent phase PASS; UNKNOWN/WARN remain review evidence.","downstream_impact":{"placement":"BLOCKED if schematic blocking findings exist; otherwise ALLOWED_WITH_FINDINGS","routing":"BLOCKED if schematic blocking findings exist; otherwise ALLOWED_WITH_FINDINGS"}})
  if a.phase=="placement":
+  if not a.upstream_receipt or not a.upstream_receipt.exists(): return receipt(out,"PLACEMENT","BLOCKED",{"reason":"missing schematic upstream receipt"},up)
+  try:
+   ur=json.loads(a.upstream_receipt.read_text())
+  except Exception:
+   return receipt(out,"PLACEMENT","BLOCKED",{"reason":"invalid schematic upstream receipt"},up)
+  if ur.get("phase")!="SCHEMATIC" or ur.get("status")!="PASS": return receipt(out,"PLACEMENT","BLOCKED",{"reason":"schematic prerequisite not VERIFIED","upstream_phase":ur.get("phase"),"upstream_status":ur.get("status")},up)
   rc,x=audit(root,out/"audit",a.config); g=x.get("gates",{}); pre=all(g.get(k)=="VERIFIED" for k in ["G0_INTAKE","G1_PARSE","G2_COMPILE","G3_CONNECTIVITY"])
   findings=x.get("findings",[]); inv=finding_inventory(findings)
   if not pre:return receipt(out,"PLACEMENT","BLOCKED",{"reason":"schematic prerequisite failed","runner_rc":rc,"gates":g,"finding_inventory":inv},up)
