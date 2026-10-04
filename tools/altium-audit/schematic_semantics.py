@@ -434,7 +434,9 @@ def run(components,netlist,add,identity_overrides=None,skip_hcpl=False):
                     "Value BCX56 conflicts with compiled transistor symbol/function evidence %r / %r."
                     %(i.get("library"),i.get("description")),"VERIFIED",ref)
 
-    for n in (netlist or {}).get("nets",[]) or []:
+    # Semantic checks operate exclusively on the canonical netlist built from
+    # altium-schematic-evidence.v1; callers may intentionally pass None here.
+    for n in canonical_netlist.get("nets",[]) or []:
         name=_text(n.get("name")) or "<unnamed>"
         terms=n.get("terminals",[]) or []
         if not terms:
