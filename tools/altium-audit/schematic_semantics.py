@@ -276,6 +276,24 @@ def run(components,netlist,add,identity_overrides=None):
                     i.get("value"), i.get("library")),
                 "VERIFIED", ref)
 
+        # HCPL-3120 canonical profile: pins 6 and 7 are both VO; pin 4 is NC.
+        # Therefore pin 7 must never be tied to VCC/VCCx, and VO pins 6/7 must
+        # resolve to the same net when both are connected.
+        if _norm(i.get("value")) in {"HCPL0600","HCPL3120"} or _norm(i.get("library")) in {"HCPL0600","HCPL3120"}:
+            p4, p5, p6, p7, p8 = (pins.get(x) for x in ("4","5","6","7","8"))
+            if p4 and p4.get("net"):
+                add("G2-HCPL-NC-PIN4-CONNECTED-"+ref,"BLOCKER","schematic","FAIL",
+                    "HCPL canonical pin 4 is NC but is connected to net %r." % p4.get("net"),
+                    "VERIFIED",ref)
+            if p6 and p7 and p6.get("net") and p7.get("net") and p6.get("net") != p7.get("net"):
+                add("G2-HCPL-VO-PINS-DIFFER-"+ref,"BLOCKER","schematic","FAIL",
+                    "HCPL canonical VO pins 6/7 are on different nets: pin6=%r, pin7=%r."
+                    % (p6.get("net"),p7.get("net")),"VERIFIED",ref)
+            if p7 and p7.get("net") and _norm(p7.get("net")) in {"VCC","VCC1","VCC2","VCC3","VCC4","5V","3V3","33V","5VRS232","5VRS485"}:
+                add("G2-HCPL-VO7-ON-SUPPLY-"+ref,"BLOCKER","schematic","FAIL",
+                    "HCPL canonical pin 7 is VO but is connected to supply net %r." % p7.get("net"),
+                    "VERIFIED",ref)
+
         # HCPL identity/function is decided by the authoritative declared-vs-compiled
         # fingerprint resolver above. Do not apply the legacy HCPL-0600 hard-coded
         # pin map after resolution, because HCPL-3120 has different pin semantics.
