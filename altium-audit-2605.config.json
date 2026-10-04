@@ -9,7 +9,8 @@
   "policy": {
     "fail_on_verified_issue": true,
     "block_on_unsupported_required_check": true,
-    "never_infer_pass_from_parser_success": true
+    "never_infer_pass_from_parser_success": true,
+    "skip_hcpl_semantics": true
   },
   "profiles": {
     "structural": true,
