@@ -53,6 +53,12 @@ def main():
   intelligence=out/"connectivity-intelligence.json"; irc=run([HERE/"connectivity_intelligence.py","--netlist",out/"audit"/"netlist.json","--out",intelligence]);
   plan=out/"placement-routing-plan.json"; prc=run([PLANNER,"--pcb",b,"--out",plan,"--findings",out/"audit"/"findings.json","--connectivity-manifest",m]+(["--config",a.config] if a.config else [])); z=json.loads(plan.read_text()) if plan.exists() else {}; pl=z.get("placement",{}); ok=pl.get("status") in ("VERIFIED","PASS") and pl.get("lock",{}).get("status")=="LOCKED"
   return receipt(out,"PLACEMENT","PASS" if ok else "BLOCKED",{"planner_rc":prc,"connectivity_intelligence_rc":irc,"placement":pl,"routing":"DEFERRED","finding_inventory":inv,"downstream_impact":{"routing":"ALLOWED_WITH_FINDINGS" if not inv["blocking"] else "BLOCKED","note":"Placement PASS does not erase schematic findings; downstream must retain and account for them."}},up)
+ if not a.upstream_receipt or not a.upstream_receipt.exists(): return receipt(out,"ROUTING","BLOCKED",{"reason":"missing placement upstream receipt"},up)
+ try:
+  ur=json.loads(a.upstream_receipt.read_text())
+ except Exception:
+  return receipt(out,"ROUTING","BLOCKED",{"reason":"invalid placement upstream receipt"},up)
+ if ur.get("phase")!="PLACEMENT" or ur.get("status")!="PASS": return receipt(out,"ROUTING","BLOCKED",{"reason":"placement prerequisite not VERIFIED","upstream_phase":ur.get("phase"),"upstream_status":ur.get("status")},up)
  rc,x=audit(root,out/"audit",a.config); g=x.get("gates",{}); findings=x.get("findings",[]); inv=finding_inventory(findings); req={k:g.get(k) for k in ["G3_CONNECTIVITY","G6_PLACEMENT","G7_ROUTING"]}; ok=all(v=="VERIFIED" for v in req.values())
  return receipt(out,"ROUTING","PASS" if ok else "BLOCKED",{"runner_rc":rc,"required_gates":req,"finding_inventory":inv,"routing_repair":"DEFERRED_TO_ROUTING_MUTATION_STAGE","downstream_impact":{"mutation":"BLOCKED" if inv["blocking"] else "REQUIRES_FINDING_REVIEW"}} ,up)
 if __name__=="__main__": raise SystemExit(main())
