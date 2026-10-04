@@ -315,7 +315,10 @@ def run(components,netlist,add,identity_overrides=None):
             "properties": dict(c.get("properties") or {}),
         })
     _peer_group_findings(ids, canonical_netlist, add)
-    _emit_hcpl0600_bypass_findings(records, ids, add)
+    # Bypass verification is HCPL-instance scoped; never emit HCPL findings for
+    # unrelated components merely because their pin-5/pin-8 data is incomplete.
+    hcpl_ids = [i for i in ids if _norm(i.get("value")) == "HCPL0600" or _norm(i.get("library")) == "HCPL0600"]
+    _emit_hcpl0600_bypass_findings(records, hcpl_ids, add)
 
     for i in ids:
         ref=i["ref"]
