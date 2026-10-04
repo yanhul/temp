@@ -230,6 +230,23 @@ def _emit_hcpl_topology_groups(ids, canonical_netlist, add):
             "VERIFIED", role
         )
 
+def _is_100nf_class(value):
+    """Recognize common 100 nF / 0.1 uF schematic value spellings."""
+    raw = str(value or "").strip().upper().replace(" ", "")
+    compact = _norm(raw)
+    if compact in {"100NF","100N","0UF1","01UF","0U1F","100000PF","104"}:
+        return True
+    m = re.fullmatch(r"([0-9]+(?:[.,][0-9]+)?)([PNUMK]?F?)", raw)
+    if not m:
+        return False
+    try:
+        number = float(m.group(1).replace(",", "."))
+    except ValueError:
+        return False
+    unit = m.group(2)
+    scale = {"PF":1e-12,"P":1e-12,"NF":1e-9,"N":1e-9,"UF":1e-6,"U":1e-6,"MF":1e-3,"M":1e-3,"F":1.0,"":1.0}
+    return abs(number * scale.get(unit, 0.0) - 100e-9) < 1e-12
+
 def _hcpl0600_bypass_components(records, ref, gnd_net, vcc_net):
     """Return 0.1uF-class capacitors bridging this HCPL-0600's local GND/VCC nets."""
     hits = []
@@ -239,7 +256,7 @@ def _hcpl0600_bypass_components(records, ref, gnd_net, vcc_net):
             continue
         # Normalize common 100nF / 0.1uF / 0u1 forms without assuming an exact
         # text spelling. Only capacitors with two parsed connected nets qualify.
-        if not (("100NF" in value) or ("0UF1" in value) or ("01UF" in value) or ("0U1F" in value)):
+        if not _is_100nf_class(value):
             continue
         nets = [str(p.get("connected_net")) for p in (c.get("pins") or [])
                 if p.get("connected_net")]
