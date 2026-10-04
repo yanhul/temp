@@ -972,7 +972,11 @@ def main():
         )
         add(findings, "G2-SCHEMATIC-EVIDENCE", "INFO", "schematic", "VERIFIED",
             "Observed schematic identity and pin/net evidence packet emitted.", "VERIFIED")
-        if build_hcpl_repair_plan is not None:
+        # HCPL repair planning is an optional mutation workflow. It must not
+        # become an unconditional schematic blocker when HCPL semantics are
+        # explicitly disabled by project policy.
+        hcpl_policy = project_config.get("policy") or {}
+        if build_hcpl_repair_plan is not None and not bool(hcpl_policy.get("skip_hcpl_semantics", False)):
             try:
                 plan = build_hcpl_repair_plan(canonical_evidence.get("components") or [])
                 (out / "hcpl_repair_plan.json").write_text(
