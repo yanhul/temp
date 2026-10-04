@@ -36,6 +36,6 @@
     "authority_file": "altium-audit-2605.placement-authority.json"
   },
   "identity_profile_overrides": {
-    "HCPL0600": "HCPL3120"
+    "HCPL0600": "HCPL0600"
   }
 }
