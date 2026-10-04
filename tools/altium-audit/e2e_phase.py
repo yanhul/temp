@@ -41,9 +41,10 @@ def main():
  root=a.input.resolve(); out=a.output.resolve(); s,b,p=discover(root); out.mkdir(parents=True,exist_ok=True)
  up=hashlib.sha256(a.upstream_receipt.read_bytes()).hexdigest() if a.upstream_receipt and a.upstream_receipt.exists() else None
  if a.phase=="schematic":
-  rc,x=audit(root,out/"audit",a.config); g=x.get("gates",{}); findings=x.get("findings",[]); req={k:g.get(k) for k in ["G0_INTAKE","G1_PARSE","G2_COMPILE","G3_CONNECTIVITY"]}; ok=all(v=="VERIFIED" for v in req.values())
-  inv=finding_inventory(findings)
-  return receipt(out,"SCHEMATIC","PASS" if ok else "BLOCKED",{"runner_rc":rc,"required_gates":req,"finding_inventory":inv,"finding_policy":"VERIFIED does not mean finding-free; all findings are retained and classified.","downstream_impact":{"placement":"BLOCKED if schematic blocking findings exist; otherwise ALLOWED_WITH_FINDINGS","routing":"BLOCKED if schematic blocking findings exist; otherwise ALLOWED_WITH_FINDINGS"}})
+  rc,x=audit(root,out/"audit",a.config); g=x.get("gates",{}); findings=x.get("findings",[]); req={k:g.get(k) for k in ["G0_INTAKE","G1_PARSE","G2_COMPILE","G3_CONNECTIVITY"]}; inv=finding_inventory(findings)
+  blocking=bool(inv["blocking"] or inv["errors"])
+  ok=all(v=="VERIFIED" for v in req.values()) and not blocking
+  return receipt(out,"SCHEMATIC","PASS" if ok else "BLOCKED",{"runner_rc":rc,"required_gates":req,"finding_inventory":inv,"finding_policy":"Blocking FAIL/BLOCKED findings prevent phase PASS; UNKNOWN/WARN remain review evidence.","downstream_impact":{"placement":"BLOCKED if schematic blocking findings exist; otherwise ALLOWED_WITH_FINDINGS","routing":"BLOCKED if schematic blocking findings exist; otherwise ALLOWED_WITH_FINDINGS"}})
  if a.phase=="placement":
   rc,x=audit(root,out/"audit",a.config); g=x.get("gates",{}); pre=all(g.get(k)=="VERIFIED" for k in ["G0_INTAKE","G1_PARSE","G2_COMPILE","G3_CONNECTIVITY"])
   findings=x.get("findings",[]); inv=finding_inventory(findings)
