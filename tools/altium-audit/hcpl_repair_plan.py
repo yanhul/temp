@@ -39,14 +39,15 @@ def build_hcpl_repair_plan(records):
 
     return {
         "schema": "hcpl-repair-plan.v1",
-        "status": "BLOCKED_IDENTITY",
+        "status": "AUTHORIZED_HCPL_0600",
+        "identity_authority": {"part": "HCPL-0600", "authority": "USER_EXPLICIT"},
         "authority_required": "explicit_part_identity",
-        "source_component": "HCPL-0600 vs HCPL-3120-500E",
+        "source_component": "HCPL-0600",
         "groups": groups,
         "rules": [
             "Do not mutate schematic until intended HCPL part is explicitly authorized.",
-            "If HCPL-3120 is authorized: pin 4 must remain NC; pins 6 and 7 must share the intended VO net; VCC/VEE must meet the HCPL-3120 supply requirement; verify local VCC-VEE bypass.",
-            "If HCPL-0600 is authorized: pin 4 is NC, pin 6 is VO, pin 7 is VE/enable; pin 7 must NOT be shorted to pin 6. Verify enable polarity and 5 V supply/bypass from the exact HCPL-0600 datasheet.",
+            "HCPL-0600 is authorized: pin 4 is NC; pin 6 is VO; pin 7 is VE/enable and must NOT be shorted to pin 6; VDD is 5 V. Verify the exact HCPL-0600 datasheet pinout and local bypass before mutation.",
+            "Repair each observed illegal pin-4/pin-7 connection only after tracing its intended logical signal; do not blindly rewire to a guessed net.",
             "After any authorized wiring mutation: reparse compiled schematic, regenerate topology receipt, and rerun schematic CI before placement/routing."
         ]
     }
