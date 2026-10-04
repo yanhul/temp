@@ -64,7 +64,7 @@ def _norm(s):
     return re.sub(r"[^A-Z0-9]+","",str(s or "").upper())
 
 KNOWN_PIN_COUNTS={"ESP"+"32S3WROOM1":41,"ESP"+"32S3WROOM1U":41,
-                  "HCPL0600":8,"HCPL3120":8,"PC817":4}
+                  "HCPL0600":8,"HCPL3120":8,"PC817":4,"TL2904":8}
 HCPL0600_PINS={"2":"ANODE","3":"CATHODE","5":"GND","6":"VO","7":"VE","8":"VCC"}
 
 def _pin_count(c):
@@ -425,13 +425,8 @@ def run(components,netlist,add,identity_overrides=None,skip_hcpl=False):
                     "%r is a 41-pin module, but compiled schematic exposes invalid pin numbers %s."
                     %(i["value"],invalid),"VERIFIED",ref)
 
-        if declared=="TL2904":
-            names={str(x.get("name") or "").upper() for x in pins.values()}
-            if len(pins)==16 and {"+","-","C","E"}.issubset(names):
-                add("G2-SCH-PIN-FUNCTION-"+ref,"BLOCKER","schematic","FAIL",
-                    "Value TL2904 is compiled as a 16-pin optocoupler pattern (+/-/C/E), not its intended amplifier function.",
-                    "VERIFIED",ref)
-
+        # TL2904/PC817 contradictions are resolved by the authoritative
+        # part-identity fingerprint above; do not use a guessed 16-pin pattern.
         if declared=="BCX56":
             lib=_norm(i.get("library")); desc=(i.get("description") or "").lower()
             if "C1815" in lib or "C9014" in desc:
