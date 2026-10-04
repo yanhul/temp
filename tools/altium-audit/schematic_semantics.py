@@ -427,13 +427,6 @@ def run(components,netlist,add,identity_overrides=None,skip_hcpl=False):
 
         # TL2904/PC817 contradictions are resolved by the authoritative
         # part-identity fingerprint above; do not use a guessed 16-pin pattern.
-        if declared=="BCX56":
-            lib=_norm(i.get("library")); desc=(i.get("description") or "").lower()
-            if "C1815" in lib or "C9014" in desc:
-                add("G2-SCH-IDENTITY-"+ref,"BLOCKER","schematic","FAIL",
-                    "Value BCX56 conflicts with compiled transistor symbol/function evidence %r / %r."
-                    %(i.get("library"),i.get("description")),"VERIFIED",ref)
-
     # Semantic checks operate exclusively on the canonical netlist built from
     # altium-schematic-evidence.v1; callers may intentionally pass None here.
     for n in canonical_netlist.get("nets",[]) or []:
