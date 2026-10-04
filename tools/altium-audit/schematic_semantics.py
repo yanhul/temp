@@ -253,6 +253,23 @@ def run(components,netlist,add):
                     "Declared value %r and compiled library %r cannot be distinguished from authoritative pin evidence: %s"
                     %(i["value"],i["library"],identity["reason"]),"FACT",ref)
 
+        # Emit a per-instance isolation path receipt. This is diagnostic evidence only:
+        # it never downgrades an authoritative identity/NC blocker and never repairs wiring.
+        if part in {"HCPL0600","HCPL3120"} and i.get("pin_count") == 8:
+            path_pins = {}
+            for pn in ("2","3","4","5","6","7","8"):
+                p = pins.get(pn)
+                if p is not None:
+                    path_pins[pn] = {"function": p.get("name"), "net": p.get("net")}
+            add("G2-HCPL-ISOLATION-PATH-"+ref, "INFO", "schematic", "VERIFIED",
+                "HCPL path receipt: LED pins 2/3=%s; isolation/NC pin 4=%s; supply pins 5/8=%s; output pins 6/7=%s. Declared=%r; compiled=%r." % (
+                    {k:path_pins.get(k) for k in ("2","3")},
+                    path_pins.get("4"),
+                    {k:path_pins.get(k) for k in ("5","8")},
+                    {k:path_pins.get(k) for k in ("6","7")},
+                    i.get("value"), i.get("library")),
+                "VERIFIED", ref)
+
         # HCPL identity/function is decided by the authoritative declared-vs-compiled
         # fingerprint resolver above. Do not apply the legacy HCPL-0600 hard-coded
         # pin map after resolution, because HCPL-3120 has different pin semantics.
