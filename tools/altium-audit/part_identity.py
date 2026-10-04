@@ -55,6 +55,7 @@ def resolve_declared_vs_compiled(
     declared_value: str | None,
     compiled_library: str | None,
     observed_pins: dict[str, dict[str, Any]] | None,
+    declared_profile_override: str | None = None,
 ) -> dict[str, Any]:
     """Return CONSISTENT, CONTRADICTION, or UNKNOWN.
 
@@ -65,6 +66,7 @@ def resolve_declared_vs_compiled(
     """
     declared = profile_key(declared_value)
     compiled = profile_key(compiled_library)
+    effective_declared = profile_key(declared_profile_override) if declared_profile_override else declared
     observed_pins = observed_pins or {}
 
     if not declared or not compiled:
@@ -74,7 +76,7 @@ def resolve_declared_vs_compiled(
             "evidence": [],
         }
 
-    declared_profile = AUTHORITATIVE_PIN_PROFILES.get(declared)
+    declared_profile = AUTHORITATIVE_PIN_PROFILES.get(effective_declared)
     compiled_profile = AUTHORITATIVE_PIN_PROFILES.get(compiled)
 
     if not declared_profile or not compiled_profile:
@@ -114,10 +116,11 @@ def resolve_declared_vs_compiled(
             "compiled_expected": compiled_profile["pins"].get(str(pin)),
         })
 
-    if declared == compiled:
+    if effective_declared == compiled:
         return {
             "state": "CONSISTENT",
-            "reason": "Declared and compiled identities match.",
+            "reason": ("Declared profile override %r matches compiled identity." % effective_declared)
+                if declared_profile_override else "Declared and compiled identities match.",
             "evidence": evidence,
         }
 
