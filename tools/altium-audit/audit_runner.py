@@ -947,6 +947,7 @@ def main():
             None,
             _semantic_add,
             identity_overrides=identity_overrides,
+            skip_hcpl=bool((project_config.get("policy") or {}).get("skip_hcpl_semantics", False)),
         )
     else:
         add(findings, "G2-SCHEMATIC-SEMANTICS", "BLOCKER", "schematic", "BLOCKED",
