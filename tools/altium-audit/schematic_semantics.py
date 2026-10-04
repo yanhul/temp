@@ -385,10 +385,17 @@ def run(components,netlist,add,identity_overrides=None):
                 add("G2-HCPL-SUPPLY-GND-SHORT-"+ref,"BLOCKER","schematic","FAIL",
                     "HCPL-0600 pin 5 (GND) and pin 8 (VCC) are shorted on net %r." % p5.get("net"),
                     "VERIFIED",ref)
-            if p7 and p7.get("net") and _norm(p7.get("net")) in {"VCC","VCC1","VCC2","VCC3","VCC4","5V","3V3","33V","5VRS232","5VRS485"}:
-                add("G2-HCPL-VE-ON-SUPPLY-"+ref,"BLOCKER","schematic","FAIL",
-                    "HCPL-0600 pin 7 (VE/enable) is connected directly to supply net %r; intended enable wiring must be verified."
-                    % p7.get("net"),"VERIFIED",ref)
+            if p7 and p7.get("net"):
+                ve_net = str(p7.get("net"))
+                gnd_net = str(p5.get("net") or "") if p5 else ""
+                if gnd_net and _norm(ve_net) == _norm(gnd_net):
+                    add("G2-HCPL-VE-LOW-"+ref,"BLOCKER","schematic","FAIL",
+                        "HCPL-0600 pin 7 (VE/enable) is tied to the output-side GND net %r; this disables the optocoupler output."
+                        % ve_net,"VERIFIED",ref)
+                elif p8 and p8.get("net") and _norm(ve_net) == _norm(p8.get("net")):
+                    add("G2-HCPL-VE-ON-SUPPLY-"+ref,"INFO","schematic","VERIFIED",
+                        "HCPL-0600 pin 7 (VE/enable) is tied to VCC net %r; this is a valid always-enabled topology."
+                        % ve_net,"VERIFIED",ref)
 
         if part in {"ESP"+"32S3WROOM1","ESP"+"32S3WROOM1U"}:
             invalid=sorted(p for p in pins if p.isdigit() and not 1<=int(p)<=41)
