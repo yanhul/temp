@@ -34,5 +34,8 @@
     "profile": "QI9-2605",
     "note": "Do not inherit QI9-2604 anchors. 2605 fixed anchors must be supplied by an authoritative project packet before placement lock.",
     "authority_file": "altium-audit-2605.placement-authority.json"
+  },
+  "identity_profile_overrides": {
+    "HCPL0600": "HCPL3120"
   }
 }
