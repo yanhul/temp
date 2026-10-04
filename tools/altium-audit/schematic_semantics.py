@@ -182,6 +182,54 @@ def _metadata_findings(i,add):
             "Displayed value=%r differs from MPN=%r; order-code/package suffix differences require pin/function evidence before contradiction."
             %(i["value"],i["mpn"]),"VERIFIED",ref)
 
+
+HCPL_TOPOLOGY_MAP = {
+    "U6": "UART_TX0", "U8": "UART_RX0",
+    "U11": "UART_TX1", "U12": "UART_EN1", "U13": "UART_RX1",
+    "U18": "ADC1_CLK", "U19": "ADC1_DATA", "U20": "ADC1_CS",
+    "U23": "ADC2_CLK", "U24": "ADC2_DATA", "U25": "ADC2_CS",
+    "U28": "ADC3_CLK", "U29": "ADC3_DATA", "U30": "ADC3_CS",
+    "U33": "ADC4_CLK", "U34": "ADC4_DATA", "U35": "ADC4_CS",
+}
+
+def _emit_hcpl_topology_groups(ids, canonical_netlist, add):
+    """Collapse repeated per-pin HCPL blockers into functional topology findings.
+    This is reporting aggregation only; it never suppresses the underlying
+    authoritative pin evidence or changes PASS/FAIL semantics.
+    """
+    groups = {}
+    for i in ids:
+        ref = i.get("ref")
+        if ref not in HCPL_TOPOLOGY_MAP:
+            continue
+        pins = _pins(canonical_netlist, ref)
+        role = HCPL_TOPOLOGY_MAP[ref]
+        p4, p6, p7, p5, p8 = (pins.get(x) for x in ("4","6","7","5","8"))
+        groups.setdefault(role, []).append({
+            "ref": ref,
+            "signal": (p6 or {}).get("net"),
+            "vo7": (p7 or {}).get("net"),
+            "nc4": (p4 or {}).get("net"),
+            "vee5": (p5 or {}).get("net"),
+            "vcc8": (p8 or {}).get("net"),
+        })
+    for role, members in sorted(groups.items()):
+        blockers = []
+        for m in members:
+            if m["nc4"]:
+                blockers.append("%s.pin4(NC)->%s" % (m["ref"], m["nc4"]))
+            if m["signal"] and m["vo7"] and m["signal"] != m["vo7"]:
+                blockers.append("%s.pin6=%s, pin7=%s" % (m["ref"], m["signal"], m["vo7"]))
+        status = "FAIL" if blockers else "VERIFIED"
+        severity = "BLOCKER" if blockers else "INFO"
+        add(
+            "G2-HCPL-TOPOLOGY-" + role,
+            severity, "schematic", status,
+            "HCPL topology group %s: members=%s; blockers=%s; pin6/7 and NC evidence is retained per instance."
+            % (role, [m["ref"] for m in members], blockers or ["none"]),
+            "VERIFIED", role
+        )
+
 def run(components,netlist,add,identity_overrides=None):
     # Semantic layer consumes the canonical parsed evidence contract only.
     # Raw Altium objects are intentionally rejected here so parser/reconstruction
