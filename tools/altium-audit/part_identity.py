@@ -31,6 +31,14 @@ AUTHORITATIVE_PIN_PROFILES = {
         "source": "Nexperia BCX56 series datasheet",
         "pins": {"1": "E", "2": "C", "3": "B"},
     },
+    "PC817": {
+        "source": "SHARP PC817 series datasheet",
+        "pins": {"1": "ANODE", "2": "CATHODE", "3": "EMITTER", "4": "COLLECTOR"},
+    },
+    "TL2904": {
+        "source": "TL2904/LM2904 8-pin dual operational-amplifier reference",
+        "pins": {"1": "OUT", "2": "-", "3": "+", "4": "V-", "5": "+", "6": "-", "7": "OUT", "8": "V+"},
+    },
 }
 
 
@@ -43,6 +51,10 @@ def profile_key(identity: Any) -> str:
         return "HCPL0600"
     if "BCX56" in n:
         return "BCX56"
+    if "PC817" in n:
+        return "PC817"
+    if "TL2904" in n:
+        return "TL2904"
     return n
 
 
