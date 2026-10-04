@@ -291,7 +291,7 @@ def _emit_hcpl0600_bypass_findings(records, ids, add):
                 "VERIFIED",ref)
 
 
-def run(components,netlist,add,identity_overrides=None):
+def run(components,netlist,add,identity_overrides=None,skip_hcpl=False):
     # Semantic layer consumes the canonical parsed evidence contract only.
     # Raw Altium objects are intentionally rejected here so parser/reconstruction
     # logic cannot be duplicated in the semantic checker.
@@ -335,11 +335,15 @@ def run(components,netlist,add,identity_overrides=None):
     # Bypass verification is HCPL-instance scoped; never emit HCPL findings for
     # unrelated components merely because their pin-5/pin-8 data is incomplete.
     hcpl_ids = [i for i in ids if _norm(i.get("value")) == "HCPL0600" or _norm(i.get("library")) == "HCPL0600"]
-    _emit_hcpl0600_bypass_findings(records, hcpl_ids, add)
+    if not skip_hcpl:
+        _emit_hcpl0600_bypass_findings(records, hcpl_ids, add)
 
     for i in ids:
         ref=i["ref"]
         declared=_norm(i.get("value"))
+        is_hcpl = declared == "HCPL0600" or _norm(i.get("library")) == "HCPL0600"
+        if skip_hcpl and is_hcpl:
+            continue
         part=_norm(i.get("mpn") or i.get("value"))
         _metadata_findings(i,add)
 
