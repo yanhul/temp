@@ -51,3 +51,5 @@ jobs:
         with:
           name: qi9-2605-e2e-routing
           path: e2e/routing
+
+# strict-e2e trigger 2026-10-04
