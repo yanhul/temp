@@ -155,3 +155,28 @@ def test_authoritative_nc_connection_is_a_schematic_failure():
     findings=[]
     ss.run(evidence,None,lambda *args: findings.append(args))
     assert any(x[0]=="G2-SCH-NC-PIN-CONNECTED-U19" and x[3]=="FAIL" for x in findings)
+
+
+def test_hcpl0600_project_identity_override_authorizes_declared_profile():
+    observed = {str(pin): {"name": name} for pin, name in {
+        "1":"NC","2":"ANODE","3":"CATHODE","4":"NC","5":"VEE","6":"VO","7":"VO","8":"VCC"
+    }.items()}
+    identity = resolve_declared_vs_compiled("HCPL-0600", "HCPL-3120", observed, "HCPL-0600")
+    assert identity["state"] == "CONSISTENT"
+    assert identity["identity_override"] == "HCPL-0600"
+
+
+def test_hcpl0600_enable_tied_to_vcc_is_not_a_failure():
+    evidence={"schema":"altium-schematic-evidence.v1","status":"VERIFIED","components":[{
+        "reference":"U18","declared_value":"HCPL-0600","compiled_value":"HCPL-3120","library_id":"HCPL-3120","pin_count":8,
+        "pins":[
+            {"pin":"2","pin_name":"ANODE","electrical_type":"INPUT","connected_net":"LED"},
+            {"pin":"3","pin_name":"CATHODE","electrical_type":"INPUT","connected_net":"LEDK"},
+            {"pin":"4","pin_name":"NC","electrical_type":"PASSIVE","connected_net":None},
+            {"pin":"5","pin_name":"GND","electrical_type":"POWER","connected_net":"GND"},
+            {"pin":"6","pin_name":"VO","electrical_type":"OUTPUT","connected_net":"OUT"},
+            {"pin":"7","pin_name":"VE","electrical_type":"INPUT","connected_net":"+5V"},
+            {"pin":"8","pin_name":"VCC","electrical_type":"POWER","connected_net":"+5V"}]}]}
+    findings=[]
+    ss.run(evidence, None, lambda *args: findings.append(args), {"HCPL0600":"HCPL0600"})
+    assert not any(x[0]=="G2-HCPL-VE-ON-SUPPLY-U18" and x[3]=="FAIL" for x in findings)
