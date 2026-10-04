@@ -182,7 +182,7 @@ def _metadata_findings(i,add):
             "Displayed value=%r differs from MPN=%r; order-code/package suffix differences require pin/function evidence before contradiction."
             %(i["value"],i["mpn"]),"VERIFIED",ref)
 
-def run(components,netlist,add):
+def run(components,netlist,add,identity_overrides=None):
     # Semantic layer consumes the canonical parsed evidence contract only.
     # Raw Altium objects are intentionally rejected here so parser/reconstruction
     # logic cannot be duplicated in the semantic checker.
@@ -209,6 +209,7 @@ def run(components,netlist,add):
     canonical_netlist["nets"] = [
         {"name": name, "terminals": terms} for name, terms in sorted(nets_by_name.items())
     ]
+    identity_overrides = identity_overrides or {}
     ids = []
     for c in records:
         ids.append({
@@ -240,7 +241,12 @@ def run(components,netlist,add):
         if resolve_declared_vs_compiled is None and _norm(i.get("value"))=="HCPL0600" and _norm(i.get("library"))=="HCPL3120":
             raise RuntimeError("authoritative part_identity resolver unavailable for HCPL-0600/HCPL-3120; refusing schematic PASS")
         if resolve_declared_vs_compiled is not None and i.get("value") and i.get("library"):
-            identity=resolve_declared_vs_compiled(i["value"],i["library"],pins)
+            override = identity_overrides.get(str(ref))
+            identity=resolve_declared_vs_compiled(i["value"],i["library"],pins,override)
+            if override:
+                add("G2-SCH-IDENTITY-OVERRIDE-"+ref,"INFO","schematic","VERIFIED",
+                    "Explicit project identity override: declared %r is audited against canonical profile %r; original declared value remains in evidence." % (i.get("value"),override),
+                    "ASSUMPTION",ref)
             if identity["state"]=="CONTRADICTION":
                 add("G2-SCH-IDENTITY-EVIDENCE-"+ref,"BLOCKER","schematic","FAIL",
                     "%s Evidence=%s"%(identity["reason"],identity.get("evidence",[])),"VERIFIED",ref)
