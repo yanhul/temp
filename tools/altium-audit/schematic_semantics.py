@@ -230,6 +230,50 @@ def _emit_hcpl_topology_groups(ids, canonical_netlist, add):
             "VERIFIED", role
         )
 
+def _hcpl0600_bypass_components(records, ref, gnd_net, vcc_net):
+    """Return 0.1uF-class capacitors bridging this HCPL-0600's local GND/VCC nets."""
+    hits = []
+    for c in records:
+        value = _norm(c.get("declared_value") or c.get("value") or c.get("mpn"))
+        if not value or ("C" != str(c.get("reference",""))[:1].upper()):
+            continue
+        # Normalize common 100nF / 0.1uF / 0u1 forms without assuming an exact
+        # text spelling. Only capacitors with two parsed connected nets qualify.
+        if not (("100NF" in value) or ("0UF1" in value) or ("01UF" in value) or ("0U1F" in value)):
+            continue
+        nets = [str(p.get("connected_net")) for p in (c.get("pins") or [])
+                if p.get("connected_net")]
+        if len(set(nets)) != 2:
+            continue
+        if {_norm(n) for n in nets} == {_norm(gnd_net), _norm(vcc_net)}:
+            hits.append(c.get("reference"))
+    return sorted(x for x in hits if x)
+
+
+def _emit_hcpl0600_bypass_findings(records, ids, add):
+    by_ref = {str(c.get("reference")): c for c in records if c.get("reference")}
+    for i in ids:
+        ref = i.get("ref")
+        if not ref or ref not in by_ref:
+            continue
+        pins = {str(p.get("pin")): p for p in (by_ref[ref].get("pins") or [])}
+        p5, p8 = pins.get("5"), pins.get("8")
+        if not p5 or not p8 or not p5.get("connected_net") or not p8.get("connected_net"):
+            add("G2-HCPL-BYPASS-"+ref,"BLOCKER","schematic","UNKNOWN",
+                "HCPL-0600 local bypass cannot be verified because pin 5/8 supply nets are incomplete in canonical parse.",
+                "FACT",ref)
+            continue
+        caps = _hcpl0600_bypass_components(records, ref, str(p5["connected_net"]), str(p8["connected_net"]))
+        if not caps:
+            add("G2-HCPL-BYPASS-"+ref,"BLOCKER","schematic","FAIL",
+                "No parsed 0.1uF/100nF-class capacitor bridges HCPL-0600 pin 5 (GND) and pin 8 (VCC).",
+                "VERIFIED",ref)
+        else:
+            add("G2-HCPL-BYPASS-"+ref,"INFO","schematic","VERIFIED",
+                "HCPL-0600 local 0.1uF/100nF bypass bridges pin 5/8 supply nets via %s." % caps,
+                "VERIFIED",ref)
+
+
 def run(components,netlist,add,identity_overrides=None):
     # Semantic layer consumes the canonical parsed evidence contract only.
     # Raw Altium objects are intentionally rejected here so parser/reconstruction
@@ -271,6 +315,7 @@ def run(components,netlist,add,identity_overrides=None):
             "properties": dict(c.get("properties") or {}),
         })
     _peer_group_findings(ids, canonical_netlist, add)
+    _emit_hcpl0600_bypass_findings(records, ids, add)
 
     for i in ids:
         ref=i["ref"]
@@ -324,27 +369,23 @@ def run(components,netlist,add,identity_overrides=None):
                     i.get("value"), i.get("library")),
                 "VERIFIED", ref)
 
-        # HCPL-3120 canonical profile: pins 6 and 7 are both VO; pin 4 is NC.
-        # Therefore pin 7 must never be tied to VCC/VCCx, and VO pins 6/7 must
-        # resolve to the same net when both are connected.
-        if _norm(i.get("value")) in {"HCPL0600","HCPL3120"} or _norm(i.get("library")) in {"HCPL0600","HCPL3120"}:
+        # HCPL-0600 authoritative profile:
+        # pin 4=NC, 5=GND, 6=VO, 7=VE/enable, 8=VCC.
+        # Unlike HCPL-3120, pins 6/7 are NOT duplicate VO pins.
+        if _norm(i.get("value")) == "HCPL0600" or _norm(i.get("library")) == "HCPL0600":
             p4, p5, p6, p7, p8 = (pins.get(x) for x in ("4","5","6","7","8"))
             if p4 and p4.get("net"):
                 add("G2-HCPL-NC-PIN4-CONNECTED-"+ref,"BLOCKER","schematic","FAIL",
-                    "HCPL canonical pin 4 is NC but is connected to net %r." % p4.get("net"),
+                    "HCPL-0600 pin 4 is NC but is connected to net %r." % p4.get("net"),
                     "VERIFIED",ref)
-            if p6 and p7 and p6.get("net") and p7.get("net") and p6.get("net") != p7.get("net"):
-                add("G2-HCPL-VO-PINS-DIFFER-"+ref,"BLOCKER","schematic","FAIL",
-                    "HCPL canonical VO pins 6/7 are on different nets: pin6=%r, pin7=%r."
-                    % (p6.get("net"),p7.get("net")),"VERIFIED",ref)
+            if p5 and p8 and p5.get("net") and p8.get("net") and _norm(p5.get("net")) == _norm(p8.get("net")):
+                add("G2-HCPL-SUPPLY-GND-SHORT-"+ref,"BLOCKER","schematic","FAIL",
+                    "HCPL-0600 pin 5 (GND) and pin 8 (VCC) are shorted on net %r." % p5.get("net"),
+                    "VERIFIED",ref)
             if p7 and p7.get("net") and _norm(p7.get("net")) in {"VCC","VCC1","VCC2","VCC3","VCC4","5V","3V3","33V","5VRS232","5VRS485"}:
-                add("G2-HCPL-VO7-ON-SUPPLY-"+ref,"BLOCKER","schematic","FAIL",
-                    "HCPL canonical pin 7 is VO but is connected to supply net %r." % p7.get("net"),
-                    "VERIFIED",ref)
-
-        # HCPL identity/function is decided by the authoritative declared-vs-compiled
-        # fingerprint resolver above. Do not apply the legacy HCPL-0600 hard-coded
-        # pin map after resolution, because HCPL-3120 has different pin semantics.
+                add("G2-HCPL-VE-ON-SUPPLY-"+ref,"BLOCKER","schematic","FAIL",
+                    "HCPL-0600 pin 7 (VE/enable) is connected directly to supply net %r; intended enable wiring must be verified."
+                    % p7.get("net"),"VERIFIED",ref)
 
         if part in {"ESP"+"32S3WROOM1","ESP"+"32S3WROOM1U"}:
             invalid=sorted(p for p in pins if p.isdigit() and not 1<=int(p)<=41)
