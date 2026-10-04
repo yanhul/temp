@@ -13,6 +13,11 @@ except Exception:
     run_schematic_semantics = None
 
 try:
+    from hcpl_repair_plan import build_hcpl_repair_plan
+except Exception:
+    build_hcpl_repair_plan = None
+
+try:
     from altium_monkey import AltiumDesign, AltiumSchDoc, AltiumPcbDoc, PcbLayer
 except Exception as exc:
     print(f"BLOCKED G1: cannot import altium_monkey: {exc}", file=sys.stderr)
@@ -966,6 +971,18 @@ def main():
         )
         add(findings, "G2-SCHEMATIC-EVIDENCE", "INFO", "schematic", "VERIFIED",
             "Observed schematic identity and pin/net evidence packet emitted.", "VERIFIED")
+        if build_hcpl_repair_plan is not None:
+            try:
+                plan = build_hcpl_repair_plan(canonical_evidence.get("components") or [])
+                (out / "hcpl_repair_plan.json").write_text(
+                    json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8"
+                )
+                add(findings, "G2-HCPL-REPAIR-PLAN", "BLOCKER", "schematic", "BLOCKED",
+                    "Non-mutating HCPL topology repair plan emitted; explicit HCPL-0600 vs HCPL-3120 identity authority is required before wiring mutation.",
+                    "FACT")
+            except Exception as exc:
+                add(findings, "G2-HCPL-REPAIR-PLAN", "BLOCKER", "schematic", "BLOCKED",
+                    f"HCPL repair-plan generation failed: {type(exc).__name__}: {exc}", "FACT")
     except Exception as exc:
         add(findings, "G2-SCHEMATIC-EVIDENCE", "BLOCKER", "schematic", "BLOCKED",
             f"Could not emit required schematic evidence packet: {type(exc).__name__}: {exc}", "FACT")
