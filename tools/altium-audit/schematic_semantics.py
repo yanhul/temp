@@ -241,7 +241,7 @@ def run(components,netlist,add,identity_overrides=None):
         if resolve_declared_vs_compiled is None and _norm(i.get("value"))=="HCPL0600" and _norm(i.get("library"))=="HCPL3120":
             raise RuntimeError("authoritative part_identity resolver unavailable for HCPL-0600/HCPL-3120; refusing schematic PASS")
         if resolve_declared_vs_compiled is not None and i.get("value") and i.get("library"):
-            override = identity_overrides.get(str(ref))
+            override = identity_overrides.get(str(ref)) or identity_overrides.get(str(i.get("value"))) or identity_overrides.get(_norm(i.get("value")))
             identity=resolve_declared_vs_compiled(i["value"],i["library"],pins,override)
             if override:
                 add("G2-SCH-IDENTITY-OVERRIDE-"+ref,"INFO","schematic","VERIFIED",
