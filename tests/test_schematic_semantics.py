@@ -180,3 +180,11 @@ def test_hcpl0600_enable_tied_to_vcc_is_not_a_failure():
     findings=[]
     ss.run(evidence, None, lambda *args: findings.append(args), {"HCPL0600":"HCPL0600"})
     assert not any(x[0]=="G2-HCPL-VE-ON-SUPPLY-U18" and x[3]=="FAIL" for x in findings)
+
+
+def test_hcpl_bypass_accepts_common_100nf_value_spellings():
+    assert ss._is_100nf_class("100nF")
+    assert ss._is_100nf_class("100n")
+    assert ss._is_100nf_class("0.1uF")
+    assert ss._is_100nf_class("104")
+    assert not ss._is_100nf_class("1uF")
