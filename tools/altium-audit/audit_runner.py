@@ -936,10 +936,12 @@ def main():
     if run_schematic_semantics is not None:
         def _semantic_add(fid, severity, domain, status, evidence, confidence="VERIFIED", obj=None):
             add(findings, fid, severity, domain, status, evidence, confidence, obj)
+        identity_overrides = project_config.get("identity_profile_overrides", {})
         schematic_semantic_identities = run_schematic_semantics(
             canonical_evidence,
             None,
             _semantic_add,
+            identity_overrides=identity_overrides,
         )
     else:
         add(findings, "G2-SCHEMATIC-SEMANTICS", "BLOCKER", "schematic", "BLOCKED",
