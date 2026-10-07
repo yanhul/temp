@@ -65,3 +65,5 @@ jobs:
 
 # HCPL diagnostic trigger 16ec644
 # HCPL bypass-value-field fix 29f9f6e
+
+# strict-ns-to-kq 2026-10-07 — rerun current HCPL canonical receipt
