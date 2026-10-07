@@ -1490,8 +1490,8 @@ def main():
         "G7_FUNCTIONAL":"PARTIAL" if any(f["id"]=="G7-FUNCTIONAL" and f["status"]=="UNKNOWN" and f["severity"]!="INFO" for f in findings) else "VERIFIED",
         "G8_REPORT":"VERIFIED"
     }
-    hard_fail = any(f["status"]=="FAIL" and f["severity"] in ("HIGH","BLOCKER") for f in findings)
-    hard_block = any(f["status"] in ("BLOCKED","UNKNOWN") and f["severity"]=="BLOCKER" for f in findings)
+    hard_fail = any(f["status"]=="FAIL" and f["severity"] in ("HIGH","BLOCKER") for f in gate_findings)
+    hard_block = any(f["status"] in ("BLOCKED","UNKNOWN") and f["severity"]=="BLOCKER" for f in gate_findings)
     incomplete = any(v in ("PARTIAL","UNKNOWN","BLOCKED") for v in gates.values())
     status = "FAIL" if hard_fail else ("BLOCKED" if hard_block or incomplete else "PASS")
     result = {
