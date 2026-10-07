@@ -972,19 +972,23 @@ def main():
         )
         add(findings, "G2-SCHEMATIC-EVIDENCE", "INFO", "schematic", "VERIFIED",
             "Observed schematic identity and pin/net evidence packet emitted.", "VERIFIED")
-        # HCPL repair planning is an optional mutation workflow. It must not
-        # become an unconditional schematic blocker when HCPL semantics are
-        # explicitly disabled by project policy.
+        # HCPL repair planning is non-mutating. It may emit a plan, but the
+        # plan itself is not a schematic finding. Identity authority is supplied
+        # by the project policy/identity profile; actual wiring violations remain
+        # authoritative FAIL/BLOCKED findings and still gate the phase.
         hcpl_policy = project_config.get("policy") or {}
+        identity_overrides = project_config.get("identity_profile_overrides") or {}
         if build_hcpl_repair_plan is not None and not bool(hcpl_policy.get("skip_hcpl_semantics", False)):
             try:
                 plan = build_hcpl_repair_plan(canonical_evidence.get("components") or [])
                 (out / "hcpl_repair_plan.json").write_text(
                     json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8"
                 )
-                add(findings, "G2-HCPL-REPAIR-PLAN", "BLOCKER", "schematic", "BLOCKED",
-                    "Non-mutating HCPL topology repair plan emitted; explicit HCPL-0600 vs HCPL-3120 identity authority is required before wiring mutation.",
-                    "FACT")
+                authorized = bool(identity_overrides.get("HCPL0600") or identity_overrides.get("HCPL-0600"))
+                add(findings, "G2-HCPL-REPAIR-PLAN", "INFO", "schematic", "VERIFIED" if authorized else "BLOCKED",
+                    "Non-mutating HCPL topology repair plan emitted; identity authority=%s. Any wiring mutation still requires a separate mutation permit and post-mutation reparse/verification."
+                    % ("explicit" if authorized else "missing"),
+                    "VERIFIED" if authorized else "FACT")
             except Exception as exc:
                 add(findings, "G2-HCPL-REPAIR-PLAN", "BLOCKER", "schematic", "BLOCKED",
                     f"HCPL repair-plan generation failed: {type(exc).__name__}: {exc}", "FACT")
