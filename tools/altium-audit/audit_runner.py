@@ -1473,7 +1473,7 @@ def main():
         "G1_PARSE":"VERIFIED" if parse_contract_ok else "BLOCKED",
         "G2_COMPILE": (
             "FAIL" if diagnostics or any(f["id"].startswith("G2-SCH-") or f["id"].startswith("G2-NET-") for f in gate_findings if f["status"]=="FAIL") else
-            "BLOCKED" if any(f["id"]=="G2-COMPILE" and f["status"]=="BLOCKED" for f in findings) or any(f["status"]=="BLOCKED" and f["domain"]=="schematic" for f in findings) else
+            "BLOCKED" if any(f["id"]=="G2-COMPILE" and f["status"]=="BLOCKED" for f in gate_findings) or any(f["status"]=="BLOCKED" and f["domain"]=="schematic" for f in gate_findings) else
             "VERIFIED"
         ),
         "G3_CONNECTIVITY":"VERIFIED" if not any(f["id"].startswith("G3-") and f["status"] in ("FAIL","UNKNOWN","BLOCKED") for f in findings) else "BLOCKED",
