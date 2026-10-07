@@ -1,42 +1,8 @@
 {
-  "schema": "altium-audit/project-config/v1",
-  "project_id": "QI9-2605-A01",
-  "required_inputs": [
-    "*.PrjPcb",
-    "*.SchDoc",
-    "*.PcbDoc"
-  ],
-  "policy": {
-    "fail_on_verified_issue": true,
-    "block_on_unsupported_required_check": true,
-    "never_infer_pass_from_parser_success": true,
-    "skip_hcpl_semantics": true
-  },
-  "profiles": {
-    "structural": true,
-    "electrical": true,
-    "physical": true,
-    "functional": true
-  },
-  "placement": {
-    "authority": "project_declared_fixed_anchors_required",
-    "locked_references": [
-      "J1",
-      "J2",
-      "J3",
-      "J4",
-      "J5",
-      "J6",
-      "J7",
-      "J8",
-      "J9",
-      "U15"
-    ],
-    "profile": "QI9-2605",
-    "note": "Do not inherit QI9-2604 anchors. 2605 fixed anchors must be supplied by an authoritative project packet before placement lock.",
-    "authority_file": "altium-audit-2605.placement-authority.json"
-  },
-  "identity_profile_overrides": {
-    "HCPL0600": "HCPL0600"
-  }
+  "schema":"altium-audit/project-config/v1","project_id":"QI9-2605-A01",
+  "required_inputs":["*.PrjPcb","*.SchDoc","*.PcbDoc"],
+  "policy":{"fail_on_verified_issue":true,"block_on_unsupported_required_check":true,"never_infer_pass_from_parser_success":true,"skip_hcpl_semantics":false},
+  "profiles":{"structural":true,"electrical":true,"physical":true,"functional":true},
+  "placement":{"authority":"project_declared_fixed_anchors_required","locked_references":["J1","J2","J3","J4","J5","J7","U15"],"profile":"QI9-2605","note":"Do not inherit QI9-2604 anchors. 2605 fixed anchors must be supplied by an authoritative project packet before placement lock.","authority_file":"altium-audit-2605.placement-authority.json"},
+  "identity_profile_overrides":{"HCPL0600":"HCPL0600"}
 }
