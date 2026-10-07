@@ -251,12 +251,20 @@ def _hcpl0600_bypass_components(records, ref, gnd_net, vcc_net):
     """Return 0.1uF-class capacitors bridging this HCPL-0600's local GND/VCC nets."""
     hits = []
     for c in records:
-        value = _norm(c.get("declared_value") or c.get("value") or c.get("mpn"))
-        if not value or ("C" != str(c.get("reference",""))[:1].upper()):
+        # The displayed value can be a generic "Cap" while the compiled
+        # Value property carries the authoritative 104/100nF identity. Inspect
+        # all canonical value fields instead of treating display text as the
+        # only component-value source.
+        value_candidates = [
+            c.get("declared_value"), c.get("value"), c.get("mpn"),
+            (c.get("properties") or {}).get("value"),
+            (c.get("properties") or {}).get("Value"),
+        ]
+        if not str(c.get("reference","")).upper().startswith("C"):
             continue
         # Normalize common 100nF / 0.1uF / 0u1 forms without assuming an exact
         # text spelling. Only capacitors with two parsed connected nets qualify.
-        if not _is_100nf_class(value):
+        if not any(_is_100nf_class(v) for v in value_candidates):
             continue
         nets = [str(p.get("connected_net")) for p in (c.get("pins") or [])
                 if p.get("connected_net")]
