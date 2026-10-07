@@ -1,6 +1,7 @@
 name: qi9-2605-three-phase-e2e
 on:
   workflow_dispatch:
+  pull_request:
   push:
     paths:
       - 'audit-input-2605/**'
