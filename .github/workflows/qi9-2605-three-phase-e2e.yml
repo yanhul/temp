@@ -16,7 +16,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python -m pip install -r tools/altium-audit/requirements.txt
-      - run: python tools/altium-audit/e2e_phase.py --phase schematic --input audit-input-2605 --output e2e/schematic --config altium-audit-2605.config.json
+      - name: Run schematic phase and validate truthful receipt
+        shell: bash
+        run: |
+          set +e
+          python tools/altium-audit/e2e_phase.py --phase schematic --input audit-input-2605 --output e2e/schematic --config altium-audit-2605.config.json
+          rc=$?
+          set -e
+          python - "e2e/schematic/phase_receipt.json" "schematic" "$rc" <<'PY'
+          import json, sys
+          from pathlib import Path
+          path, expected_phase, raw_rc = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+          if not path.is_file():
+              raise SystemExit(f"missing phase receipt: {path}")
+          receipt = json.loads(path.read_text())
+          status = receipt.get("status")
+          if receipt.get("phase") != expected_phase.upper():
+              raise SystemExit(f"phase mismatch: {receipt.get('phase')!r}")
+          if status not in {"PASS", "BLOCKED"}:
+              raise SystemExit(f"unauthorized phase status: {status!r}")
+          if (status == "PASS" and raw_rc != 0) or (status == "BLOCKED" and raw_rc == 0):
+              raise SystemExit(f"receipt/exit mismatch: status={status} rc={raw_rc}")
+          print(f"PHASE_RECEIPT_VALID={expected_phase.upper()}:{status}")
+          PY
       - if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
@@ -32,7 +54,29 @@ jobs:
         with:
           name: qi9-2605-e2e-schematic
           path: e2e/schematic
-      - run: python tools/altium-audit/e2e_phase.py --phase placement --input audit-input-2605 --output e2e/placement --config altium-audit-2605.config.json --upstream-receipt e2e/schematic/phase_receipt.json
+      - name: Run placement phase and validate truthful receipt
+        shell: bash
+        run: |
+          set +e
+          python tools/altium-audit/e2e_phase.py --phase placement --input audit-input-2605 --output e2e/placement --config altium-audit-2605.config.json --upstream-receipt e2e/schematic/phase_receipt.json
+          rc=$?
+          set -e
+          python - "e2e/placement/phase_receipt.json" "placement" "$rc" <<'PY'
+          import json, sys
+          from pathlib import Path
+          path, expected_phase, raw_rc = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+          if not path.is_file():
+              raise SystemExit(f"missing phase receipt: {path}")
+          receipt = json.loads(path.read_text())
+          status = receipt.get("status")
+          if receipt.get("phase") != expected_phase.upper():
+              raise SystemExit(f"phase mismatch: {receipt.get('phase')!r}")
+          if status not in {"PASS", "BLOCKED"}:
+              raise SystemExit(f"unauthorized phase status: {status!r}")
+          if (status == "PASS" and raw_rc != 0) or (status == "BLOCKED" and raw_rc == 0):
+              raise SystemExit(f"receipt/exit mismatch: status={status} rc={raw_rc}")
+          print(f"PHASE_RECEIPT_VALID={expected_phase.upper()}:{status}")
+          PY
       - if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
@@ -48,7 +92,29 @@ jobs:
         with:
           name: qi9-2605-e2e-placement
           path: e2e/placement
-      - run: python tools/altium-audit/e2e_phase.py --phase routing --input audit-input-2605 --output e2e/routing --config altium-audit-2605.config.json --upstream-receipt e2e/placement/phase_receipt.json
+      - name: Run routing phase and validate truthful receipt
+        shell: bash
+        run: |
+          set +e
+          python tools/altium-audit/e2e_phase.py --phase routing --input audit-input-2605 --output e2e/routing --config altium-audit-2605.config.json --upstream-receipt e2e/placement/phase_receipt.json
+          rc=$?
+          set -e
+          python - "e2e/routing/phase_receipt.json" "routing" "$rc" <<'PY'
+          import json, sys
+          from pathlib import Path
+          path, expected_phase, raw_rc = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+          if not path.is_file():
+              raise SystemExit(f"missing phase receipt: {path}")
+          receipt = json.loads(path.read_text())
+          status = receipt.get("status")
+          if receipt.get("phase") != expected_phase.upper():
+              raise SystemExit(f"phase mismatch: {receipt.get('phase')!r}")
+          if status not in {"PASS", "BLOCKED"}:
+              raise SystemExit(f"unauthorized phase status: {status!r}")
+          if (status == "PASS" and raw_rc != 0) or (status == "BLOCKED" and raw_rc == 0):
+              raise SystemExit(f"receipt/exit mismatch: status={status} rc={raw_rc}")
+          print(f"PHASE_RECEIPT_VALID={expected_phase.upper()}:{status}")
+          PY
       - if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
