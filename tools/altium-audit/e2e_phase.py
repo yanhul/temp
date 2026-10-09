@@ -18,6 +18,11 @@ def audit(root,out,cfg):
  return rc,json.loads(f.read_text()) if f.exists() else {}
 DEFERRED_NON_GATING_IDS = {"G2-SCH-NC-PIN-CONNECTED-U19","G2-HCPL-NC-PIN4-CONNECTED-U19","G2-SCH-NC-PIN-CONNECTED-U24","G2-HCPL-NC-PIN4-CONNECTED-U24","G2-SCH-NC-PIN-CONNECTED-U29","G2-HCPL-NC-PIN4-CONNECTED-U29"}
 
+def required_schematic_unknowns(findings, block_unknown=True):
+ if not block_unknown:
+  return []
+ return [f for f in findings if f.get("domain")=="schematic" and f.get("status")=="UNKNOWN" and f.get("id") not in DEFERRED_NON_GATING_IDS]
+
 def finding_inventory(findings):
  if not isinstance(findings,list):
   findings=[]
@@ -50,7 +55,7 @@ def main():
   blocking=bool(inv["blocking"] or inv["errors"])
   policy=json.loads(a.config.read_text()).get("policy",{}) if a.config else {}
   block_unknown=bool(policy.get("block_on_unsupported_required_check",True))
-  required_unknown=[f for f in findings if block_unknown and f.get("domain")=="schematic" and f.get("status")=="UNKNOWN" and f.get("id") not in DEFERRED_NON_GATING_IDS]
+  required_unknown=required_schematic_unknowns(findings, block_unknown)
   ok=all(v=="VERIFIED" for v in req.values()) and not blocking and not required_unknown
   return receipt(out,"SCHEMATIC","PASS" if ok else "BLOCKED",{"runner_rc":rc,"required_gates":req,"finding_inventory":inv,"required_unknown_findings":required_unknown,"finding_policy":"PASS requires G0-G3 VERIFIED, no blocking findings, and no UNKNOWN schematic-required checks under block_on_unsupported_required_check; only explicitly deferred U19/U24/U29 NC findings are non-gating.","downstream_impact":{"placement":"BLOCKED unless schematic phase is PASS","routing":"BLOCKED unless placement is PASS"}})
  if a.phase=="placement":
