@@ -121,6 +121,51 @@ jobs:
           name: qi9-2605-e2e-routing
           path: e2e/routing
 
+  strict_terminal_gate:
+    needs: [schematic, placement, routing]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: qi9-2605-e2e-schematic
+          path: e2e/schematic
+      - uses: actions/download-artifact@v4
+        with:
+          name: qi9-2605-e2e-placement
+          path: e2e/placement
+      - uses: actions/download-artifact@v4
+        with:
+          name: qi9-2605-e2e-routing
+          path: e2e/routing
+      - name: Require PASS at every phase
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          phases = [
+              ("SCHEMATIC", Path("e2e/schematic/phase_receipt.json")),
+              ("PLACEMENT", Path("e2e/placement/phase_receipt.json")),
+              ("ROUTING", Path("e2e/routing/phase_receipt.json")),
+          ]
+          states = {}
+          for expected, path in phases:
+              if not path.is_file():
+                  states[expected] = "MISSING_RECEIPT"
+                  continue
+              receipt = json.loads(path.read_text())
+              if receipt.get("phase") != expected:
+                  states[expected] = "INVALID_PHASE:" + str(receipt.get("phase"))
+              else:
+                  states[expected] = receipt.get("status", "MISSING_STATUS")
+          print("STRICT_E2E_PHASE_STATES=" + json.dumps(states, sort_keys=True))
+          failed = {phase: status for phase, status in states.items() if status != "PASS"}
+          if failed:
+              raise SystemExit("STRICT EDA E2E BLOCKED: every phase must be PASS; " + json.dumps(failed, sort_keys=True))
+          print("STRICT_E2E=PASS")
+          PY
+
 # strict-e2e trigger 2026-10-04
 
 # strict-hcpl-path-receipt 2026-10-04
