@@ -157,13 +157,14 @@ def test_authoritative_nc_connection_is_a_schematic_failure():
     assert any(x[0]=="G2-SCH-NC-PIN-CONNECTED-U19" and x[3]=="FAIL" for x in findings)
 
 
-def test_hcpl0600_project_identity_override_authorizes_declared_profile():
+def test_hcpl0600_project_identity_override_does_not_mask_compiled_pin_conflict():
     observed = {str(pin): {"name": name} for pin, name in {
         "1":"NC","2":"ANODE","3":"CATHODE","4":"NC","5":"VEE","6":"VO","7":"VO","8":"VCC"
     }.items()}
     identity = resolve_declared_vs_compiled("HCPL-0600", "HCPL-3120", observed, "HCPL-0600")
-    assert identity["state"] == "CONSISTENT"
-    assert identity["identity_override"] == "HCPL-0600"
+    assert identity["state"] == "CONTRADICTION"
+    assert any(item["pin"] == "5" and item["declared_expected"] == "GND"
+               and item["compiled_expected"] == "VEE" for item in identity["evidence"])
 
 
 def test_hcpl0600_enable_tied_to_vcc_is_not_a_failure():

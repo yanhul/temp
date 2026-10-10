@@ -165,25 +165,37 @@ def resolve_declared_vs_compiled(
             "compiled_expected": compiled_profile["pins"].get(str(pin)),
         })
 
-    if declared_profile_override and effective_declared == declared and effective_declared != compiled:
-        return {
-            "state": "CONSISTENT",
-            "reason": (
-                "Explicit project identity authority selects declared profile %r; "
-                "compiled library profile %r is retained as evidence but does not override "
-                "the authorized physical part identity."
-            ) % (effective_declared, compiled),
-            "evidence": evidence,
-            "identity_override": declared_profile_override,
-            "connected_nc_pins": connected_nc_pins,
-        }
+    # A project override establishes the expected physical part profile; it
+    # must not waive a conflicting compiled symbol pin map. The observed pin
+    # fingerprint below must still distinguish the declared profile from the
+    # compiled profile, otherwise the result remains UNKNOWN or CONTRADICTION.
 
     if effective_declared == compiled:
+        # Matching labels are not sufficient when authoritative pin evidence
+        # is present: the observed compiled pin functions must also agree with
+        # that shared profile. With no pin evidence, retain label-level
+        # consistency; with partial/mismatching pin evidence, fail closed.
+        if comparable == 0:
+            return {
+                "state": "CONSISTENT",
+                "reason": ("Declared profile override %r matches compiled identity." % effective_declared)
+                    if declared_profile_override else "Declared and compiled identities match; no comparable pin evidence was available.",
+                "evidence": evidence,
+            }
+        if declared_matches == comparable:
+            return {
+                "state": "CONSISTENT",
+                "reason": ("Observed pin functions match the authoritative profile %r." % effective_declared),
+                "evidence": evidence,
+                "declared_profile_source": declared_profile["source"],
+                "compiled_profile_source": compiled_profile["source"],
+            }
         return {
-            "state": "CONSISTENT",
-            "reason": ("Declared profile override %r matches compiled identity." % effective_declared)
-                if declared_profile_override else "Declared and compiled identities match.",
+            "state": "CONTRADICTION",
+            "reason": "Observed pin functions conflict with the shared authoritative declared/compiled profile.",
             "evidence": evidence,
+            "declared_profile_source": declared_profile["source"],
+            "compiled_profile_source": compiled_profile["source"],
         }
 
     # Require enough observed pins to make the distinction authoritative.
