@@ -229,3 +229,59 @@ def test_authoritative_mpn_overrides_stale_library_identity_for_physical_part_ch
     assert identity
     assert identity[0][3] == "FAIL"
     assert "directionality" in identity[0][4]
+
+
+
+def _temporary_hcpl0600_evidence(pin7_net="5V_RS232"):
+    return {
+        "schema": "altium-schematic-evidence.v1",
+        "status": "VERIFIED",
+        "components": [{
+            "reference": "U6",
+            "declared_value": "HCPL-0600",
+            "library_id": "IC_HCPL-3120-500E",
+            "mpn": "HCPL-3120-500E",
+            "pin_count": 8,
+            "properties": {"value": "HCPL-0600", "mpn": "HCPL-3120-500E"},
+            "pins": [
+                {"pin": "1", "pin_name": "NC", "electrical_type": "PASSIVE", "connected_net": None},
+                {"pin": "2", "pin_name": "ANODE", "electrical_type": "INPUT", "connected_net": "LED_IN"},
+                {"pin": "3", "pin_name": "CATHODE", "electrical_type": "INPUT", "connected_net": "LED_RET"},
+                {"pin": "4", "pin_name": "NC", "electrical_type": "PASSIVE", "connected_net": None},
+                {"pin": "5", "pin_name": "VEE", "electrical_type": "POWER", "connected_net": "GND_RS232"},
+                {"pin": "6", "pin_name": "V0", "electrical_type": "OUTPUT", "connected_net": "UART_TX0"},
+                {"pin": "7", "pin_name": "V0", "electrical_type": "OUTPUT", "connected_net": pin7_net},
+                {"pin": "8", "pin_name": "VCC", "electrical_type": "POWER", "connected_net": "5V_RS232"},
+            ],
+        }],
+    }
+
+
+def test_explicit_temporary_hcpl0600_override_checks_pin_number_net_topology():
+    findings = []
+    ss.run(
+        _temporary_hcpl0600_evidence(),
+        None,
+        lambda *args: findings.append(args),
+        identity_overrides={"HCPL0600": "HCPL0600"},
+    )
+    ids = {x[0] for x in findings}
+    assert "G2-SCH-IDENTITY-EVIDENCE-U6" not in ids
+    topology = next(x for x in findings if x[0] == "G2-HCPL-0600-TOPOLOGY-U6")
+    assert topology[1:4] == ("INFO", "schematic", "VERIFIED")
+    assert topology[5] == "ASSUMPTION"
+    override = next(x for x in findings if x[0] == "G2-SCH-IDENTITY-OVERRIDE-U6")
+    assert override[5] == "ASSUMPTION"
+    assert any(x[0] == "G2-SCH-METADATA-MPN-U6" for x in findings)
+
+
+def test_explicit_temporary_hcpl0600_override_still_blocks_bad_enable_topology():
+    findings = []
+    ss.run(
+        _temporary_hcpl0600_evidence(pin7_net="OTHER_SUPPLY"),
+        None,
+        lambda *args: findings.append(args),
+        identity_overrides={"HCPL0600": "HCPL0600"},
+    )
+    topology = next(x for x in findings if x[0] == "G2-HCPL-0600-TOPOLOGY-U6")
+    assert topology[1:4] == ("BLOCKER", "schematic", "FAIL")
