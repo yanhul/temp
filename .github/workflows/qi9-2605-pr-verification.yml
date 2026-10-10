@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: python -m pip install -r tools/altium-audit/requirements.txt
       - name: Semantic and phase-policy regression tests
-        run: python -m pytest -q tests/test_schematic_semantics.py tests/test_e2e_phase_policy.py
+        run: python -m pytest -q tests/test_part_identity.py tests/test_schematic_semantics.py tests/test_e2e_phase_policy.py
       - name: QI9-2605 schematic-only E2E
         shell: bash
         run: |
