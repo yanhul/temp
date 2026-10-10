@@ -165,18 +165,10 @@ def resolve_declared_vs_compiled(
             "compiled_expected": compiled_profile["pins"].get(str(pin)),
         })
 
-    if declared_profile_override and effective_declared == declared and effective_declared != compiled:
-        return {
-            "state": "CONSISTENT",
-            "reason": (
-                "Explicit project identity authority selects declared profile %r; "
-                "compiled library profile %r is retained as evidence but does not override "
-                "the authorized physical part identity."
-            ) % (effective_declared, compiled),
-            "evidence": evidence,
-            "identity_override": declared_profile_override,
-            "connected_nc_pins": connected_nc_pins,
-        }
+    # A project override establishes the expected physical part profile; it
+    # must not waive a conflicting compiled symbol pin map. The observed pin
+    # fingerprint below must still distinguish the declared profile from the
+    # compiled profile, otherwise the result remains UNKNOWN or CONTRADICTION.
 
     if effective_declared == compiled:
         return {
