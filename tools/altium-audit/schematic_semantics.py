@@ -299,6 +299,44 @@ def _emit_hcpl0600_bypass_findings(records, ids, add):
                 "VERIFIED",ref)
 
 
+def _emit_hcpl0600_override_topology(ref, pins, add):
+    """Validate pin-number/net topology under an explicit temporary HCPL-0600 authority.
+
+    The override does not rewrite MPN/library evidence. It replaces unreliable
+    compiled pin *labels* only for this explicitly authorized part assumption;
+    the physical pin-number connectivity must still satisfy the HCPL-0600
+    always-enabled output-side topology.
+    """
+    required = {pn: pins.get(pn) for pn in ("5", "6", "7", "8")}
+    missing = [pn for pn, pin in required.items() if not pin or not pin.get("net")]
+    if missing:
+        add("G2-HCPL-0600-TOPOLOGY-" + ref, "BLOCKER", "schematic", "UNKNOWN",
+            "Temporary HCPL-0600 authority cannot verify pin-number topology; missing connected net evidence for pins %s." % missing,
+            "FACT", ref)
+        return
+
+    nets = {pn: str(pin.get("net")) for pn, pin in required.items()}
+    ground = _norm(nets["5"])
+    issues = []
+    if not ground.startswith(("GND", "GROUND")):
+        issues.append("pin5 is not on a ground-labelled net (%s)" % nets["5"])
+    if _norm(nets["5"]) == _norm(nets["8"]):
+        issues.append("pin5 (GND) is shorted to pin8 (VCC) on %s" % nets["5"])
+    if _norm(nets["7"]) != _norm(nets["8"]):
+        issues.append("pin7 (VE/enable) is not tied to pin8 (VCC): %s != %s" % (nets["7"], nets["8"]))
+    if _norm(nets["6"]) in {_norm(nets["5"]), _norm(nets["7"]), _norm(nets["8"])}:
+        issues.append("pin6 (VO) is shorted to a supply net: %s" % nets["6"])
+
+    if issues:
+        add("G2-HCPL-0600-TOPOLOGY-" + ref, "BLOCKER", "schematic", "FAIL",
+            "Temporary HCPL-0600 pin-number/net topology failed: %s. Nets=%s" % (issues, nets),
+            "VERIFIED", ref)
+    else:
+        add("G2-HCPL-0600-TOPOLOGY-" + ref, "INFO", "schematic", "VERIFIED",
+            "Pin-number/net topology matches the temporarily user-authorized HCPL-0600 always-enabled topology; original MPN/library mismatch remains visible as an explicit assumption. Nets=%s" % nets,
+            "ASSUMPTION", ref)
+
+
 def run(components,netlist,add,identity_overrides=None,skip_hcpl=False):
     # Semantic layer consumes the canonical parsed evidence contract only.
     # Raw Altium objects are intentionally rejected here so parser/reconstruction
@@ -371,22 +409,35 @@ def run(components,netlist,add,identity_overrides=None,skip_hcpl=False):
             # library ID describes the compiled symbol and may be generic or
             # stale; canonical pin evidence still checks the symbol mapping
             # against the authoritative physical-part profile.
-            identity=resolve_declared_vs_compiled(i["value"],i.get("mpn") or i["library"],pins,override)
+            candidate_identity = i.get("mpn") or i["library"]
+            temporary_hcpl0600_authority = (
+                bool(override)
+                and _norm(override) == "HCPL0600"
+                and declared == "HCPL0600"
+                and "HCPL3120" in _norm(candidate_identity)
+            )
             if override:
                 add("G2-SCH-IDENTITY-OVERRIDE-"+ref,"INFO","schematic","VERIFIED",
-                    "Explicit project identity override: declared %r is audited against canonical profile %r; original declared value remains in evidence." % (i.get("value"),override),
+                    "Explicit project identity override: declared %r is audited against canonical profile %r; original declared value, MPN, and library identity remain in evidence." % (i.get("value"),override),
                     "ASSUMPTION",ref)
-            if identity["state"]=="CONTRADICTION":
-                add("G2-SCH-IDENTITY-EVIDENCE-"+ref,"BLOCKER","schematic","FAIL",
-                    "%s Evidence=%s"%(identity["reason"],identity.get("evidence",[])),"VERIFIED",ref)
-            if identity.get("connected_nc_pins"):
-                add("G2-SCH-NC-PIN-CONNECTED-"+ref,"BLOCKER","schematic","FAIL",
-                    "Authoritative NC pin(s) are connected: %s." % identity["connected_nc_pins"],
-                    "VERIFIED",ref)
-            elif identity["state"]=="UNKNOWN" and _norm(i.get("value"))!=_norm(i.get("library")):
-                add("G2-SCH-IDENTITY-UNRESOLVED-"+ref,"INFO","schematic","UNKNOWN",
-                    "Declared value %r and authoritative physical identity candidate %r cannot be distinguished from pin evidence: %s"
-                    %(i["value"],i.get("mpn") or i["library"],identity["reason"]),"FACT",ref)
+            if temporary_hcpl0600_authority:
+                # User-authorized temporary physical-part assumption. Do not
+                # silently relabel the MPN/library; validate pin-number/net
+                # topology and retain the mismatch as an explicit assumption.
+                _emit_hcpl0600_override_topology(ref, pins, add)
+            else:
+                identity=resolve_declared_vs_compiled(i["value"],candidate_identity,pins,override)
+                if identity["state"]=="CONTRADICTION":
+                    add("G2-SCH-IDENTITY-EVIDENCE-"+ref,"BLOCKER","schematic","FAIL",
+                        "%s Evidence=%s"%(identity["reason"],identity.get("evidence",[])),"VERIFIED",ref)
+                if identity.get("connected_nc_pins"):
+                    add("G2-SCH-NC-PIN-CONNECTED-"+ref,"BLOCKER","schematic","FAIL",
+                        "Authoritative NC pin(s) are connected: %s." % identity["connected_nc_pins"],
+                        "VERIFIED",ref)
+                elif identity["state"]=="UNKNOWN" and _norm(i.get("value"))!=_norm(i.get("library")):
+                    add("G2-SCH-IDENTITY-UNRESOLVED-"+ref,"INFO","schematic","UNKNOWN",
+                        "Declared value %r and authoritative physical identity candidate %r cannot be distinguished from pin evidence: %s"
+                        %(i["value"],candidate_identity,identity["reason"]),"FACT",ref)
 
         # Emit a per-instance isolation path receipt. This is diagnostic evidence only:
         # it never downgrades an authoritative identity/NC blocker and never repairs wiring.
