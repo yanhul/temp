@@ -12,7 +12,7 @@ def test_hcpl0600_vs_hcpl3120_is_contradiction_when_pin_fingerprint_matches_comp
         "3": {"name": "CATHODE"},
         "5": {"name": "VEE"},
         "6": {"name": "VO"},
-        "7": {"name": "NC"},
+        "7": {"name": "VO"},
         "8": {"name": "VCC"},
     }
     result = resolve_declared_vs_compiled("HCPL-0600", "HCPL-3120", pins)
