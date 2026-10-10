@@ -1,4 +1,4 @@
-name: qi9-2605-schematic-routing
+name: qi9-2605-schematic-gate-conformance
 
 on:
   push:
@@ -17,40 +17,55 @@ on:
       - '.github/workflows/qi9-2605-schematic-routing.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  audit:
+  schematic-gate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: python -m pip install -r tools/altium-audit/requirements.txt
       - run: python -m pip install pytest
-      - name: Semantic regression tests
+      - name: Semantic and phase-policy regression tests
         run: python -m pytest -q tests/test_schematic_semantics.py tests/test_e2e_phase_policy.py
-      - name: Audit QI9-2605
+      - name: Run schematic phase and classify truthful design status
+        shell: bash
         run: |
           set +e
-          python tools/altium-audit/audit_kit.py --input audit-input-2605 --output work-2605/kit --config altium-audit-2605.config.json --repair --max-retries 3
+          python tools/altium-audit/e2e_phase.py --phase schematic --input audit-input-2605 --output work-2605/schematic --config altium-audit-2605.config.json
           rc=$?
-          echo "audit_rc=$rc"
-          echo "=== findings ==="
-          cat work-2605/kit/audit-initial/findings.json || true
-          echo "=== schematic evidence ==="
-          cat work-2605/kit/audit-initial/schematic-evidence.json || true
-          echo "=== placement plan ==="
-          cat work-2605/kit/placement-routing-plan.json || true
-          cat work-2605/kit/anchor-first-placement-plan.json || true
-          echo "=== summary ==="
-          cat work-2605/kit/summary.json || true
-          exit $rc
-      - name: Upload audit evidence
+          set -e
+          python - "work-2605/schematic/phase_receipt.json" "$rc" <<'PY'
+          import json, sys
+          from pathlib import Path
+          path, raw_rc = Path(sys.argv[1]), int(sys.argv[2])
+          if not path.is_file():
+              raise SystemExit(f"missing schematic phase receipt: {path}")
+          receipt = json.loads(path.read_text(encoding="utf-8"))
+          if receipt.get("schema") != "altium-audit-e2e-phase/v2" or receipt.get("phase") != "SCHEMATIC":
+              raise SystemExit("invalid schematic phase receipt schema/phase")
+          status = receipt.get("status")
+          if status not in {"PASS", "BLOCKED"}:
+              raise SystemExit(f"unauthorized schematic status: {status!r}")
+          if (status == "PASS" and raw_rc != 0) or (status == "BLOCKED" and raw_rc == 0):
+              raise SystemExit(f"receipt/exit mismatch: status={status} rc={raw_rc}")
+          if status == "PASS":
+              gates = receipt.get("evidence", {}).get("required_gates", {})
+              if any(gates.get(k) != "VERIFIED" for k in ("G0_INTAKE", "G1_PARSE", "G2_COMPILE", "G3_CONNECTIVITY")):
+                  raise SystemExit("PASS receipt lacks verified G0-G3 gates")
+              if receipt.get("evidence", {}).get("required_unknown_findings"):
+                  raise SystemExit("PASS receipt contains unresolved required schematic findings")
+              print("SCHEMATIC_GATE_CONFORMANCE_PASS; DESIGN_STATUS=PASS")
+          else:
+              print("SCHEMATIC_GATE_CONFORMANCE_PASS; DESIGN_STATUS=BLOCKED")
+              print(json.dumps(receipt.get("evidence", {}).get("required_unknown_findings", []), sort_keys=True))
+          PY
+      - name: Upload schematic-only evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: qi9-2605-audit
-          path: work-2605/kit
-          if-no-files-found: warn
-
-# e2e-kickoff 2026-10-02
-# 2026-10-03: rerun after layer-aware placement, SMAJ semantic, and net-index routing fixes
-
-# 2026-10-03: force QI9-2605 strict evidence rebuild
+          name: qi9-2605-schematic-gate
+          path: work-2605/schematic
+          if-no-files-found: error
+          retention-days: 90
