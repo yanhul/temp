@@ -188,3 +188,20 @@ def test_hcpl_bypass_accepts_common_100nf_value_spellings():
     assert ss._is_100nf_class("0.1uF")
     assert ss._is_100nf_class("104")
     assert not ss._is_100nf_class("1uF")
+
+
+
+def test_known_smaj_voltage_rating_mismatch_is_blocker_in_semantic_gate():
+    component = {
+        "designator": "D12",
+        "value": "SMAJ15CA",
+        "library_reference": "SMAJ30CA",
+        "parameters": {"Value": "SMAJ30A", "MPN": "SMAJ30A"},
+        "pin_count": 2,
+    }
+    findings = run_checker(component, [])
+    finding = next(x for x in findings if x[0] == "G2-SCH-IDENTITY-EVIDENCE-D12")
+    assert finding[1] == "BLOCKER"
+    assert finding[2] == "schematic"
+    assert finding[3] == "FAIL"
+    assert "reverse_standoff_v" in finding[4]
