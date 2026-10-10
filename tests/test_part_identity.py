@@ -82,6 +82,16 @@ def test_same_smaj_identity_is_consistent_without_pin_evidence():
     assert result["state"] == "CONSISTENT"
 
 
+def test_smaj15ca_vs_smaj30a_detects_voltage_and_directionality_conflict():
+    result = resolve_declared_vs_compiled("SMAJ15CA", "SMAJ30A", {})
+    assert result["state"] == "CONTRADICTION"
+    conflicts = {item["attribute"]: item for item in result["evidence"]}
+    assert conflicts["reverse_standoff_v"]["declared"] == 15.0
+    assert conflicts["reverse_standoff_v"]["compiled"] == 30.0
+    assert conflicts["directionality"]["declared"] == "BIDIRECTIONAL"
+    assert conflicts["directionality"]["compiled"] == "UNIDIRECTIONAL"
+
+
 def test_unknown_tvs_identity_is_not_assigned_an_invented_voltage_spec():
     result = resolve_declared_vs_compiled("SMAJ9CA", "SMAJ30CA", {})
     assert result["state"] == "UNKNOWN"

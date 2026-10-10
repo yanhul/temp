@@ -59,6 +59,13 @@ AUTHORITATIVE_PART_SPECS = {
         "directionality": "BIDIRECTIONAL",
         "package": "SMA",
     },
+    "SMAJ30A": {
+        "source": "Diodes Incorporated SMAJ30A product specification: https://www.diodes.com/part/view/SMAJ30A",
+        "family": "SMAJ",
+        "reverse_standoff_v": 30.0,
+        "directionality": "UNIDIRECTIONAL",
+        "package": "SMA",
+    },
 }
 
 
@@ -224,7 +231,7 @@ def resolve_declared_vs_compiled(
             "state": "CONTRADICTION",
             "reason": (
                 "Observed pin functions match the declared-part profile and "
-                "conflict with the compiled-library profile."
+                "conflict with the compiled identity profile."
             ),
             "evidence": evidence,
             "declared_profile_source": declared_profile["source"],

@@ -206,3 +206,26 @@ def test_known_smaj_voltage_rating_mismatch_is_blocker_in_semantic_gate():
     assert finding[2] == "schematic"
     assert finding[3] == "FAIL"
     assert "reverse_standoff_v" in finding[4]
+
+
+def test_authoritative_mpn_overrides_stale_library_identity_for_physical_part_check():
+    evidence = {
+        "schema": "altium-schematic-evidence.v1",
+        "status": "VERIFIED",
+        "components": [{
+            "reference": "D12",
+            "declared_value": "SMAJ15CA",
+            "library_id": "SMAJ15CA",
+            "mpn": "SMAJ30A",
+            "pins": [
+                {"pin": "1", "pin_name": "A", "electrical_type": "PASSIVE", "connected_net": "N1"},
+                {"pin": "2", "pin_name": "K", "electrical_type": "PASSIVE", "connected_net": "GND"},
+            ],
+        }],
+    }
+    findings = []
+    ss.run(evidence, None, lambda *args: findings.append(args))
+    identity = [item for item in findings if item[0] == "G2-SCH-IDENTITY-EVIDENCE-D12"]
+    assert identity
+    assert identity[0][3] == "FAIL"
+    assert "directionality" in identity[0][4]
