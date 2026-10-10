@@ -46,14 +46,14 @@ AUTHORITATIVE_PIN_PROFILES = {
 # distinguish TVS variants whose package/pins match but voltage ratings differ.
 AUTHORITATIVE_PART_SPECS = {
     "SMAJ15CA": {
-        "source": "Diodes Incorporated SMAJ15CA product specification",
+        "source": "Diodes Incorporated SMAJ15CA product specification: https://www.diodes.com/part/view/SMAJ15CA",
         "family": "SMAJ",
         "reverse_standoff_v": 15.0,
         "directionality": "BIDIRECTIONAL",
         "package": "SMA",
     },
     "SMAJ30CA": {
-        "source": "Diodes Incorporated SMAJ30CA product specification",
+        "source": "Diodes Incorporated SMAJ30CA product specification: https://www.diodes.com/part/view/SMAJ30CA",
         "family": "SMAJ",
         "reverse_standoff_v": 30.0,
         "directionality": "BIDIRECTIONAL",
