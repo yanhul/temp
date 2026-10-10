@@ -24,6 +24,21 @@ def test_same_identity_is_consistent():
     assert result["state"] == "CONSISTENT"
 
 
+def test_same_identity_with_conflicting_observed_pin_functions_is_contradiction():
+    observed = {
+        "2": {"name": "ANODE"},
+        "3": {"name": "CATHODE"},
+        "5": {"name": "VEE"},
+        "6": {"name": "VO"},
+        "7": {"name": "VO"},
+        "8": {"name": "VCC"},
+    }
+    result = resolve_declared_vs_compiled("HCPL-0600", "HCPL-0600", observed)
+    assert result["state"] == "CONTRADICTION"
+    assert any(item["pin"] == "5" and item["declared_expected"] == "GND"
+               and item["observed"] == "VEE" for item in result["evidence"])
+
+
 def test_identity_override_does_not_waive_conflicting_compiled_pin_map():
     pins = {
         "2": {"name": "ANODE"},
