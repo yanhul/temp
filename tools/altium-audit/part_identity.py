@@ -42,6 +42,26 @@ AUTHORITATIVE_PIN_PROFILES = {
 }
 
 
+# Datasheet-backed electrical identity attributes. Pin fingerprints alone cannot
+# distinguish TVS variants whose package/pins match but voltage ratings differ.
+AUTHORITATIVE_PART_SPECS = {
+    "SMAJ15CA": {
+        "source": "Diodes Incorporated SMAJ15CA product specification: https://www.diodes.com/part/view/SMAJ15CA",
+        "family": "SMAJ",
+        "reverse_standoff_v": 15.0,
+        "directionality": "BIDIRECTIONAL",
+        "package": "SMA",
+    },
+    "SMAJ30CA": {
+        "source": "Diodes Incorporated SMAJ30CA product specification: https://www.diodes.com/part/view/SMAJ30CA",
+        "family": "SMAJ",
+        "reverse_standoff_v": 30.0,
+        "directionality": "BIDIRECTIONAL",
+        "package": "SMA",
+    },
+}
+
+
 def profile_key(identity: Any) -> str:
     """Map compiled library/order-code strings onto authoritative families."""
     n = norm(identity)
@@ -87,6 +107,23 @@ def resolve_declared_vs_compiled(
             "reason": "Declared value or compiled library identity is missing.",
             "evidence": [],
         }
+
+    declared_spec = AUTHORITATIVE_PART_SPECS.get(effective_declared)
+    compiled_spec = AUTHORITATIVE_PART_SPECS.get(compiled)
+    if declared_spec and compiled_spec:
+        conflicts = {
+            key: {"declared": declared_spec.get(key), "compiled": compiled_spec.get(key)}
+            for key in ("family", "reverse_standoff_v", "directionality", "package")
+            if declared_spec.get(key) != compiled_spec.get(key)
+        }
+        if conflicts:
+            return {
+                "state": "CONTRADICTION",
+                "reason": "Declared and compiled part identities conflict on authoritative electrical/package specifications.",
+                "evidence": [{"attribute": key, **values} for key, values in conflicts.items()],
+                "declared_profile_source": declared_spec["source"],
+                "compiled_profile_source": compiled_spec["source"],
+            }
 
     declared_profile = AUTHORITATIVE_PIN_PROFILES.get(effective_declared)
     compiled_profile = AUTHORITATIVE_PIN_PROFILES.get(compiled)

@@ -28,7 +28,7 @@ jobs:
       - run: python -m pip install -r tools/altium-audit/requirements.txt
       - run: python -m pip install pytest
       - name: Semantic and phase-policy regression tests
-        run: python -m pytest -q tests/test_schematic_semantics.py tests/test_e2e_phase_policy.py
+        run: python -m pytest -q tests/test_part_identity.py tests/test_schematic_semantics.py tests/test_e2e_phase_policy.py
       - name: Run schematic phase and classify truthful design status
         shell: bash
         run: |
