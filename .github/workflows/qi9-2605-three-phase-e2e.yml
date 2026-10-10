@@ -16,12 +16,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python -m pip install -r tools/altium-audit/requirements.txt
-      - run: python tools/altium-audit/e2e_phase.py --phase schematic --input audit-input-2605 --output e2e/schematic --config altium-audit-2605.config.json
+      - name: Run schematic phase and validate truthful receipt
+        shell: bash
+        run: |
+          set +e
+          python tools/altium-audit/e2e_phase.py --phase schematic --input audit-input-2605 --output e2e/schematic --config altium-audit-2605.config.json
+          rc=$?
+          set -e
+          python - "e2e/schematic/phase_receipt.json" "schematic" "$rc" <<'PY'
+          import json, sys
+          from pathlib import Path
+          path, expected_phase, raw_rc = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+          if not path.is_file():
+              raise SystemExit(f"missing phase receipt: {path}")
+          receipt = json.loads(path.read_text())
+          status = receipt.get("status")
+          if receipt.get("phase") != expected_phase.upper():
+              raise SystemExit(f"phase mismatch: {receipt.get('phase')!r}")
+          if status not in {"PASS", "BLOCKED"}:
+              raise SystemExit(f"unauthorized phase status: {status!r}")
+          if (status == "PASS" and raw_rc != 0) or (status == "BLOCKED" and raw_rc == 0):
+              raise SystemExit(f"receipt/exit mismatch: status={status} rc={raw_rc}")
+          print(f"PHASE_RECEIPT_VALID={expected_phase.upper()}:{status}")
+          PY
       - if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: qi9-2605-e2e-schematic
           path: e2e/schematic
+      - name: Unlock placement only after schematic PASS
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("e2e/schematic/phase_receipt.json")
+          if not p.is_file():
+              raise SystemExit("SCHEMATIC BLOCKED: receipt missing")
+          r = json.loads(p.read_text())
+          if r.get("phase") != "SCHEMATIC" or r.get("status") != "PASS":
+              raise SystemExit("SCHEMATIC BLOCKED: placement must not run; " + str(r.get("status")))
+          print("SCHEMATIC PASS: placement may start")
+          PY
   placement:
     needs: schematic
     runs-on: ubuntu-latest
@@ -32,12 +69,49 @@ jobs:
         with:
           name: qi9-2605-e2e-schematic
           path: e2e/schematic
-      - run: python tools/altium-audit/e2e_phase.py --phase placement --input audit-input-2605 --output e2e/placement --config altium-audit-2605.config.json --upstream-receipt e2e/schematic/phase_receipt.json
+      - name: Run placement phase and validate truthful receipt
+        shell: bash
+        run: |
+          set +e
+          python tools/altium-audit/e2e_phase.py --phase placement --input audit-input-2605 --output e2e/placement --config altium-audit-2605.config.json --upstream-receipt e2e/schematic/phase_receipt.json
+          rc=$?
+          set -e
+          python - "e2e/placement/phase_receipt.json" "placement" "$rc" <<'PY'
+          import json, sys
+          from pathlib import Path
+          path, expected_phase, raw_rc = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+          if not path.is_file():
+              raise SystemExit(f"missing phase receipt: {path}")
+          receipt = json.loads(path.read_text())
+          status = receipt.get("status")
+          if receipt.get("phase") != expected_phase.upper():
+              raise SystemExit(f"phase mismatch: {receipt.get('phase')!r}")
+          if status not in {"PASS", "BLOCKED"}:
+              raise SystemExit(f"unauthorized phase status: {status!r}")
+          if (status == "PASS" and raw_rc != 0) or (status == "BLOCKED" and raw_rc == 0):
+              raise SystemExit(f"receipt/exit mismatch: status={status} rc={raw_rc}")
+          print(f"PHASE_RECEIPT_VALID={expected_phase.upper()}:{status}")
+          PY
       - if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: qi9-2605-e2e-placement
           path: e2e/placement
+      - name: Unlock routing only after placement PASS
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("e2e/placement/phase_receipt.json")
+          if not p.is_file():
+              raise SystemExit("PLACEMENT BLOCKED: receipt missing")
+          r = json.loads(p.read_text())
+          if r.get("phase") != "PLACEMENT" or r.get("status") != "PASS":
+              raise SystemExit("PLACEMENT BLOCKED: routing must not run; " + str(r.get("status")))
+          print("PLACEMENT PASS: routing may start")
+          PY
   routing:
     needs: placement
     runs-on: ubuntu-latest
@@ -48,12 +122,100 @@ jobs:
         with:
           name: qi9-2605-e2e-placement
           path: e2e/placement
-      - run: python tools/altium-audit/e2e_phase.py --phase routing --input audit-input-2605 --output e2e/routing --config altium-audit-2605.config.json --upstream-receipt e2e/placement/phase_receipt.json
+      - name: Run routing phase and validate truthful receipt
+        shell: bash
+        run: |
+          set +e
+          python tools/altium-audit/e2e_phase.py --phase routing --input audit-input-2605 --output e2e/routing --config altium-audit-2605.config.json --upstream-receipt e2e/placement/phase_receipt.json
+          rc=$?
+          set -e
+          python - "e2e/routing/phase_receipt.json" "routing" "$rc" <<'PY'
+          import json, sys
+          from pathlib import Path
+          path, expected_phase, raw_rc = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+          if not path.is_file():
+              raise SystemExit(f"missing phase receipt: {path}")
+          receipt = json.loads(path.read_text())
+          status = receipt.get("status")
+          if receipt.get("phase") != expected_phase.upper():
+              raise SystemExit(f"phase mismatch: {receipt.get('phase')!r}")
+          if status not in {"PASS", "BLOCKED"}:
+              raise SystemExit(f"unauthorized phase status: {status!r}")
+          if (status == "PASS" and raw_rc != 0) or (status == "BLOCKED" and raw_rc == 0):
+              raise SystemExit(f"receipt/exit mismatch: status={status} rc={raw_rc}")
+          print(f"PHASE_RECEIPT_VALID={expected_phase.upper()}:{status}")
+          PY
       - if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: qi9-2605-e2e-routing
           path: e2e/routing
+
+  strict_terminal_gate:
+    needs: [schematic, placement, routing]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: qi9-2605-e2e-schematic
+          path: e2e/schematic
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: qi9-2605-e2e-placement
+          path: e2e/placement
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: qi9-2605-e2e-routing
+          path: e2e/routing
+      - name: Require PASS at every phase and classify upstream skips
+        shell: bash
+        env:
+          SCHEMATIC_JOB_RESULT: ${{ needs.schematic.result }}
+          PLACEMENT_JOB_RESULT: ${{ needs.placement.result }}
+          ROUTING_JOB_RESULT: ${{ needs.routing.result }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          phases = [
+              ("SCHEMATIC", Path("e2e/schematic/phase_receipt.json")),
+              ("PLACEMENT", Path("e2e/placement/phase_receipt.json")),
+              ("ROUTING", Path("e2e/routing/phase_receipt.json")),
+          ]
+          job_results = {
+              "SCHEMATIC": os.environ["SCHEMATIC_JOB_RESULT"],
+              "PLACEMENT": os.environ["PLACEMENT_JOB_RESULT"],
+              "ROUTING": os.environ["ROUTING_JOB_RESULT"],
+          }
+          states = {}
+          for expected, path in phases:
+              if not path.is_file():
+                  # A missing receipt is only classified as an upstream skip when
+                  # GitHub confirms this job never ran because its predecessor failed/skipped.
+                  predecessor = {"PLACEMENT": "SCHEMATIC", "ROUTING": "PLACEMENT"}.get(expected)
+                  if predecessor and job_results[expected] == "skipped" and job_results[predecessor] in {"failure", "cancelled", "skipped"}:
+                      states[expected] = "SKIPPED_BY_UPSTREAM_BLOCK"
+                  else:
+                      states[expected] = "MISSING_RECEIPT"
+                  continue
+              receipt = json.loads(path.read_text())
+              if receipt.get("phase") != expected:
+                  states[expected] = "INVALID_PHASE:" + str(receipt.get("phase"))
+              else:
+                  states[expected] = receipt.get("status", "MISSING_STATUS")
+          print("STRICT_E2E_JOB_RESULTS=" + json.dumps(job_results, sort_keys=True))
+          print("STRICT_E2E_PHASE_STATES=" + json.dumps(states, sort_keys=True))
+          # SKIPPED_BY_UPSTREAM_BLOCK is truthful diagnostic state, never PASS.
+          failed = {phase: status for phase, status in states.items() if status != "PASS"}
+          if failed:
+              raise SystemExit("STRICT EDA E2E BLOCKED: every phase must be PASS; " + json.dumps(failed, sort_keys=True))
+          print("STRICT_E2E=PASS")
+          PY
 
 # strict-e2e trigger 2026-10-04
 
