@@ -1,0 +1,50 @@
+*** Begin Patch
+*** Update File: c/setup_download.py
+@@
+ def download_file(url, dest, spec, *, token=None, progress=None, opener=None,
+@@
+     opener = opener or urllib.request.urlopen
+     size = int(spec["size"])
+-    if os.path.exists(dest) and os.path.getsize(dest) == size:
+-        return "present"
++    hasher, expected = _hasher(spec) if verify else (None, None)
++    if verify and hasher is None:
++        raise DownloadError(f"{os.path.basename(dest)}: missing supported hash metadata; refusing unverified file")
++    if os.path.exists(dest) and os.path.getsize(dest) == size:
++        if not verify or verify_file(dest, spec):
++            return "present"
+@@
+-    hasher, expected = _hasher(spec) if verify else (None, None)
+     if hasher is not None and have:
+@@
+ def verify_file(path, spec):
+@@
+     hasher, expected = _hasher(spec)
+     if hasher is None:
+-        return True
++        return False
+@@
+ def download_file_windows(url, dest, spec, curl, *, token=None, progress=None, verify=True):
+@@
+     size = int(spec["size"])
+-    if os.path.exists(dest) and os.path.getsize(dest) == size:
+-        return "present"
++    if verify and _hasher(spec)[0] is None:
++        raise DownloadError(f"{os.path.basename(dest)}: missing supported hash metadata; refusing unverified file")
++    if os.path.exists(dest) and os.path.getsize(dest) == size:
++        if not verify or verify_file(dest, spec):
++            return "present"
+@@
+ def is_complete(model_dir):
+-    """The folder holds every file the manifest lists, at its size."""
++    """The folder holds every manifest file with its expected size and hash."""
+@@
+-        if not os.path.exists(path) or os.path.getsize(path) != int(spec["size"]):
++        if not verify_file(path, spec):
+@@
+     manifest = {"repo": repo, "revision": revision, "complete": False,
+-                "files": [{"path": s["path"], "size": s["size"]} for s in files]}
++                "files": [{"path": s["path"], "size": s["size"],
++                           "sha256": s.get("sha256"), "git_oid": s.get("git_oid")}
++                          for s in files]}
+*** End Patch
