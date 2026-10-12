@@ -1,0 +1,25 @@
+name: Colibri downloader audit
+on:
+  push:
+    branches: [audit/colibri-download-integrity]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  downloader-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: JustVugg/colibri
+          ref: main
+          path: colibri
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Existing downloader test suite
+        run: python -m unittest discover -s colibri/c/tests -p 'test_setup_download.py' -v
+      - name: Strict integrity regression tests
+        run: python -m unittest discover -s tests/colibri-audit -p 'test_*.py' -v
