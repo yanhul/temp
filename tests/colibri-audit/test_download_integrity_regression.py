@@ -53,11 +53,14 @@ class DownloadIntegrityRegression(unittest.TestCase):
             path.write_bytes(b"EVIL")
             spec = {"size": 4, "sha256": hashlib.sha256(b"GOOD").hexdigest()}
             from unittest.mock import patch
-            with patch.object(setup_download, "wsl_windows_path", return_value=None):
+            with patch.object(setup_download, "wsl_windows_path", return_value=None) as translate:
                 with self.assertRaises(setup_download.DownloadError):
                     setup_download.download_file_windows(
                         "https://invalid.example/model.bin", str(path), spec, "curl.exe"
                     )
+                # If the same-size file were incorrectly accepted as present, the
+                # Windows path translator would never be reached.
+                translate.assert_called_once()
             self.assertEqual(path.read_bytes(), b"EVIL")
 
 
