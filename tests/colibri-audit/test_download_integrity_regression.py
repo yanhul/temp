@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "colibri" / "c"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "colibri" / "c"))
 import setup_download
 
 
