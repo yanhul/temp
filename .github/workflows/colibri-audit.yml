@@ -21,5 +21,9 @@ jobs:
           python-version: "3.12"
       - name: Existing downloader test suite
         run: python -m unittest discover -s colibri/c/tests -p 'test_setup_download.py' -v
-      - name: Strict integrity regression tests
+      - name: Apply candidate integrity patch to isolated Colibri checkout
+        run: python patches/colibri/apply_integrity_patch.py
+      - name: Existing downloader suite against patched candidate
+        run: python -m unittest discover -s colibri/c/tests -p 'test_setup_download.py' -v
+      - name: Strict integrity regression tests against patched candidate
         run: python -m unittest discover -s tests/colibri-audit -p 'test_*.py' -v
