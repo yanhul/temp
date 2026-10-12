@@ -27,6 +27,22 @@ class DownloadIntegrityRegression(unittest.TestCase):
             path.write_bytes(b"DATA")
             self.assertFalse(setup_download.verify_file(str(path), {"size": 4}))
 
+    def test_manifest_completion_rechecks_hash_not_only_size(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "model.bin"
+            path.write_bytes(b"GOOD")
+            import json
+            (root / setup_download.MANIFEST).write_text(json.dumps({
+                "complete": True,
+                "files": [{"path": "model.bin", "size": 4,
+                           "sha256": hashlib.sha256(b"GOOD").hexdigest(),
+                           "git_oid": None}],
+            }))
+            self.assertTrue(setup_download.is_complete(str(root)))
+            path.write_bytes(b"EVIL")
+            self.assertFalse(setup_download.is_complete(str(root)))
+
     def test_windows_fast_path_does_not_accept_same_size_corruption(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "model.bin"
