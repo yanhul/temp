@@ -17,9 +17,13 @@ class DownloadIntegrityRegression(unittest.TestCase):
             spec = {"size": 4, "sha256": hashlib.sha256(b"GOOD").hexdigest()}
             self.assertFalse(setup_download.verify_file(str(path), spec))
             # A matching size must not bypass digest verification.
-            self.assertNotEqual(setup_download.download_file(
-                "unused", str(path), spec, opener=lambda *a, **k: self.fail("must not fetch")
-            ), "present")
+            with self.assertRaises(setup_download.DownloadError):
+                setup_download.download_file(
+                    "https://invalid.example/model.bin", str(path), spec,
+                    opener=lambda *a, **k: (_ for _ in ()).throw(
+                        setup_download.DownloadError("forced offline after rejecting fast path"))
+                )
+            self.assertEqual(path.read_bytes(), b"EVIL")
 
     def test_missing_hash_metadata_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
@@ -48,9 +52,13 @@ class DownloadIntegrityRegression(unittest.TestCase):
             path = Path(td) / "model.bin"
             path.write_bytes(b"EVIL")
             spec = {"size": 4, "sha256": hashlib.sha256(b"GOOD").hexdigest()}
-            self.assertNotEqual(setup_download.download_file_windows(
-                "unused", str(path), spec, "curl.exe"
-            ), "present")
+            from unittest.mock import patch
+            with patch.object(setup_download, "wsl_windows_path", return_value=None):
+                with self.assertRaises(setup_download.DownloadError):
+                    setup_download.download_file_windows(
+                        "https://invalid.example/model.bin", str(path), spec, "curl.exe"
+                    )
+            self.assertEqual(path.read_bytes(), b"EVIL")
 
 
 if __name__ == "__main__":
