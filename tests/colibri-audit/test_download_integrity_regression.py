@@ -26,10 +26,26 @@ class DownloadIntegrityRegression(unittest.TestCase):
             self.assertEqual(path.read_bytes(), b"EVIL")
 
     def test_missing_hash_metadata_fails_closed(self):
+        from unittest.mock import patch
+        spec = {"size": 4}
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "model.bin"
             path.write_bytes(b"DATA")
-            self.assertFalse(setup_download.verify_file(str(path), {"size": 4}))
+            self.assertFalse(setup_download.verify_file(str(path), spec))
+            # Exercise the actual fast paths: metadata absence must raise before
+            # either downloader can return "present" from a size-only match.
+            with self.assertRaises(setup_download.DownloadError):
+                setup_download.download_file(
+                    "https://invalid.example/model.bin", str(path), spec,
+                    opener=lambda *a, **k: (_ for _ in ()).throw(
+                        setup_download.DownloadError("unexpected network access"))
+                )
+            with patch.object(setup_download, "wsl_windows_path") as translate:
+                with self.assertRaises(setup_download.DownloadError):
+                    setup_download.download_file_windows(
+                        "https://invalid.example/model.bin", str(path), spec, "curl.exe"
+                    )
+                translate.assert_not_called()
 
     def test_manifest_completion_rechecks_hash_not_only_size(self):
         with tempfile.TemporaryDirectory() as td:
