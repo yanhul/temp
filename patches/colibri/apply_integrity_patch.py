@@ -15,6 +15,18 @@ text = DOWNLOAD.read_text(encoding="utf-8")
 text = replace_once(text, "import shutil\nimport subprocess", "import shutil\nimport stat\nimport subprocess", "regular-file mode import")
 text = replace_once(
     text,
+'''    if spec.get("sha256"):
+        return hashlib.sha256(), spec["sha256"].lower()''',
+'''    if spec.get("sha256"):
+        digest = spec["sha256"].lower()
+        if digest.startswith("sha256:"):
+            digest = digest[len("sha256:"):]
+        if not re.fullmatch(r"[0-9a-f]{64}", digest):
+            return None, None
+        return hashlib.sha256(), digest''',
+"normalize and validate Hugging Face LFS sha256 oid")
+text = replace_once(
+    text,
 '''    size = int(spec["size"])
     if os.path.exists(dest) and os.path.getsize(dest) == size:
         return "present"
