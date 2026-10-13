@@ -14,6 +14,7 @@ It deliberately does not implement a decompiler, execute target binaries, or cla
 - Inferences cannot self-promote to verified facts.
 - Missing, contradictory, or merely inferred evidence cannot produce `PASS`; absent required verification yields `INCONCLUSIVE`.
 - Deterministic lineage traversal and standard-library unit tests.
+- Explicit file-offset ↔ VA mapping from caller-supplied section metadata; rejects gaps, overlaps, and virtual-only bytes instead of guessing.
 
 ## Run tests
 
@@ -24,7 +25,7 @@ python -m unittest -v
 
 ## Next gated steps
 
-1. Add canonical address mapping (file offset, image base, virtual address) with explicit coordinate-space labels.
+1. Extend address mapping with format-specific parsers and independently verified fixtures; current mapper requires trusted caller-supplied section metadata.
 2. Add provider adapters that preserve provider/version/configuration and never silently fall back.
 3. Add a hypothesis planner that selects the next probe by expected uncertainty reduction, cost, and risk.
 4. Add semantic/version diff and behavioral reconstruction tests.
