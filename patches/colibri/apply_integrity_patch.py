@@ -202,9 +202,17 @@ flow = replace_once(
 flow = replace_once(
     flow,
 '''        if setup_download.is_complete(model_dir):
-            ui.say("\\nDownload: already complete")''',
-'''        if setup_download.is_complete(model_dir, entry.repo, entry.revision):
-            ui.say("\\nDownload: already complete")''',
-"setup fast-path identity check")
+            ui.say("\\nDownload: already complete")
+        else:
+            ui.say(f"\\nDownload: {entry.repo} ({human_size(entry.disk_gb * GB)}); safe to "
+                   "interrupt, rerun to continue")
+            download_model(ui, entry, model_dir, via_windows=a.via_windows, verify=not a.no_verify)''',
+'''        # Always refresh the source listing before trusting a local cache: refs such
+        # as "main" are mutable, so matching the manifest's revision string is not
+        # proof that its files still match today's remote revision.
+        ui.say(f"\\nDownload: checking current remote revision for {entry.repo}; "
+               "safe to interrupt, rerun to continue")
+        download_model(ui, entry, model_dir, via_windows=a.via_windows, verify=not a.no_verify)''',
+"mutable-revision cache shortcut must revalidate remotely")
 FLOW.write_text(flow, encoding="utf-8")
 print("Applied strict Colibri integrity hardening to isolated checkout.")
