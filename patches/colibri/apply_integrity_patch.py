@@ -18,6 +18,8 @@ text = replace_once(
 '''    if spec.get("sha256"):
         return hashlib.sha256(), spec["sha256"].lower()''',
 '''    if spec.get("sha256"):
+        if not isinstance(spec["sha256"], str):
+            return None, None
         digest = spec["sha256"].lower()
         if digest.startswith("sha256:"):
             digest = digest[len("sha256:"):]
@@ -25,6 +27,15 @@ text = replace_once(
             return None, None
         return hashlib.sha256(), digest''',
 "normalize and validate Hugging Face LFS sha256 oid")
+text = replace_once(
+    text,
+'''    if spec.get("git_oid"):
+        sha1 = hashlib.sha1()''',
+'''    if spec.get("git_oid"):
+        if not isinstance(spec["git_oid"], str) or not re.fullmatch(r"[0-9a-fA-F]{40}", spec["git_oid"]):
+            return None, None
+        sha1 = hashlib.sha1()''',
+"validate Git blob OID metadata")
 text = replace_once(
     text,
 '''    size = int(spec["size"])
