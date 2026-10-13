@@ -129,6 +129,24 @@ class DownloadIntegrityRegression(unittest.TestCase):
             self.assertFalse(setup_download.verify_file(
                 str(path), {"size": len(data), "sha256": "sha256:" + "0" * 64}))
 
+    def test_malformed_hash_metadata_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "model.bin"
+            path.write_bytes(b"GOOD")
+            digest = hashlib.sha256(b"GOOD").hexdigest()
+            for bad_spec in (
+                {"path": "model.bin", "size": 4, "sha256": 123},
+                {"path": "model.bin", "size": 4, "sha256": "sha256:not-a-digest"},
+                {"path": "model.bin", "size": 4, "git_oid": "not-a-git-oid"},
+            ):
+                with self.subTest(spec=bad_spec):
+                    self.assertFalse(setup_download.verify_file(str(path), bad_spec))
+                    manifest(root, files=[bad_spec])
+                    self.assertFalse(setup_download.is_complete(str(root)))
+            self.assertFalse(setup_download.verify_file(
+                str(path), {"size": True, "sha256": digest}))
+
     def test_git_blob_oid_is_verified_using_git_blob_hash(self):
         data = b"plain file"
         oid = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
