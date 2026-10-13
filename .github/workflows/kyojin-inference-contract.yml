@@ -1,0 +1,28 @@
+name: Kyojin inference adapter contract
+
+on:
+  pull_request:
+    paths:
+      - "capabilities/kyojin-inference/**"
+      - ".github/workflows/kyojin-inference-contract.yml"
+  push:
+    branches: [main]
+    paths:
+      - "capabilities/kyojin-inference/**"
+      - ".github/workflows/kyojin-inference-contract.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  contract-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile adapter and tests
+        run: python -m py_compile capabilities/kyojin-inference/provider.py capabilities/kyojin-inference/tests/test_provider.py
+      - name: Run CPU-only contract tests
+        run: python -m unittest discover -s capabilities/kyojin-inference/tests -v
