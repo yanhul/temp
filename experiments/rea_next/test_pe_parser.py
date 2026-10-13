@@ -127,6 +127,23 @@ class PEParserTests(unittest.TestCase):
         with self.assertRaises(PEFormatError):
             parse_pe(bytes(data))
 
+    def test_deterministic_header_mutation_never_leaks_internal_exceptions(self):
+        import random
+
+        rng = random.Random(0x524541)
+        seed = make_pe()
+        for _ in range(1500):
+            data = bytearray(seed)
+            for _ in range(rng.randint(1, 4)):
+                index = rng.randrange(len(data))
+                data[index] = rng.randrange(256)
+            try:
+                parse_pe(bytes(data))
+            except PEFormatError:
+                pass
+            except Exception as exc:
+                self.fail(f"parser leaked {type(exc).__name__}: {exc}")
+
     def test_rejects_pe_header_offset_outside_file(self):
         data = bytearray(make_pe())
         struct.pack_into("<I", data, 0x3C, 0xFFFFFFF0)
