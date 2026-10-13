@@ -144,8 +144,14 @@ class DownloadIntegrityRegression(unittest.TestCase):
                     self.assertFalse(setup_download.verify_file(str(path), bad_spec))
                     manifest(root, files=[bad_spec])
                     self.assertFalse(setup_download.is_complete(str(root)))
-            self.assertFalse(setup_download.verify_file(
-                str(path), {"size": True, "sha256": digest}))
+            # Size metadata must be an actual non-boolean integer; coercion is unsafe.
+            one_byte = root / "one-byte.bin"
+            one_byte.write_bytes(b"x")
+            one_byte_digest = hashlib.sha256(b"x").hexdigest()
+            for bad_size in (True, 1.0, 1.5, "1"):
+                with self.subTest(size=bad_size):
+                    self.assertFalse(setup_download.verify_file(
+                        str(one_byte), {"size": bad_size, "sha256": one_byte_digest})))
 
     def test_git_blob_oid_is_verified_using_git_blob_hash(self):
         data = b"plain file"
