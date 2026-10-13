@@ -30,16 +30,19 @@ class AddressMap:
         sections: Iterable[Section],
         file_size: int,
     ) -> None:
-        if image_base < 0 or file_size <= 0:
-            raise AddressMappingError("image_base must be non-negative and file_size positive")
+        if (not isinstance(image_base, int) or isinstance(image_base, bool) or image_base < 0
+                or not isinstance(file_size, int) or isinstance(file_size, bool) or file_size <= 0):
+            raise AddressMappingError("image_base must be a non-negative integer and file_size a positive integer")
         self.image_base = image_base
         self.file_size = file_size
         self.sections = tuple(sections)
         if not self.sections:
             raise AddressMappingError("at least one section is required")
         for s in self.sections:
-            if not s.name or min(s.file_offset, s.virtual_address, s.raw_size, s.virtual_size) < 0:
-                raise AddressMappingError("section fields must be non-negative and name non-empty")
+            values = (s.file_offset, s.virtual_address, s.raw_size, s.virtual_size)
+            if (not isinstance(s.name, str) or not s.name
+                    or any(not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in values)):
+                raise AddressMappingError("section fields must be non-negative integers and name non-empty")
             if s.raw_size == 0 and s.virtual_size == 0:
                 raise AddressMappingError("empty sections are not mappable")
             if s.file_offset + s.raw_size > file_size:
@@ -62,17 +65,20 @@ class AddressMap:
                 raise AddressMappingError(f"{message}: {previous[2]} / {current[2]}")
 
     def file_offset_to_va(self, offset: int) -> int:
-        if offset < 0 or offset >= self.file_size:
-            raise AddressMappingError("file offset is outside the file")
-        matches = [s for s in self.sections if s.file_offset <= offset < s.file_offset + s.raw_size]
+        if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0 or offset >= self.file_size:
+            raise AddressMappingError("file offset is outside the file or not an integer")
+        matches = [
+            s for s in self.sections
+            if s.file_offset <= offset < s.file_offset + min(s.raw_size, s.virtual_size)
+        ]
         if len(matches) != 1:
-            raise AddressMappingError("file offset is not uniquely mapped by supplied sections")
+            raise AddressMappingError("file offset is not uniquely mapped to file-backed virtual bytes")
         section = matches[0]
         return self.image_base + section.virtual_address + (offset - section.file_offset)
 
     def va_to_file_offset(self, va: int) -> int:
-        if va < self.image_base:
-            raise AddressMappingError("VA is below image base")
+        if not isinstance(va, int) or isinstance(va, bool) or va < self.image_base:
+            raise AddressMappingError("VA is below image base or not an integer")
         rva = va - self.image_base
         matches = [
             s for s in self.sections
@@ -82,8 +88,8 @@ class AddressMap:
             raise AddressMappingError("VA is not uniquely mapped by supplied sections")
         section = matches[0]
         delta = rva - section.virtual_address
-        if delta >= section.raw_size:
-            raise AddressMappingError("VA points to virtual-only bytes with no file backing")
+        if delta >= min(section.raw_size, section.virtual_size):
+            raise AddressMappingError("VA points to virtual-only or raw-padding bytes with no valid mapping")
         offset = section.file_offset + delta
         if offset >= self.file_size:
             raise AddressMappingError("mapped file offset is outside the file")
