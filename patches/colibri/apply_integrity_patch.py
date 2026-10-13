@@ -210,8 +210,11 @@ flow = replace_once(
 '''        # Always refresh the source listing before trusting a local cache: refs such
         # as "main" are mutable, so matching the manifest's revision string is not
         # proof that its files still match today's remote revision.
-        ui.say(f"\\nDownload: checking current remote revision for {entry.repo}; "
-               "safe to interrupt, rerun to continue")
+        if setup_download.is_complete(model_dir, entry.repo, entry.revision):
+            ui.say("\\nDownload: already complete locally; revalidating current remote revision")
+        else:
+            ui.say(f"\\nDownload: checking current remote revision for {entry.repo}; "
+                   "safe to interrupt, rerun to continue")
         download_model(ui, entry, model_dir, via_windows=a.via_windows, verify=not a.no_verify)''',
 "mutable-revision cache shortcut must revalidate remotely")
 FLOW.write_text(flow, encoding="utf-8")
