@@ -99,7 +99,7 @@ class PEParserTests(unittest.TestCase):
 
     def test_rejects_size_of_headers_larger_than_size_of_image(self):
         data = bytearray(make_pe())
-        struct.pack_into("<I", data, 0x98 + 56, 0x200)
+        struct.pack_into("<I", data, 0x98 + 56, 0x100)
         with self.assertRaises(PEFormatError):
             parse_pe(bytes(data))
 
