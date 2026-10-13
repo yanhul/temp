@@ -104,13 +104,13 @@ class DownloadIntegrityRegression(unittest.TestCase):
                 translate.assert_called_once()
             self.assertEqual(path.read_bytes(), b"EVIL")
 
-    def test_git_blob_oid_is_accepted_as_supported_integrity_metadata(self):
+    def test_git_blob_oid_alone_is_not_accepted_as_supported_integrity_metadata(self):
         data = b"plain file"
         oid = hashlib.sha1(b"blob %d\\0" % len(data) + data).hexdigest()
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "plain.txt"
             path.write_bytes(data)
-            self.assertTrue(setup_download.verify_file(
+            self.assertFalse(setup_download.verify_file(
                 str(path), {"size": len(data), "git_oid": oid}))
 
 
