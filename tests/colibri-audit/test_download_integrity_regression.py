@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -103,6 +104,19 @@ class DownloadIntegrityRegression(unittest.TestCase):
                         "https://invalid.example/model.bin", str(path), spec, "curl.exe")
                 translate.assert_called_once()
             self.assertEqual(path.read_bytes(), b"EVIL")
+
+    def test_verifier_rejects_symlink_even_when_target_hash_matches(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / "target.bin"
+            link = root / "link.bin"
+            target.write_bytes(b"GOOD")
+            spec = file_spec(data=b"GOOD")
+            try:
+                os.symlink(target, link)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlink creation is unavailable on this runner")
+            self.assertFalse(setup_download.verify_file(str(link), spec))
 
     def test_git_blob_oid_alone_is_not_accepted_as_supported_integrity_metadata(self):
         data = b"plain file"
