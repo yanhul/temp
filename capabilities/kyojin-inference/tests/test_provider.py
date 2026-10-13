@@ -82,5 +82,22 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(seen["Authorization"], "Bearer test-secret")
 
 
+    def test_non_finite_timeout_is_blocked_before_dispatch(self):
+        called = []
+        receipt = infer(request(timeout_seconds=float("nan")),
+                        transport=lambda *a: called.append(a))
+        self.assertEqual(receipt.state, "BLOCKED")
+        self.assertFalse(receipt.dispatched)
+        self.assertEqual(called, [])
+
+    def test_non_finite_temperature_is_blocked_before_dispatch(self):
+        called = []
+        receipt = infer(request(temperature=float("inf")),
+                        transport=lambda *a: called.append(a))
+        self.assertEqual(receipt.state, "BLOCKED")
+        self.assertFalse(receipt.dispatched)
+        self.assertEqual(called, [])
+
+
 if __name__ == "__main__":
     unittest.main()
