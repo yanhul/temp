@@ -53,7 +53,7 @@ class AddressMapTests(unittest.TestCase):
         with self.assertRaises(AddressMappingError):
             mapping.file_offset_to_va(0x180)
         with self.assertRaises(AddressMappingError):
-            mapping.va_to_file_offset(0x4010180)
+            mapping.va_to_file_offset(0x401080)
 
     def test_rejects_boolean_offset(self):
         with self.assertRaises(AddressMappingError):
