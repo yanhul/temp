@@ -46,6 +46,25 @@ class AddressMapTests(unittest.TestCase):
                 Section(".bad", 0x80, 0x1000, 0x100, 0x100),
             ])
 
+    def test_rejects_raw_padding_beyond_virtual_size(self):
+        mapping = AddressMap(image_base=0x400000, file_size=0x500, sections=[
+            Section(".odd", 0x100, 0x1000, 0x200, 0x100),
+        ])
+        with self.assertRaises(AddressMappingError):
+            mapping.file_offset_to_va(0x180)
+        with self.assertRaises(AddressMappingError):
+            mapping.va_to_file_offset(0x4010180)
+
+    def test_rejects_boolean_offset(self):
+        with self.assertRaises(AddressMappingError):
+            self.mapping.file_offset_to_va(True)
+
+    def test_rejects_boolean_image_base(self):
+        with self.assertRaises(AddressMappingError):
+            AddressMap(image_base=True, file_size=0x100, sections=[
+                Section(".text", 0, 0, 0x100, 0x100),
+            ])
+
 
 if __name__ == "__main__":
     unittest.main()
