@@ -12,6 +12,7 @@ def replace_once(text, old, new, label, *, allow_multiple=False):
 
 
 text = DOWNLOAD.read_text(encoding="utf-8")
+text = replace_once(text, "import shutil\nimport subprocess", "import shutil\nimport stat\nimport subprocess", "regular-file mode import")
 text = replace_once(
     text,
 '''    size = int(spec["size"])
@@ -54,7 +55,7 @@ text = replace_once(
         if hasher is None or not expected:
             return False
         before = os.stat(path, follow_symlinks=False)
-        if not os.path.isfile(path) or before.st_size != expected_size:
+        if not stat.S_ISREG(before.st_mode) or before.st_size != expected_size:
             return False
         read = 0
         with open(path, "rb") as handle:
