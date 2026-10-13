@@ -156,7 +156,7 @@ class DownloadIntegrityRegression(unittest.TestCase):
                         setup_download.download_file("https://invalid.example/x", str(one_byte), bad_spec)
                     with self.assertRaises(setup_download.DownloadError):
                         setup_download.download_file_windows(
-                            "https://invalid.example/x", str(one_byte), bad_spec, "curl.exe"))
+                            "https://invalid.example/x", str(one_byte), bad_spec, "curl.exe")
 
     def test_git_blob_oid_is_verified_using_git_blob_hash(self):
         data = b"plain file"
