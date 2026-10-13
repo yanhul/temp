@@ -34,7 +34,7 @@ class EvidenceGraph:
     """Append-only evidence graph scoped to one immutable artifact digest."""
 
     def __init__(self, artifact_sha256: str) -> None:
-        if not _SHA256.fullmatch(artifact_sha256):
+        if not isinstance(artifact_sha256, str) or not _SHA256.fullmatch(artifact_sha256):
             raise EvidenceError("artifact_sha256 must be a lowercase SHA-256 digest")
         self.artifact_sha256 = artifact_sha256
         self._items: dict[str, Evidence] = {}
@@ -44,16 +44,18 @@ class EvidenceGraph:
         return tuple(self._items.values())
 
     def add(self, item: Evidence) -> None:
-        if not item.evidence_id.strip() or item.evidence_id in self._items:
+        if not isinstance(item.evidence_id, str) or not item.evidence_id.strip() or item.evidence_id in self._items:
             raise EvidenceError("evidence_id must be non-empty and unique")
         if item.artifact_sha256 != self.artifact_sha256:
             raise EvidenceError("artifact digest mismatch; evidence belongs to another artifact")
-        if not item.claim.strip() or not item.source.strip():
+        if not isinstance(item.claim, str) or not item.claim.strip() or not isinstance(item.source, str) or not item.source.strip():
             raise EvidenceError("claim and source are required")
         if item.kind not in ("observation", "inference", "verification"):
             raise EvidenceError("unsupported evidence kind")
         if item.status not in ("OBSERVED", "INFERRED", "VERIFIED", "UNKNOWN", "CONTRADICTED"):
             raise EvidenceError("unsupported evidence status")
+        if not isinstance(item.parent_ids, tuple) or any(not isinstance(p, str) or not p.strip() for p in item.parent_ids):
+            raise EvidenceError("parent_ids must be a tuple of non-empty evidence IDs")
         if len(set(item.parent_ids)) != len(item.parent_ids):
             raise EvidenceError("duplicate parent reference")
         missing = [parent for parent in item.parent_ids if parent not in self._items]
@@ -63,6 +65,11 @@ class EvidenceGraph:
             raise EvidenceError("observations cannot assert inference or verification status")
         if item.kind == "inference" and item.status not in ("INFERRED", "UNKNOWN", "CONTRADICTED"):
             raise EvidenceError("inferences cannot self-promote to VERIFIED")
+        if item.kind == "verification":
+            if item.status not in ("VERIFIED", "UNKNOWN", "CONTRADICTED"):
+                raise EvidenceError("verification status must be VERIFIED, UNKNOWN, or CONTRADICTED")
+            if not item.environment_digest.strip():
+                raise EvidenceError("verification requires an environment digest")
         if item.kind == "verification" and item.status == "VERIFIED":
             if not item.provider.strip():
                 raise EvidenceError("VERIFIED requires a named verifier")
@@ -70,20 +77,23 @@ class EvidenceGraph:
                 raise EvidenceError("VERIFIED evidence must cite parent evidence")
             parents = [self._items[p] for p in item.parent_ids]
             if not any(
-                parent.kind == "observation" and parent.claim == item.claim
+                parent.kind == "observation"
+                and parent.status == "OBSERVED"
+                and parent.claim == item.claim
                 for parent in parents
             ):
                 raise EvidenceError(
-                    "VERIFIED evidence must cite an observation supporting the same claim"
+                    "VERIFIED evidence must cite an OBSERVED parent supporting the same claim"
                 )
-        if item.kind == "verification" and not item.environment_digest.strip():
-            raise EvidenceError("verification requires an environment digest")
+            if any(parent.status in ("UNKNOWN", "CONTRADICTED") and parent.claim == item.claim
+                   for parent in parents):
+                raise EvidenceError("VERIFIED evidence cannot cite unresolved or contradictory parent evidence")
         self._items[item.evidence_id] = item
 
     def terminal_state(self, required_claims: Iterable[str]) -> str:
         """PASS only if each required claim is verified and has no unresolved contradiction."""
         required = tuple(required_claims)
-        if not required:
+        if not required or any(not isinstance(claim, str) or not claim.strip() for claim in required):
             return "INCONCLUSIVE"
         for claim in required:
             claim_items = [item for item in self._items.values() if item.claim == claim]
