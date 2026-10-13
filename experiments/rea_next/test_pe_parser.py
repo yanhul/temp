@@ -97,6 +97,30 @@ class PEParserTests(unittest.TestCase):
         with self.assertRaises(PEFormatError):
             parse_pe(bytes(data))
 
+    def test_rejects_size_of_headers_larger_than_size_of_image(self):
+        data = bytearray(make_pe())
+        struct.pack_into("<I", data, 0x98 + 56, 0x200)
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
+    def test_rejects_section_overlapping_image_headers(self):
+        data = bytearray(make_pe())
+        struct.pack_into("<I", data, 0x188 + 12, 0)
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
+    def test_rejects_short_pe32_optional_header(self):
+        data = bytearray(make_pe())
+        struct.pack_into("<H", data, 0x84 + 16, 64)
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
+    def test_rejects_short_pe32_plus_optional_header(self):
+        data = bytearray(make_pe(pe32_plus=True))
+        struct.pack_into("<H", data, 0x84 + 16, 64)
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
     def test_rejects_size_of_headers_before_section_table_end(self):
         data = bytearray(make_pe())
         struct.pack_into("<I", data, 0x98 + 60, 0x100)
