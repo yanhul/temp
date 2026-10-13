@@ -1,5 +1,6 @@
 name: Colibri downloader audit
 on:
+  workflow_dispatch:
   push:
     branches: [audit/colibri-download-integrity]
   pull_request:
