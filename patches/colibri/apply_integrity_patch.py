@@ -57,8 +57,14 @@ text = replace_once(
         before = os.stat(path, follow_symlinks=False)
         if not stat.S_ISREG(before.st_mode) or before.st_size != expected_size:
             return False
-        read = 0
-        with open(path, "rb") as handle:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(path, flags)
+        with os.fdopen(fd, "rb") as handle:
+            opened = os.fstat(handle.fileno())
+            if (not stat.S_ISREG(opened.st_mode) or opened.st_dev != before.st_dev
+                    or opened.st_ino != before.st_ino or opened.st_size != expected_size):
+                return False
+            read = 0
             while True:
                 block = handle.read(CHUNK * 8)
                 if not block:
@@ -67,10 +73,13 @@ text = replace_once(
                 if read > expected_size:
                     return False
                 hasher.update(block)
+            closed_view = os.fstat(handle.fileno())
         after = os.stat(path, follow_symlinks=False)
-        return (read == expected_size and before.st_size == after.st_size
-                and before.st_mtime_ns == after.st_mtime_ns
-                and before.st_ino == after.st_ino
+        return (read == expected_size and opened.st_dev == closed_view.st_dev
+                and opened.st_ino == closed_view.st_ino and opened.st_size == closed_view.st_size
+                and opened.st_mtime_ns == closed_view.st_mtime_ns
+                and stat.S_ISREG(after.st_mode) and after.st_dev == closed_view.st_dev
+                and after.st_ino == closed_view.st_ino and after.st_size == expected_size
                 and hasher.hexdigest() == expected)
     except (OSError, TypeError, ValueError, KeyError):
         return False''',
