@@ -1,0 +1,110 @@
+"""Small, fail-closed evidence graph prototype for reverse-engineering workflows.
+
+This module records provenance; it does not perform decompilation or execute artifacts.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import re
+from typing import Iterable, Literal
+
+Status = Literal["OBSERVED", "INFERRED", "VERIFIED", "UNKNOWN", "CONTRADICTED"]
+Kind = Literal["observation", "inference", "verification"]
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+class EvidenceError(ValueError):
+    """Raised when evidence lineage or provenance is invalid."""
+
+
+@dataclass(frozen=True)
+class Evidence:
+    evidence_id: str
+    artifact_sha256: str
+    kind: Kind
+    status: Status
+    claim: str
+    source: str
+    parent_ids: tuple[str, ...] = ()
+    provider: str = ""
+    environment_digest: str = ""
+
+
+class EvidenceGraph:
+    """Append-only evidence graph scoped to one immutable artifact digest."""
+
+    def __init__(self, artifact_sha256: str) -> None:
+        if not _SHA256.fullmatch(artifact_sha256):
+            raise EvidenceError("artifact_sha256 must be a lowercase SHA-256 digest")
+        self.artifact_sha256 = artifact_sha256
+        self._items: dict[str, Evidence] = {}
+
+    @property
+    def items(self) -> tuple[Evidence, ...]:
+        return tuple(self._items.values())
+
+    def add(self, item: Evidence) -> None:
+        if not item.evidence_id.strip() or item.evidence_id in self._items:
+            raise EvidenceError("evidence_id must be non-empty and unique")
+        if item.artifact_sha256 != self.artifact_sha256:
+            raise EvidenceError("artifact digest mismatch; evidence belongs to another artifact")
+        if not item.claim.strip() or not item.source.strip():
+            raise EvidenceError("claim and source are required")
+        if item.kind not in ("observation", "inference", "verification"):
+            raise EvidenceError("unsupported evidence kind")
+        if item.status not in ("OBSERVED", "INFERRED", "VERIFIED", "UNKNOWN", "CONTRADICTED"):
+            raise EvidenceError("unsupported evidence status")
+        if len(set(item.parent_ids)) != len(item.parent_ids):
+            raise EvidenceError("duplicate parent reference")
+        missing = [parent for parent in item.parent_ids if parent not in self._items]
+        if missing:
+            raise EvidenceError(f"parents must exist before child evidence: {missing}")
+        if item.kind == "observation" and item.status not in ("OBSERVED", "UNKNOWN", "CONTRADICTED"):
+            raise EvidenceError("observations cannot assert inference or verification status")
+        if item.kind == "inference" and item.status not in ("INFERRED", "UNKNOWN", "CONTRADICTED"):
+            raise EvidenceError("inferences cannot self-promote to VERIFIED")
+        if item.status == "VERIFIED":
+            if item.kind != "verification" or not item.provider.strip():
+                raise EvidenceError("VERIFIED requires a verification record and named verifier")
+            if not item.parent_ids:
+                raise EvidenceError("VERIFIED evidence must cite parent evidence")
+            if not any(self._items[p].kind == "observation" for p in item.parent_ids):
+                raise EvidenceError("VERIFIED evidence must trace directly to an observation")
+        if item.kind == "verification" and not item.environment_digest.strip():
+            raise EvidenceError("verification requires an environment digest")
+        self._items[item.evidence_id] = item
+
+    def terminal_state(self, required_claims: Iterable[str]) -> str:
+        """PASS only if every required claim has explicit, lineage-backed verification."""
+        required = tuple(required_claims)
+        if not required:
+            return "INCONCLUSIVE"
+        for claim in required:
+            if not any(
+                item.claim == claim
+                and item.kind == "verification"
+                and item.status == "VERIFIED"
+                and item.artifact_sha256 == self.artifact_sha256
+                for item in self._items.values()
+            ):
+                return "INCONCLUSIVE"
+        return "PASS"
+
+    def lineage(self, evidence_id: str) -> tuple[Evidence, ...]:
+        """Return ancestors then the requested node; unknown IDs fail closed."""
+        if evidence_id not in self._items:
+            raise EvidenceError(f"unknown evidence_id: {evidence_id}")
+        seen: set[str] = set()
+        ordered: list[Evidence] = []
+
+        def visit(current: str) -> None:
+            if current in seen:
+                return
+            seen.add(current)
+            item = self._items[current]
+            for parent in item.parent_ids:
+                visit(parent)
+            ordered.append(item)
+
+        visit(evidence_id)
+        return tuple(ordered)
