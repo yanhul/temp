@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 import json
+import math
 import time
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
@@ -69,12 +70,14 @@ def _validate(req: InferenceRequest) -> None:
             raise RequestBlocked(f"{field} is required")
     if not isinstance(req.prompt, str) or not req.prompt.strip():
         raise RequestBlocked("prompt is required")
-    if not isinstance(req.timeout_seconds, (int, float)) or req.timeout_seconds <= 0:
-        raise RequestBlocked("timeout_seconds must be positive")
+    if (not isinstance(req.timeout_seconds, (int, float)) or
+            not math.isfinite(req.timeout_seconds) or req.timeout_seconds <= 0):
+        raise RequestBlocked("timeout_seconds must be a finite positive number")
     if not isinstance(req.max_tokens, int) or isinstance(req.max_tokens, bool) or req.max_tokens < 1:
         raise RequestBlocked("max_tokens must be a positive integer")
-    if not isinstance(req.temperature, (int, float)) or not 0 <= req.temperature <= 2:
-        raise RequestBlocked("temperature must be between 0 and 2")
+    if (not isinstance(req.temperature, (int, float)) or
+            not math.isfinite(req.temperature) or not 0 <= req.temperature <= 2):
+        raise RequestBlocked("temperature must be finite and between 0 and 2")
     parsed = urlsplit(req.base_url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise RequestBlocked("base_url must be an absolute HTTP(S) URL")
