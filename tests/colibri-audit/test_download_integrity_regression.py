@@ -171,5 +171,32 @@ class DownloadIntegrityRegression(unittest.TestCase):
                 str(path), {"size": len(data), "git_oid": oid}))
 
 
+    def test_setup_never_short_circuits_mutable_remote_revision_check(self):
+        # The setup entry point must obtain today's remote listing even when a
+        # local manifest says "complete"; otherwise a moved branch such as main
+        # can silently leave stale model content in place.
+        flow_path = Path(__file__).resolve().parents[2] / "colibri" / "c" / "setup_flow.py"
+        source = flow_path.read_text(encoding="utf-8")
+        self.assertNotIn("if setup_download.is_complete(model_dir)", source)
+        self.assertIn("checking current remote revision", source)
+        self.assertIn("download_model(ui, entry, model_dir", source)
+
+    def test_changed_remote_hash_invalidates_same_size_cached_content(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "model.bin"
+            path.write_bytes(b"OLD!")
+            new_data = b"NEW!"
+            spec = file_spec(data=new_data)
+            # This is the state after list_repo_files resolves a moved branch:
+            # same path and size, but a different trusted source hash.
+            with self.assertRaises(setup_download.DownloadError):
+                setup_download.download_file(
+                    "https://invalid.example/model.bin", str(path), spec,
+                    opener=lambda *a, **k: (_ for _ in ()).throw(
+                        setup_download.DownloadError("remote fetch required after hash changed")))
+            self.assertEqual(path.read_bytes(), b"OLD!")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
