@@ -118,6 +118,17 @@ class DownloadIntegrityRegression(unittest.TestCase):
                 self.skipTest("symlink creation is unavailable on this runner")
             self.assertFalse(setup_download.verify_file(str(link), spec))
 
+    def test_huggingface_lfs_sha256_oid_prefix_is_supported(self):
+        data = b"lfs payload"
+        digest = hashlib.sha256(data).hexdigest()
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "weights.bin"
+            path.write_bytes(data)
+            self.assertTrue(setup_download.verify_file(
+                str(path), {"size": len(data), "sha256": "sha256:" + digest}))
+            self.assertFalse(setup_download.verify_file(
+                str(path), {"size": len(data), "sha256": "sha256:" + "0" * 64}))
+
     def test_git_blob_oid_is_verified_using_git_blob_hash(self):
         data = b"plain file"
         oid = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
