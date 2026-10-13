@@ -1,4 +1,4 @@
-"""Small, fail-closed evidence graph prototype for reverse-engineering workflows.
+""""Small, fail-closed evidence graph prototype for reverse-engineering workflows.
 
 This module records provenance; it does not perform decompilation or execute artifacts.
 """
@@ -75,17 +75,19 @@ class EvidenceGraph:
         self._items[item.evidence_id] = item
 
     def terminal_state(self, required_claims: Iterable[str]) -> str:
-        """PASS only if every required claim has explicit, lineage-backed verification."""
+        """PASS only if each required claim is verified and has no unresolved contradiction."""
         required = tuple(required_claims)
         if not required:
             return "INCONCLUSIVE"
         for claim in required:
+            claim_items = [item for item in self._items.values() if item.claim == claim]
+            if any(item.status in ("CONTRADICTED", "UNKNOWN") for item in claim_items):
+                return "INCONCLUSIVE"
             if not any(
-                item.claim == claim
-                and item.kind == "verification"
+                item.kind == "verification"
                 and item.status == "VERIFIED"
                 and item.artifact_sha256 == self.artifact_sha256
-                for item in self._items.values()
+                for item in claim_items
             ):
                 return "INCONCLUSIVE"
         return "PASS"
