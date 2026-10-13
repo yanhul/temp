@@ -42,7 +42,10 @@ text = replace_once(
     if os.path.exists(dest) and os.path.getsize(dest) == size:
         return "present"
     os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)''',
-'''    size = int(spec["size"])
+'''    raw_size = spec.get("size")
+    if not isinstance(raw_size, int) or isinstance(raw_size, bool) or raw_size < 0:
+        raise DownloadError(f"{os.path.basename(dest)}: invalid file size metadata")
+    size = raw_size
     hasher, expected = _hasher(spec) if verify else (None, None)
     if verify and hasher is None:
         raise DownloadError(f"{os.path.basename(dest)}: missing supported hash metadata")
@@ -116,7 +119,10 @@ text = replace_once(
     if os.path.exists(dest) and os.path.getsize(dest) == size:
         return "present"
     os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)''',
-'''    size = int(spec["size"])
+'''    raw_size = spec.get("size")
+    if not isinstance(raw_size, int) or isinstance(raw_size, bool) or raw_size < 0:
+        raise DownloadError(f"{os.path.basename(dest)}: invalid file size metadata")
+    size = raw_size
     if verify and _hasher(spec)[0] is None:
         raise DownloadError(f"{os.path.basename(dest)}: missing supported hash metadata")
     if os.path.exists(dest) and os.path.getsize(dest) == size:
