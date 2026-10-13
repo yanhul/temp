@@ -20,15 +20,15 @@ def make_pe(*, pe32_plus=False, truncate_at=None, bad_raw_pointer=False):
         struct.pack_into("<Q", data, opt + 24, 0x140000000)
     else:
         struct.pack_into("<I", data, opt + 28, 0x400000)
-    struct.pack_into("<I", data, opt + 32, 0x1000)  # SectionAlignment
-    struct.pack_into("<I", data, opt + 36, 0x200)   # FileAlignment
-    struct.pack_into("<I", data, opt + 56, 0x2000)  # SizeOfImage
-    struct.pack_into("<I", data, opt + 60, 0x200)   # SizeOfHeaders
+    struct.pack_into("<I", data, opt + 32, 0x1000)
+    struct.pack_into("<I", data, opt + 36, 0x200)
+    struct.pack_into("<I", data, opt + 56, 0x2000)
+    struct.pack_into("<I", data, opt + 60, 0x200)
     sec = opt + optional_size
     data[sec:sec + 8] = b".text\0\0\0"
-    struct.pack_into("<I", data, sec + 8, 0x180)    # VirtualSize
-    struct.pack_into("<I", data, sec + 12, 0x1000)  # RVA
-    struct.pack_into("<I", data, sec + 16, 0x200)   # SizeOfRawData
+    struct.pack_into("<I", data, sec + 8, 0x180)
+    struct.pack_into("<I", data, sec + 12, 0x1000)
+    struct.pack_into("<I", data, sec + 16, 0x200)
     struct.pack_into("<I", data, sec + 20, 0 if bad_raw_pointer else 0x200)
     if truncate_at is not None:
         return bytes(data[:truncate_at])
@@ -82,6 +82,43 @@ class PEParserTests(unittest.TestCase):
     def test_rejects_size_of_image_too_small(self):
         data = bytearray(make_pe())
         struct.pack_into("<I", data, 0x98 + 56, 0x1000)
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
+    def test_rejects_non_power_of_two_file_alignment(self):
+        data = bytearray(make_pe())
+        struct.pack_into("<I", data, 0x98 + 36, 0x300)
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
+    def test_rejects_section_rva_misalignment(self):
+        data = bytearray(make_pe())
+        struct.pack_into("<I", data, 0x188 + 12, 0x1100)
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
+    def test_rejects_size_of_headers_before_section_table_end(self):
+        data = bytearray(make_pe())
+        struct.pack_into("<I", data, 0x98 + 60, 0x100)
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
+    def test_rejects_pe_header_offset_outside_file(self):
+        data = bytearray(make_pe())
+        struct.pack_into("<I", data, 0x3C, 0xFFFFFFF0)
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
+    def test_rejects_overlapping_raw_sections(self):
+        data = bytearray(make_pe())
+        coff = 0x84
+        struct.pack_into("<H", data, coff + 2, 2)
+        sec2 = 0x188 + 40
+        data[sec2:sec2 + 8] = b".data\0\0\0"
+        struct.pack_into("<I", data, sec2 + 8, 0x100)
+        struct.pack_into("<I", data, sec2 + 12, 0x2000)
+        struct.pack_into("<I", data, sec2 + 16, 0x200)
+        struct.pack_into("<I", data, sec2 + 20, 0x200)
         with self.assertRaises(PEFormatError):
             parse_pe(bytes(data))
 
