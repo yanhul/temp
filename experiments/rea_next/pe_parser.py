@@ -72,9 +72,13 @@ def parse_pe(data: bytes) -> ParsedPE:
     magic = _u16(data, opt)
     if magic == 0x10B:
         architecture = "PE32"
+        if optional_size < 96:
+            raise PEFormatError("PE32 optional header is shorter than the required structure")
         image_base = _u32(data, opt + 28)
     elif magic == 0x20B:
         architecture = "PE32+"
+        if optional_size < 112:
+            raise PEFormatError("PE32+ optional header is shorter than the required structure")
         image_base = _u64(data, opt + 24)
     else:
         raise PEFormatError("unsupported optional-header magic")
@@ -93,7 +97,8 @@ def parse_pe(data: bytes) -> ParsedPE:
         raise PEFormatError("low section alignment must equal file alignment")
     if section_alignment >= 0x1000 and file_alignment < 0x200:
         raise PEFormatError("file alignment is below the standard minimum")
-    if size_of_image <= 0 or size_of_headers <= 0 or size_of_headers > len(data):
+    if (size_of_image <= 0 or size_of_headers <= 0 or size_of_headers > len(data)
+            or size_of_headers > size_of_image):
         raise PEFormatError("invalid SizeOfImage or SizeOfHeaders")
 
     table = opt_end
@@ -120,6 +125,8 @@ def parse_pe(data: bytes) -> ParsedPE:
         raw_pointer = _u32(data, off + 20)
         if virtual_address % section_alignment:
             raise PEFormatError(f"section {name} RVA is not section-aligned")
+        if virtual_address < size_of_headers:
+            raise PEFormatError(f"section {name} virtual range overlaps image headers")
         if raw_size:
             if raw_pointer < size_of_headers or raw_pointer % file_alignment or raw_size % file_alignment:
                 raise PEFormatError(f"section {name} raw range violates header/alignment constraints")
