@@ -9,7 +9,11 @@ permissions:
   contents: read
 jobs:
   downloader-tests:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -18,7 +22,7 @@ jobs:
           ref: bf2442915d6e3dd4cdfd2eb9c2a3d2aa44a25850
           path: colibri
       - name: Verify upstream source baseline
-        run: test "$(git -C colibri rev-parse HEAD)" = "bf2442915d6e3dd4cdfd2eb9c2a3d2aa44a25850"
+        run: python -c "import subprocess; assert subprocess.check_output(['git', '-C', 'colibri', 'rev-parse', 'HEAD'], text=True).strip() == 'bf2442915d6e3dd4cdfd2eb9c2a3d2aa44a25850'"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
