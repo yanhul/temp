@@ -71,7 +71,10 @@ text = replace_once(
 '''def verify_file(path, spec):
     """Fail closed unless a stable, exact-size file matches trusted hash metadata."""
     try:
-        expected_size = int(spec["size"])
+        raw_size = spec["size"]
+        if not isinstance(raw_size, int) or isinstance(raw_size, bool):
+            return False
+        expected_size = raw_size
         if expected_size < 0:
             return False
         hasher, expected = _hasher(spec)
