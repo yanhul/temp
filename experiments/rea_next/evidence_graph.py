@@ -1,4 +1,4 @@
-""""Small, fail-closed evidence graph prototype for reverse-engineering workflows.
+"""Small, fail-closed evidence graph prototype for reverse-engineering workflows.
 
 This module records provenance; it does not perform decompilation or execute artifacts.
 """
@@ -63,13 +63,19 @@ class EvidenceGraph:
             raise EvidenceError("observations cannot assert inference or verification status")
         if item.kind == "inference" and item.status not in ("INFERRED", "UNKNOWN", "CONTRADICTED"):
             raise EvidenceError("inferences cannot self-promote to VERIFIED")
-        if item.status == "VERIFIED":
-            if item.kind != "verification" or not item.provider.strip():
-                raise EvidenceError("VERIFIED requires a verification record and named verifier")
+        if item.kind == "verification" and item.status == "VERIFIED":
+            if not item.provider.strip():
+                raise EvidenceError("VERIFIED requires a named verifier")
             if not item.parent_ids:
                 raise EvidenceError("VERIFIED evidence must cite parent evidence")
-            if not any(self._items[p].kind == "observation" for p in item.parent_ids):
-                raise EvidenceError("VERIFIED evidence must trace directly to an observation")
+            parents = [self._items[p] for p in item.parent_ids]
+            if not any(
+                parent.kind == "observation" and parent.claim == item.claim
+                for parent in parents
+            ):
+                raise EvidenceError(
+                    "VERIFIED evidence must cite an observation supporting the same claim"
+                )
         if item.kind == "verification" and not item.environment_digest.strip():
             raise EvidenceError("verification requires an environment digest")
         self._items[item.evidence_id] = item
