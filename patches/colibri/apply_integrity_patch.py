@@ -4,9 +4,9 @@ DOWNLOAD = Path("colibri/c/setup_download.py")
 FLOW = Path("colibri/c/setup_flow.py")
 
 
-def replace_once(text, old, new, label):
+def replace_once(text, old, new, label, *, allow_multiple=False):
     count = text.count(old)
-    if count != 1:
+    if count != 1 and not (allow_multiple and count > 1):
         raise SystemExit(f"Patch refused for {label}: expected exactly one source fragment, found {count}")
     return text.replace(old, new, 1)
 
@@ -26,7 +26,7 @@ text = replace_once(
         if not verify or verify_file(dest, spec):
             return "present"
     os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)''',
-"Linux downloader fast path")
+"Linux downloader fast path", allow_multiple=True)
 text = replace_once(
     text,
 '''    hasher, expected = _hasher(spec) if verify else (None, None)
