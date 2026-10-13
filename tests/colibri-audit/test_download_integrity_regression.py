@@ -118,12 +118,15 @@ class DownloadIntegrityRegression(unittest.TestCase):
                 self.skipTest("symlink creation is unavailable on this runner")
             self.assertFalse(setup_download.verify_file(str(link), spec))
 
-    def test_git_blob_oid_alone_is_not_accepted_as_supported_integrity_metadata(self):
+    def test_git_blob_oid_is_verified_using_git_blob_hash(self):
         data = b"plain file"
         oid = hashlib.sha1(b"blob %d\\0" % len(data) + data).hexdigest()
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "plain.txt"
             path.write_bytes(data)
+            self.assertTrue(setup_download.verify_file(
+                str(path), {"size": len(data), "git_oid": oid}))
+            path.write_bytes(b"evil file")
             self.assertFalse(setup_download.verify_file(
                 str(path), {"size": len(data), "git_oid": oid}))
 
