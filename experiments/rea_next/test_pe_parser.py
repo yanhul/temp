@@ -1,0 +1,90 @@
+import struct
+import unittest
+
+from pe_parser import PEFormatError, parse_pe
+
+
+def make_pe(*, pe32_plus=False, truncate_at=None, bad_raw_pointer=False):
+    data = bytearray(0x400)
+    data[:2] = b"MZ"
+    struct.pack_into("<I", data, 0x3C, 0x80)
+    data[0x80:0x84] = b"PE\0\0"
+    coff = 0x84
+    struct.pack_into("<H", data, coff, 0x8664 if pe32_plus else 0x14C)
+    struct.pack_into("<H", data, coff + 2, 1)
+    optional_size = 0xF0
+    struct.pack_into("<H", data, coff + 16, optional_size)
+    opt = coff + 20
+    struct.pack_into("<H", data, opt, 0x20B if pe32_plus else 0x10B)
+    if pe32_plus:
+        struct.pack_into("<Q", data, opt + 24, 0x140000000)
+    else:
+        struct.pack_into("<I", data, opt + 28, 0x400000)
+    struct.pack_into("<I", data, opt + 32, 0x1000)  # SectionAlignment
+    struct.pack_into("<I", data, opt + 36, 0x200)   # FileAlignment
+    struct.pack_into("<I", data, opt + 56, 0x2000)  # SizeOfImage
+    struct.pack_into("<I", data, opt + 60, 0x200)   # SizeOfHeaders
+    sec = opt + optional_size
+    data[sec:sec + 8] = b".text\0\0\0"
+    struct.pack_into("<I", data, sec + 8, 0x180)    # VirtualSize
+    struct.pack_into("<I", data, sec + 12, 0x1000)  # RVA
+    struct.pack_into("<I", data, sec + 16, 0x200)   # SizeOfRawData
+    struct.pack_into("<I", data, sec + 20, 0 if bad_raw_pointer else 0x200)
+    if truncate_at is not None:
+        return bytes(data[:truncate_at])
+    return bytes(data)
+
+
+class PEParserTests(unittest.TestCase):
+    def test_parses_pe32(self):
+        parsed = parse_pe(make_pe())
+        self.assertEqual(parsed.architecture, "PE32")
+        self.assertEqual(parsed.image_base, 0x400000)
+        self.assertEqual(parsed.address_map.file_offset_to_va(0x210), 0x401010)
+        self.assertEqual(parsed.address_map.va_to_file_offset(0x401010), 0x210)
+
+    def test_parses_pe32_plus(self):
+        parsed = parse_pe(make_pe(pe32_plus=True))
+        self.assertEqual(parsed.architecture, "PE32+")
+        self.assertEqual(parsed.image_base, 0x140000000)
+        self.assertEqual(parsed.address_map.file_offset_to_va(0x210), 0x140001010)
+
+    def test_rejects_non_mz(self):
+        data = bytearray(make_pe())
+        data[0:2] = b"ZZ"
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
+    def test_rejects_wrong_pe_signature(self):
+        data = bytearray(make_pe())
+        data[0x80:0x84] = b"NOPE"
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
+    def test_rejects_truncated_dos_header(self):
+        with self.assertRaises(PEFormatError):
+            parse_pe(b"MZ" + b"\0" * 20)
+
+    def test_rejects_truncated_section_data(self):
+        with self.assertRaises(PEFormatError):
+            parse_pe(make_pe(truncate_at=0x250))
+
+    def test_rejects_invalid_raw_pointer(self):
+        with self.assertRaises(PEFormatError):
+            parse_pe(make_pe(bad_raw_pointer=True))
+
+    def test_rejects_invalid_optional_magic(self):
+        data = bytearray(make_pe())
+        struct.pack_into("<H", data, 0x98, 0x999)
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
+    def test_rejects_size_of_image_too_small(self):
+        data = bytearray(make_pe())
+        struct.pack_into("<I", data, 0x98 + 56, 0x1000)
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
+
+if __name__ == "__main__":
+    unittest.main()
