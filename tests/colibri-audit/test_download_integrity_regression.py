@@ -120,7 +120,7 @@ class DownloadIntegrityRegression(unittest.TestCase):
 
     def test_git_blob_oid_is_verified_using_git_blob_hash(self):
         data = b"plain file"
-        oid = hashlib.sha1(b"blob %d\\0" % len(data) + data).hexdigest()
+        oid = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "plain.txt"
             path.write_bytes(data)
