@@ -148,10 +148,15 @@ class DownloadIntegrityRegression(unittest.TestCase):
             one_byte = root / "one-byte.bin"
             one_byte.write_bytes(b"x")
             one_byte_digest = hashlib.sha256(b"x").hexdigest()
-            for bad_size in (True, 1.0, 1.5, "1"):
+            for bad_size in (True, 1.0, 1.5, "1", -1):
+                bad_spec = {"size": bad_size, "sha256": one_byte_digest}
                 with self.subTest(size=bad_size):
-                    self.assertFalse(setup_download.verify_file(
-                        str(one_byte), {"size": bad_size, "sha256": one_byte_digest})))
+                    self.assertFalse(setup_download.verify_file(str(one_byte), bad_spec))
+                    with self.assertRaises(setup_download.DownloadError):
+                        setup_download.download_file("https://invalid.example/x", str(one_byte), bad_spec)
+                    with self.assertRaises(setup_download.DownloadError):
+                        setup_download.download_file_windows(
+                            "https://invalid.example/x", str(one_byte), bad_spec, "curl.exe"))
 
     def test_git_blob_oid_is_verified_using_git_blob_hash(self):
         data = b"plain file"
