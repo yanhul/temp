@@ -29,6 +29,15 @@ class EvidenceGraphTests(unittest.TestCase):
         self.assertEqual([x.evidence_id for x in self.graph.lineage("verify-1")],
                          ["obs-1", "verify-1"])
 
+    def test_contradiction_prevents_pass(self):
+        self.observation()
+        self.graph.add(Evidence("verify-1", ARTIFACT, "verification", "VERIFIED",
+                                "function returns zero", "regression-test",
+                                ("obs-1",), provider="pytest", environment_digest=ENV))
+        self.graph.add(Evidence("contradiction-1", ARTIFACT, "observation", "CONTRADICTED",
+                                "function returns zero", "independent-reproduction"))
+        self.assertEqual(self.graph.terminal_state(["function returns zero"]), "INCONCLUSIVE")
+
     def test_rejects_artifact_mismatch(self):
         with self.assertRaises(EvidenceError):
             self.graph.add(Evidence("obs-1", "c" * 64, "observation", "OBSERVED",
