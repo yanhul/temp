@@ -51,9 +51,9 @@ class AddressMapTests(unittest.TestCase):
             Section(".odd", 0x100, 0x1000, 0x200, 0x100),
         ])
         with self.assertRaises(AddressMappingError):
-            mapping.file_offset_to_va(0x180)
+            mapping.file_offset_to_va(0x280)
         with self.assertRaises(AddressMappingError):
-            mapping.va_to_file_offset(0x401080)
+            mapping.va_to_file_offset(0x401180)
 
     def test_rejects_boolean_offset(self):
         with self.assertRaises(AddressMappingError):
