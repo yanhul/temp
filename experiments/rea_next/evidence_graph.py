@@ -44,6 +44,8 @@ class EvidenceGraph:
         return tuple(self._items.values())
 
     def add(self, item: Evidence) -> None:
+        if not isinstance(item, Evidence):
+            raise EvidenceError("item must be an Evidence record")
         if not isinstance(item.evidence_id, str) or not item.evidence_id.strip() or item.evidence_id in self._items:
             raise EvidenceError("evidence_id must be non-empty and unique")
         if item.artifact_sha256 != self.artifact_sha256:
@@ -68,7 +70,9 @@ class EvidenceGraph:
         if item.kind == "verification":
             if item.status not in ("VERIFIED", "UNKNOWN", "CONTRADICTED"):
                 raise EvidenceError("verification status must be VERIFIED, UNKNOWN, or CONTRADICTED")
-            if not item.environment_digest.strip():
+            if not isinstance(item.provider, str) or not item.provider.strip():
+                raise EvidenceError("verification requires a named verifier")
+            if not isinstance(item.environment_digest, str) or not item.environment_digest.strip():
                 raise EvidenceError("verification requires an environment digest")
         if item.kind == "verification" and item.status == "VERIFIED":
             if not item.provider.strip():
