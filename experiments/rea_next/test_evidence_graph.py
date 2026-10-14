@@ -80,6 +80,12 @@ class EvidenceGraphTests(unittest.TestCase):
     def test_empty_requirements_do_not_pass(self):
         self.assertEqual(self.graph.terminal_state([]), "INCONCLUSIVE")
 
+    def test_string_requirement_is_not_iterated_as_character_claims(self):
+        self.assertEqual(self.graph.terminal_state("claim"), "INCONCLUSIVE")
+
+    def test_none_requirements_fail_closed(self):
+        self.assertEqual(self.graph.terminal_state(None), "INCONCLUSIVE")
+
     def test_unknown_observation_cannot_verify_claim(self):
         self.observation(status="UNKNOWN")
         with self.assertRaises(EvidenceError):
