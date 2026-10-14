@@ -86,6 +86,16 @@ class EvidenceGraphTests(unittest.TestCase):
     def test_none_requirements_fail_closed(self):
         self.assertEqual(self.graph.terminal_state(None), "INCONCLUSIVE")
 
+    def test_failing_requirement_iterator_fails_closed(self):
+        def broken():
+            yield "claim"
+            raise RuntimeError("broken iterable")
+        self.assertEqual(self.graph.terminal_state(broken()), "INCONCLUSIVE")
+
+    def test_lineage_rejects_non_string_id_with_domain_error(self):
+        with self.assertRaisesRegex(EvidenceError, "non-empty string"):
+            self.graph.lineage([])
+
     def test_unknown_observation_cannot_verify_claim(self):
         self.observation(status="UNKNOWN")
         with self.assertRaises(EvidenceError):
