@@ -206,6 +206,12 @@ class PEParserTests(unittest.TestCase):
         with self.assertRaises(PEFormatError):
             parse_pe(bytes(data))
 
+    def test_rejects_misaligned_image_base(self):
+        data = bytearray(make_pe())
+        struct.pack_into("<I", data, 0x98 + 28, 0x401000)
+        with self.assertRaisesRegex(PEFormatError, "ImageBase"):
+            parse_pe(bytes(data))
+
     def test_rejects_pe32_image_past_32bit_address_space(self):
         data = bytearray(make_pe())
         struct.pack_into("<I", data, 0x98 + 28, 0xFFFFF000)
