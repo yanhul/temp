@@ -47,6 +47,8 @@ class AddressMap:
                 raise AddressMappingError("empty sections are not mappable")
             if s.file_offset + s.raw_size > file_size:
                 raise AddressMappingError(f"section {s.name} exceeds file size")
+            if s.virtual_size == 0 and s.raw_size > 0:
+                raise AddressMappingError(f"section {s.name} has raw data but zero virtual size")
         self._check_nonoverlap(
             [(s.file_offset, s.file_offset + s.raw_size, s.name) for s in self.sections if s.raw_size],
             "file-backed section ranges overlap",
