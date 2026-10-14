@@ -96,7 +96,12 @@ class EvidenceGraph:
 
     def terminal_state(self, required_claims: Iterable[str]) -> str:
         """PASS only if each required claim is verified and has no unresolved contradiction."""
-        required = tuple(required_claims)
+        if isinstance(required_claims, (str, bytes)):
+            return "INCONCLUSIVE"
+        try:
+            required = tuple(required_claims)
+        except TypeError:
+            return "INCONCLUSIVE"
         if not required or any(not isinstance(claim, str) or not claim.strip() for claim in required):
             return "INCONCLUSIVE"
         for claim in required:
