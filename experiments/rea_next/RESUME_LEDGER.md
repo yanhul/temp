@@ -3,7 +3,7 @@
 Updated: 2026-10-14
 PR: https://github.com/yanhul/temp/pull/24
 Branch: feat/rea-evidence-graph-prototype
-Latest code/test commit before this ledger update: 17a46bcbc1fb99728aa8f6811a9110664e8671c9
+Latest code/test commit before this ledger update: 38df28544dd8a234d00669226e85c93d1c2c109c
 Policy: keep draft; do not merge without independent review and real-fixture evidence.
 
 ## Latest hardening
@@ -14,6 +14,10 @@ Policy: keep draft; do not merge without independent review and real-fixture evi
 - `be864f1ceea98d26af1914a027963096840969f5` and `10f607c648b01f0a4445b005da006cf52afddf40`: address map now rejects non-Section records with a domain-specific error instead of leaking AttributeError.
 - `56d5e5642899b83add19e1d73c838ed789cbe4c8` and `d0e3083dd5e394495a893ebad720e976f00ee862`: terminal-state evaluation fails closed for `None` and string/bytes requirements; regression tests cover these inputs.
 - `be864f1ceea98d26af1914a027963096840969f5` plus `17a46bcbc1fb99728aa8f6811a9110664e8671c9`: malformed section records and overlapping virtual ranges now have explicit fail-closed regression coverage.
+- `3fee0f65245f334cdd2808766cc6d3d85579b3b4`: raw-section overlap test now keeps both virtual ranges in bounds and asserts the address-map overlap error, preventing an unrelated bounds failure from satisfying the test.
+- `b9e7b4ad737bddae10f604e9755ddce33c8e07d6` and `5b6dc9090ef42c819f2e180549b71f56ea3f4834`: invalid non-iterable section collections fail with `AddressMappingError`, with regression coverage.
+- `7e386f3f29a5453a2c1e956cd24ade40b5dbf78b`: alignment test fixture no longer resizes the bytearray via an overlong escaped section name; it asserts the specific file-alignment error.
+- `25943d922fa5ea8e10c1edcbfc262c47e66980af` and `38df28544dd8a234d00669226e85c93d1c2c109c`: broken requirement iterators fail closed; lineage rejects non-string IDs with a domain-specific error.
 
 ## Verification status
 
@@ -21,6 +25,9 @@ Policy: keep draft; do not merge without independent review and real-fixture evi
 - VERIFIED: PR workflow run #67 (`38528409836`) compile PASS and 53 tests PASS; job log inspected. This run preceded the final terminal-input tests.
 - VERIFIED: PR workflow run #69 (`38528422715`) checked out merge ref `e900801`, merging `d0e3083dd5e394495a893ebad720e976f00ee862`; exact job log shows compile PASS and 55 tests PASS.
 - VERIFIED: PR workflow run #73 (`38528515638`) checked out merge ref `9a8012c`, merging `17a46bcbc1fb99728aa8f6811a9110664e8671c9`; exact job log shows compile PASS and 56 tests PASS.
+- VERIFIED: PR workflow run #83 (`38531410048`) checked out merge ref `b3097a7`, merging `7e386f3f29a5453a2c1e956cd24ade40b5dbf78b`; exact job log shows compile PASS and 57 tests PASS.
+- VERIFIED: PR workflow run #85 (`38531425212`) checked out merge ref `1a96f80`, merging `25943d922fa5ea8e10c1edcbfc262c47e66980af`; exact job log shows compile PASS and 57 tests PASS.
+- VERIFIED: PR workflow run #87 (`38531433896`) checked out merge ref `3ee1a17`, merging `38df28544dd8a234d00669226e85c93d1c2c109c`; exact job log shows compile PASS and 59 tests PASS.
 - The earlier run #41 (`38527254271`) passed 47 tests on `6f84016...`; superseded by the later run evidence above.
 - NOT YET VERIFIED: coverage against independently sourced benign real PE files with recorded provenance/SHA-256 and comparison to an independent PE parser.
 - NOT YET VERIFIED: paired benchmark against upstream REA using identical authorized artifacts and independent ground truth.
