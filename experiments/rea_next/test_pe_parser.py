@@ -163,6 +163,56 @@ class PEParserTests(unittest.TestCase):
         with self.assertRaises(PEFormatError):
             parse_pe(bytes(data))
 
+    def test_rejects_i386_with_pe32_plus_optional_header(self):
+        data = bytearray(make_pe(pe32_plus=True))
+        struct.pack_into("<H", data, 0x84, 0x014C)
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
+    def test_rejects_amd64_with_pe32_optional_header(self):
+        data = bytearray(make_pe())
+        struct.pack_into("<H", data, 0x84, 0x8664)
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
+    def test_rejects_file_alignment_greater_than_section_alignment(self):
+        data = bytearray(0x4000)
+        data[:2] = b"MZ"
+        struct.pack_into("<I", data, 0x3C, 0x80)
+        data[0x80:0x84] = b"PE\\0\\0"
+        coff = 0x84
+        struct.pack_into("<H", data, coff, 0x014C)
+        struct.pack_into("<H", data, coff + 2, 1)
+        struct.pack_into("<H", data, coff + 16, 0xF0)
+        opt = coff + 20
+        struct.pack_into("<H", data, opt, 0x10B)
+        struct.pack_into("<I", data, opt + 28, 0x400000)
+        struct.pack_into("<I", data, opt + 32, 0x1000)
+        struct.pack_into("<I", data, opt + 36, 0x2000)
+        struct.pack_into("<I", data, opt + 56, 0x4000)
+        struct.pack_into("<I", data, opt + 60, 0x2000)
+        sec = opt + 0xF0
+        data[sec:sec + 8] = b".text\\0\\0\\0"
+        struct.pack_into("<I", data, sec + 8, 0x2000)
+        struct.pack_into("<I", data, sec + 12, 0x2000)
+        struct.pack_into("<I", data, sec + 16, 0x2000)
+        struct.pack_into("<I", data, sec + 20, 0x2000)
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
+    def test_rejects_pe32_image_past_32bit_address_space(self):
+        data = bytearray(make_pe())
+        struct.pack_into("<I", data, 0x98 + 28, 0xFFFFF000)
+        struct.pack_into("<I", data, 0x98 + 56, 0x2000)
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
+    def test_rejects_raw_data_with_zero_virtual_size(self):
+        data = bytearray(make_pe())
+        struct.pack_into("<I", data, 0x188 + 8, 0)
+        with self.assertRaises(PEFormatError):
+            parse_pe(bytes(data))
+
 
 if __name__ == "__main__":
     unittest.main()
