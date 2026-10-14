@@ -35,7 +35,10 @@ class AddressMap:
             raise AddressMappingError("image_base must be a non-negative integer and file_size a positive integer")
         self.image_base = image_base
         self.file_size = file_size
-        self.sections = tuple(sections)
+        try:
+            self.sections = tuple(sections)
+        except (TypeError, ValueError) as exc:
+            raise AddressMappingError("sections must be an iterable of Section records") from exc
         if not self.sections:
             raise AddressMappingError("at least one section is required")
         for s in self.sections:
