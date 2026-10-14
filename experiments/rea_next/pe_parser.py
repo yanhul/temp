@@ -61,6 +61,7 @@ def parse_pe(data: bytes) -> ParsedPE:
         raise PEFormatError("missing PE signature")
 
     coff = pe_off + 4
+    machine = _u16(data, coff)
     section_count = _u16(data, coff + 2)
     optional_size = _u16(data, coff + 16)
     if section_count < 1 or section_count > 96:
@@ -82,6 +83,12 @@ def parse_pe(data: bytes) -> ParsedPE:
         image_base = _u64(data, opt + 24)
     else:
         raise PEFormatError("unsupported optional-header magic")
+    # Reject common x86 machine/magic contradictions. Other machine types are
+    # treated as generic PE32/PE32+ layouts, not fully architecture-validated.
+    if (machine == 0x014C and architecture != "PE32") or (
+        machine == 0x8664 and architecture != "PE32+"
+    ):
+        raise PEFormatError("COFF machine contradicts optional-header magic")
     # Fields used below must be inside the declared optional header, not merely the file.
     if optional_size < 64:
         raise PEFormatError("optional header is too small for required fields")
@@ -95,11 +102,17 @@ def parse_pe(data: bytes) -> ParsedPE:
         raise PEFormatError("alignment exceeds supported bounds")
     if section_alignment < 0x1000 and section_alignment != file_alignment:
         raise PEFormatError("low section alignment must equal file alignment")
-    if section_alignment >= 0x1000 and file_alignment < 0x200:
-        raise PEFormatError("file alignment is below the standard minimum")
+    if section_alignment >= 0x1000:
+        if file_alignment < 0x200:
+            raise PEFormatError("file alignment is below the standard minimum")
+        if file_alignment > section_alignment:
+            raise PEFormatError("file alignment exceeds section alignment")
     if (size_of_image <= 0 or size_of_headers <= 0 or size_of_headers > len(data)
             or size_of_headers > size_of_image):
         raise PEFormatError("invalid SizeOfImage or SizeOfHeaders")
+    address_limit = 1 << (32 if architecture == "PE32" else 64)
+    if image_base + size_of_image > address_limit:
+        raise PEFormatError("image extends beyond the architecture address space")
 
     table = opt_end
     table_end = table + section_count * 40
@@ -134,6 +147,8 @@ def parse_pe(data: bytes) -> ParsedPE:
                 raise PEFormatError(f"section {name} raw range exceeds file")
         if virtual_size == 0 and raw_size == 0:
             raise PEFormatError(f"section {name} has no contents")
+        if virtual_size == 0 and raw_size > 0:
+            raise PEFormatError(f"section {name} has raw data but zero virtual size")
         extent = max(virtual_size, raw_size)
         max_virtual_end = max(max_virtual_end, virtual_address + extent)
         sections.append(Section(name, raw_pointer, virtual_address, raw_size, virtual_size))
