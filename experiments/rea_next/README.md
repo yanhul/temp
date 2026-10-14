@@ -15,7 +15,7 @@ It does not implement a decompiler, execute target binaries, or claim parity wit
 - Missing, contradictory, or merely inferred evidence cannot produce `PASS`; absent required verification yields `INCONCLUSIVE`.
 - Deterministic lineage traversal and standard-library unit tests.
 - Explicit file-offset ↔ VA mapping; rejects gaps, overlaps, virtual-only bytes, and raw padding rather than guessing.
-- Read-only PE32/PE32+ header parsing for image base, section table, and alignment metadata. Malformed signatures, truncated fields, invalid bounds, and unsupported optional headers fail closed.
+- Read-only PE32/PE32+ header parsing limited to I386/PE32 and AMD64/PE32+; other COFF machine types fail closed. It checks image-base alignment, section/header alignment, image bounds, and raw ranges; malformed signatures, truncated fields, and unsupported optional headers fail closed.
 
 ## Run tests
 
