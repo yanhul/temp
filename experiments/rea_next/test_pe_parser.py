@@ -179,7 +179,7 @@ class PEParserTests(unittest.TestCase):
         data = bytearray(0x4000)
         data[:2] = b"MZ"
         struct.pack_into("<I", data, 0x3C, 0x80)
-        data[0x80:0x84] = b"PE\\0\\0"
+        data[0x80:0x84] = bytes((0x50, 0x45, 0, 0))
         coff = 0x84
         struct.pack_into("<H", data, coff, 0x014C)
         struct.pack_into("<H", data, coff + 2, 1)
