@@ -3,7 +3,7 @@
 Updated: 2026-10-14
 PR: https://github.com/yanhul/temp/pull/24
 Branch: feat/rea-evidence-graph-prototype
-Latest code/test commit before this ledger update: 38df28544dd8a234d00669226e85c93d1c2c109c
+Latest code/test commit before this ledger update: c4c4f5c90c64eeb388b0c084427e8725b5cd4bf9
 Policy: keep draft; do not merge without independent review and real-fixture evidence.
 
 ## Latest hardening
@@ -18,6 +18,7 @@ Policy: keep draft; do not merge without independent review and real-fixture evi
 - `b9e7b4ad737bddae10f604e9755ddce33c8e07d6` and `5b6dc9090ef42c819f2e180549b71f56ea3f4834`: invalid non-iterable section collections fail with `AddressMappingError`, with regression coverage.
 - `7e386f3f29a5453a2c1e956cd24ade40b5dbf78b`: alignment test fixture no longer resizes the bytearray via an overlong escaped section name; it asserts the specific file-alignment error.
 - `25943d922fa5ea8e10c1edcbfc262c47e66980af` and `38df28544dd8a234d00669226e85c93d1c2c109c`: broken requirement iterators fail closed; lineage rejects non-string IDs with a domain-specific error.
+- `c4c4f5c90c64eeb388b0c084427e8725b5cd4bf9`: PE parser regression test now proves virtual-section overlap is rejected while file bounds and raw ranges remain valid.
 
 ## Verification status
 
@@ -28,6 +29,7 @@ Policy: keep draft; do not merge without independent review and real-fixture evi
 - VERIFIED: PR workflow run #83 (`38531410048`) checked out merge ref `b3097a7`, merging `7e386f3f29a5453a2c1e956cd24ade40b5dbf78b`; exact job log shows compile PASS and 57 tests PASS.
 - VERIFIED: PR workflow run #85 (`38531425212`) checked out merge ref `1a96f80`, merging `25943d922fa5ea8e10c1edcbfc262c47e66980af`; exact job log shows compile PASS and 57 tests PASS.
 - VERIFIED: PR workflow run #87 (`38531433896`) checked out merge ref `3ee1a17`, merging `38df28544dd8a234d00669226e85c93d1c2c109c`; exact job log shows compile PASS and 59 tests PASS.
+- VERIFIED: PR workflow run #91 (`38531511215`) checked out merge ref `08104fe`, merging `c4c4f5c90c64eeb388b0c084427e8725b5cd4bf9`; exact job log shows compile PASS and 60 tests PASS.
 - The earlier run #41 (`38527254271`) passed 47 tests on `6f84016...`; superseded by the later run evidence above.
 - NOT YET VERIFIED: coverage against independently sourced benign real PE files with recorded provenance/SHA-256 and comparison to an independent PE parser.
 - NOT YET VERIFIED: paired benchmark against upstream REA using identical authorized artifacts and independent ground truth.
