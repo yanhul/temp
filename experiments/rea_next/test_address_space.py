@@ -65,6 +65,12 @@ class AddressMapTests(unittest.TestCase):
                 Section(".text", 0, 0, 0x100, 0x100),
             ])
 
+    def test_rejects_raw_data_with_zero_virtual_size(self):
+        with self.assertRaises(AddressMappingError):
+            AddressMap(image_base=0x400000, file_size=0x500, sections=[
+                Section(".odd", 0x100, 0x1000, 0x200, 0),
+            ])
+
 
 if __name__ == "__main__":
     unittest.main()
