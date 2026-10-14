@@ -166,6 +166,19 @@ class PEParserTests(unittest.TestCase):
         with self.assertRaisesRegex(PEFormatError, "invalid section mapping"):
             parse_pe(bytes(data))
 
+    def test_rejects_overlapping_virtual_sections_when_other_bounds_are_valid(self):
+        data = bytearray(make_pe())
+        data.extend(bytes(0x200))
+        struct.pack_into("<H", data, 0x84 + 2, 2)
+        sec2 = 0x188 + 40
+        data[sec2:sec2 + 8] = b".data" + bytes(3)
+        struct.pack_into("<I", data, sec2 + 8, 0x100)
+        struct.pack_into("<I", data, sec2 + 12, 0x1000)
+        struct.pack_into("<I", data, sec2 + 16, 0x200)
+        struct.pack_into("<I", data, sec2 + 20, 0x400)
+        with self.assertRaisesRegex(PEFormatError, "invalid section mapping"):
+            parse_pe(bytes(data))
+
     def test_rejects_unknown_coff_machine(self):
         data = bytearray(make_pe())
         struct.pack_into("<H", data, 0x84, 0x9999)
