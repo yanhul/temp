@@ -44,6 +44,13 @@ class AddressMapTests(unittest.TestCase):
         with self.assertRaisesRegex(AddressMappingError, "Section record"):
             AddressMap(image_base=0, file_size=0x100, sections=[None])
 
+    def test_rejects_overlapping_virtual_ranges_even_when_file_ranges_do_not_overlap(self):
+        with self.assertRaisesRegex(AddressMappingError, "virtual section ranges overlap"):
+            AddressMap(image_base=0x400000, file_size=0x1000, sections=[
+                Section(".a", 0x100, 0x1000, 0x100, 0x300),
+                Section(".b", 0x400, 0x1200, 0x100, 0x100),
+            ])
+
     def test_rejects_section_outside_file(self):
         with self.assertRaises(AddressMappingError):
             AddressMap(image_base=0, file_size=0x100, sections=[
