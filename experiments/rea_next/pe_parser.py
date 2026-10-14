@@ -112,6 +112,8 @@ def parse_pe(data: bytes) -> ParsedPE:
     if (size_of_image <= 0 or size_of_headers <= 0 or size_of_headers > len(data)
             or size_of_headers > size_of_image):
         raise PEFormatError("invalid SizeOfImage or SizeOfHeaders")
+    if image_base % 0x10000:
+        raise PEFormatError("ImageBase is not aligned to 64 KiB")
     address_limit = 1 << (32 if architecture == "PE32" else 64)
     if image_base + size_of_image > address_limit:
         raise PEFormatError("image extends beyond the architecture address space")
