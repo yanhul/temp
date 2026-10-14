@@ -21,6 +21,24 @@ class EvidenceGraphTests(unittest.TestCase):
                                 claim, "regression-test", parents,
                                 provider="pytest", environment_digest=ENV))
 
+    def test_rejects_non_evidence_record(self):
+        with self.assertRaisesRegex(EvidenceError, "Evidence record"):
+            self.graph.add({"evidence_id": "obs-1"})
+
+    def test_verification_rejects_non_string_provider(self):
+        self.observation()
+        with self.assertRaisesRegex(EvidenceError, "named verifier"):
+            self.graph.add(Evidence("verify-bad", ARTIFACT, "verification", "VERIFIED",
+                                    "function returns zero", "test", ("obs-1",),
+                                    provider=None, environment_digest=ENV))
+
+    def test_verification_rejects_non_string_environment_digest(self):
+        self.observation()
+        with self.assertRaisesRegex(EvidenceError, "environment digest"):
+            self.graph.add(Evidence("verify-bad", ARTIFACT, "verification", "VERIFIED",
+                                    "function returns zero", "test", ("obs-1",),
+                                    provider="pytest", environment_digest=None))
+
     def test_no_pass_without_verification(self):
         self.observation()
         self.assertEqual(self.graph.terminal_state(["function returns zero"]), "INCONCLUSIVE")
