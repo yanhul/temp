@@ -83,8 +83,10 @@ def parse_pe(data: bytes) -> ParsedPE:
         image_base = _u64(data, opt + 24)
     else:
         raise PEFormatError("unsupported optional-header magic")
-    # Reject common x86 machine/magic contradictions. Other machine types are
-    # treated as generic PE32/PE32+ layouts, not fully architecture-validated.
+    # This prototype only claims verified layout support for x86 and x64.
+    # Reject unknown machine types instead of treating them as generic layouts.
+    if machine not in (0x014C, 0x8664):
+        raise PEFormatError("unsupported COFF machine type")
     if (machine == 0x014C and architecture != "PE32") or (
         machine == 0x8664 and architecture != "PE32+"
     ):
