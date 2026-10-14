@@ -163,6 +163,12 @@ class PEParserTests(unittest.TestCase):
         with self.assertRaises(PEFormatError):
             parse_pe(bytes(data))
 
+    def test_rejects_unknown_coff_machine(self):
+        data = bytearray(make_pe())
+        struct.pack_into("<H", data, 0x84, 0x9999)
+        with self.assertRaisesRegex(PEFormatError, "unsupported COFF machine"):
+            parse_pe(bytes(data))
+
     def test_rejects_i386_with_pe32_plus_optional_header(self):
         data = bytearray(make_pe(pe32_plus=True))
         struct.pack_into("<H", data, 0x84, 0x014C)
