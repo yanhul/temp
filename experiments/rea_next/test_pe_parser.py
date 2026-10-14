@@ -160,7 +160,10 @@ class PEParserTests(unittest.TestCase):
         struct.pack_into("<I", data, sec2 + 12, 0x2000)
         struct.pack_into("<I", data, sec2 + 16, 0x200)
         struct.pack_into("<I", data, sec2 + 20, 0x200)
-        with self.assertRaises(PEFormatError):
+        # Keep the second virtual range inside SizeOfImage so this test fails
+        # specifically because the raw file ranges overlap, not due to bounds.
+        struct.pack_into("<I", data, 0x98 + 56, 0x3000)
+        with self.assertRaisesRegex(PEFormatError, "invalid section mapping"):
             parse_pe(bytes(data))
 
     def test_rejects_unknown_coff_machine(self):
