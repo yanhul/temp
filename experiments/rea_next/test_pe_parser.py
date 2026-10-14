@@ -201,12 +201,12 @@ class PEParserTests(unittest.TestCase):
         struct.pack_into("<I", data, opt + 56, 0x4000)
         struct.pack_into("<I", data, opt + 60, 0x2000)
         sec = opt + 0xF0
-        data[sec:sec + 8] = b".text\\0\\0\\0"
+        data[sec:sec + 8] = b".text" + bytes(3)
         struct.pack_into("<I", data, sec + 8, 0x2000)
         struct.pack_into("<I", data, sec + 12, 0x2000)
         struct.pack_into("<I", data, sec + 16, 0x2000)
         struct.pack_into("<I", data, sec + 20, 0x2000)
-        with self.assertRaises(PEFormatError):
+        with self.assertRaisesRegex(PEFormatError, "file alignment exceeds section alignment"):
             parse_pe(bytes(data))
 
     def test_rejects_misaligned_image_base(self):
