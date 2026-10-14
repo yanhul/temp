@@ -100,7 +100,9 @@ class EvidenceGraph:
             return "INCONCLUSIVE"
         try:
             required = tuple(required_claims)
-        except TypeError:
+        except Exception:
+            # Malformed or failing iterables must never escape as an apparent
+            # successful terminal evaluation.
             return "INCONCLUSIVE"
         if not required or any(not isinstance(claim, str) or not claim.strip() for claim in required):
             return "INCONCLUSIVE"
@@ -119,6 +121,8 @@ class EvidenceGraph:
 
     def lineage(self, evidence_id: str) -> tuple[Evidence, ...]:
         """Return ancestors then the requested node; unknown IDs fail closed."""
+        if not isinstance(evidence_id, str) or not evidence_id.strip():
+            raise EvidenceError("evidence_id must be a non-empty string")
         if evidence_id not in self._items:
             raise EvidenceError(f"unknown evidence_id: {evidence_id}")
         seen: set[str] = set()
