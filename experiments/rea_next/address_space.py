@@ -39,6 +39,8 @@ class AddressMap:
         if not self.sections:
             raise AddressMappingError("at least one section is required")
         for s in self.sections:
+            if not isinstance(s, Section):
+                raise AddressMappingError("each section must be a Section record")
             values = (s.file_offset, s.virtual_address, s.raw_size, s.virtual_size)
             if (not isinstance(s.name, str) or not s.name
                     or any(not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in values)):
