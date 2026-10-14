@@ -40,6 +40,10 @@ class AddressMapTests(unittest.TestCase):
                 Section(".b", 0x300, 0x2000, 0x200, 0x200),
             ])
 
+    def test_rejects_non_section_record_without_leaking_attribute_error(self):
+        with self.assertRaisesRegex(AddressMappingError, "Section record"):
+            AddressMap(image_base=0, file_size=0x100, sections=[None])
+
     def test_rejects_section_outside_file(self):
         with self.assertRaises(AddressMappingError):
             AddressMap(image_base=0, file_size=0x100, sections=[
