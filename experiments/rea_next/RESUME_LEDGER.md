@@ -18,14 +18,15 @@ Policy: keep draft; do not merge without independent review and real-fixture evi
 ## Verification status
 
 - VERIFIED: workflow #41 on commit 6f84016... passed 47 tests; it validates the fixture correction but does not include later machine-type/evidence-type hardening.
-- NOT YET VERIFIED: CI on current HEAD ffa3810... The commit-specific workflow lookup returned no PR-triggered run and combined status returned no statuses; do not infer PASS from the older run.
+- 4806756e382f5c9fe4097847b2d12cde5fa0f7f0: README now states the explicit I386/AMD64-only parser scope.
+- NOT YET VERIFIED: CI on current code HEAD 4806756... The commit-specific workflow lookup returned no PR-triggered run and combined status returned no statuses; do not infer PASS from the older run.
 - NOT YET VERIFIED: real-world PE fixture coverage and parser comparison against an independent PE implementation.
 - NOT YET VERIFIED: paired benchmark against upstream REA on identical authorized artifacts and independent ground truth.
 - NOT YET IMPLEMENTED: durable AIOS adapter with contract/permit/attempt/receipt/verification chain; this prototype is not an authority source.
 
 ## Next actions
 
-1. Obtain a CI run whose tested commit is the latest branch HEAD and inspect its job log.
-2. Obtain CI on latest HEAD; then continue terminal-state edge cases and independent PE fixtures.
-3. Validate against independently sourced benign PE fixtures and compare parsed headers/section mappings against an independent parser; record fixture hashes and provenance.
+1. Obtain a CI run whose tested commit includes the machine-type, image-base, and evidence-field hardening; inspect the exact job log.
+2. Continue terminal-state edge cases and validate against independently sourced benign PE fixtures; record fixture hashes and provenance.
+3. Compare parsed headers/section mappings against an independent PE parser.
 4. Only then consider expanding beyond header/address mapping. Keep PR draft and do not claim parity, accuracy, or performance gains without paired benchmark evidence.
