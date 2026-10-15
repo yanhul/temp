@@ -48,6 +48,10 @@ class EvidenceGraph:
             raise EvidenceError("item must be an Evidence record")
         if not isinstance(item.evidence_id, str) or not item.evidence_id.strip() or item.evidence_id in self._items:
             raise EvidenceError("evidence_id must be non-empty and unique")
+        # Validate the runtime type and syntax before equality. Type annotations
+        # are not enforced by Python, and arbitrary objects may spoof equality.
+        if not isinstance(item.artifact_sha256, str) or not _SHA256.fullmatch(item.artifact_sha256):
+            raise EvidenceError("artifact_sha256 must be a lowercase SHA-256 digest")
         if item.artifact_sha256 != self.artifact_sha256:
             raise EvidenceError("artifact digest mismatch; evidence belongs to another artifact")
         if not isinstance(item.claim, str) or not item.claim.strip() or not isinstance(item.source, str) or not item.source.strip():
