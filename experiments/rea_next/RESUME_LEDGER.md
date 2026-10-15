@@ -6,6 +6,24 @@ Branch: feat/rea-evidence-graph-prototype
 Current code/test commits: 9fb3b8147ef0f84965d660ed872c2bfe41923045 (artifact digest validation), 4cd224a31c63496c0b7285635db8692bfccf4c3a (regression tests).
 Policy: keep draft; do not merge without independent review and real-fixture evidence.
 
+Updated: 2026-10-15 (CI reverified)
+Current branch head at verification: 83173c0e30737bb90ece17c13d9e7cdca25cac9e
+PR #24 remains open and draft; no merge performed.
+
+## New verified progress (2026-10-15)
+
+- Commit 9fb3b8147ef0f84965d660ed872c2bfe41923045: EvidenceGraph.add validates artifact_sha256 runtime type and lowercase 64-hex format before equality comparison.
+- Commit 4cd224a31c63496c0b7285635db8692bfccf4c3a: regression tests cover equality-spoof objects and malformed digest values (uppercase, wrong length, invalid characters, None).
+- VERIFIED: workflow run #99 (38683260048) and #101 (38683271496) succeeded for commit 4cd224a31c63496c0b7285635db8692bfccf4c3a. Exact job log for run #101 reports compile step completed successfully and “Ran 63 tests in 0.019s” / “OK”.
+- VERIFIED: workflow run #102 (38683280007) succeeded on exact branch head 83173c0e30737bb90ece17c13d9e7cdca25cac9e, including the ledger update. Exact job log reports compile step completed successfully and “Ran 63 tests in 0.072s” / “OK”.
+
+## Current open risks and exact next action
+
+- NOT YET VERIFIED: parser behavior on independently sourced benign real PE files with provenance/license and SHA-256 recorded; current tests are predominantly synthetic fixtures.
+- NOT YET VERIFIED: differential comparison with an independent PE parser and paired benchmark against upstream REA on identical authorized artifacts with independent ground truth.
+- NOT YET IMPLEMENTED: durable AIOS adapter with contract/permit/attempt/receipt/verification chain; REA Next remains a prototype and not an authority source.
+- NEXT: review PE parser directory-bound and section-geometry rules against PE/COFF specification; add a regression test only for a concrete uncovered edge case. Then seek a redistributable real PE fixture with clear provenance/license and compare parsed headers/sections to an independent parser. Keep PR draft and do not merge.
+
 ## Latest hardening
 
 - Existing parser, address mapping, evidence-lineage, and fail-closed terminal-state hardening remains as recorded in the history below.
