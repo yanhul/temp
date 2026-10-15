@@ -6,6 +6,16 @@ ARTIFACT = "a" * 64
 ENV = "b" * 64
 
 
+class EqualitySpoof:
+    """Runtime value that claims equality with a digest despite not being text."""
+
+    def __eq__(self, other):
+        return True
+
+    def __ne__(self, other):
+        return False
+
+
 class EvidenceGraphTests(unittest.TestCase):
     def setUp(self):
         self.graph = EvidenceGraph(ARTIFACT)
@@ -24,6 +34,22 @@ class EvidenceGraphTests(unittest.TestCase):
     def test_rejects_non_evidence_record(self):
         with self.assertRaisesRegex(EvidenceError, "Evidence record"):
             self.graph.add({"evidence_id": "obs-1"})
+
+    def test_rejects_artifact_digest_object_that_spoofs_equality(self):
+        item = Evidence("obs-spoof", EqualitySpoof(), "observation", "OBSERVED",
+                        "claim", "source")
+        with self.assertRaisesRegex(EvidenceError, "artifact_sha256 must be"):
+            self.graph.add(item)
+        self.assertEqual(self.graph.items, ())
+
+    def test_rejects_malformed_artifact_digest_before_comparison(self):
+        for digest in ("A" * 64, "a" * 63, "g" * 64, None):
+            with self.subTest(digest=digest):
+                item = Evidence("obs-bad", digest, "observation", "OBSERVED",
+                                "claim", "source")
+                with self.assertRaisesRegex(EvidenceError, "artifact_sha256 must be"):
+                    self.graph.add(item)
+                self.assertEqual(self.graph.items, ())
 
     def test_verification_rejects_non_string_provider(self):
         self.observation()
