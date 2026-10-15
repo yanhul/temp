@@ -72,8 +72,8 @@ class EvidenceGraph:
                 raise EvidenceError("verification status must be VERIFIED, UNKNOWN, or CONTRADICTED")
             if not isinstance(item.provider, str) or not item.provider.strip():
                 raise EvidenceError("verification requires a named verifier")
-            if not isinstance(item.environment_digest, str) or not item.environment_digest.strip():
-                raise EvidenceError("verification requires an environment digest")
+            if not isinstance(item.environment_digest, str) or not _SHA256.fullmatch(item.environment_digest):
+                raise EvidenceError("verification requires a lowercase SHA-256 environment digest")
         if item.kind == "verification" and item.status == "VERIFIED":
             if not item.provider.strip():
                 raise EvidenceError("VERIFIED requires a named verifier")
