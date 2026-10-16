@@ -75,3 +75,12 @@ PR #24 remains open and draft; no merge performed.
 - CI STATUS FOR CURRENT COMMIT: NOT YET VERIFIED. Fetching PR-triggered workflow runs for this exact SHA returned no runs. Do not infer pass from prior run #107.
 - Open risk/blocker: workflow dispatch/status is not yet visible through the current read path. Next action: inspect PR checks/workflow runs for the exact SHA; fetch job logs if a run appears. If no run is scheduled, diagnose workflow trigger configuration/permissions before claiming verification. Keep PR #24 draft and never merge.
 - Still NOT VERIFIED: real-world PE fixtures with provenance/license, independent parser differential comparison, paired REA benchmark with independent ground truth, and durable AIOS adapter.
+
+## CI closure update (2026-10-16, exact current head)
+
+- Current branch head: `ba2a6e752116724c64d6d42407d402f3a0a4bf23` (`docs(rea-next): record runtime validation regression and CI blocker`).
+- VERIFIED: push workflow run [#110 / 38850369511](https://github.com/yanhul/temp/actions/runs/38850369511) completed `success` on that exact SHA.
+- VERIFIED: pull-request workflow run [#111 / 38850375239](https://github.com/yanhul/temp/actions/runs/38850375239) completed `success` on that exact SHA.
+- VERIFIED from exact job log for run #111, job `116810040940`: Python 3.12.15; compile step completed; unit test log includes the new `kind` and `status` string-subclass rejection regressions; final summary is `Ran 65 tests in 0.039s` and `OK`.
+- This supersedes the earlier “CI STATUS FOR CURRENT COMMIT: NOT YET VERIFIED” note above. It verifies compile + 65 standard-library tests only, not real-world PE correctness or benchmark claims.
+- PR #24 remains draft and unmerged. No merge or deployment performed.
