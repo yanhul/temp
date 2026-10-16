@@ -145,5 +145,22 @@ class EvidenceGraphTests(unittest.TestCase):
                                     provider="pytest", environment_digest=ENV))
 
 
+    def test_rejects_string_subclass_for_kind(self):
+        class KindString(str):
+            pass
+        with self.assertRaisesRegex(EvidenceError, "kind must be a plain string"):
+            self.graph.add(Evidence("obs-kind-subclass", ARTIFACT, KindString("observation"),
+                                    "OBSERVED", "claim", "source"))
+        self.assertEqual(self.graph.items, ())
+
+    def test_rejects_string_subclass_for_status(self):
+        class StatusString(str):
+            pass
+        with self.assertRaisesRegex(EvidenceError, "status must be a plain string"):
+            self.graph.add(Evidence("obs-status-subclass", ARTIFACT, "observation",
+                                    StatusString("OBSERVED"), "claim", "source"))
+        self.assertEqual(self.graph.items, ())
+
+
 if __name__ == "__main__":
     unittest.main()
