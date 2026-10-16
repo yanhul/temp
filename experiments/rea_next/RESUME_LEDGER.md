@@ -86,3 +86,11 @@ PR #24 remains open and draft; no merge performed.
 - PR #24 remains draft and unmerged. No merge or deployment performed.
 
 - Ledger verification follow-up: the ledger-only commit `5f74ab68b4f8090c4c83bd97b3a6efeba38c1d23` was also tested by push run [#112 / 38850435539](https://github.com/yanhul/temp/actions/runs/38850435539), completed `success`. Exact job `116810223877` log reports compile completed and `Ran 65 tests in 0.048s` / `OK`. This run verifies the code plus the preceding ledger update; the subsequent ledger-only commit is re-run by CI separately.
+
+## PE parser spec review (2026-10-16, continuation)
+
+- Reviewed `pe_parser.py` and `address_space.py` at the current branch state.
+- Confirmed existing fail-closed checks cover: COFF machine/optional-header mismatch; minimum PE32/PE32+ optional-header lengths; section-table bounds against both file and `SizeOfHeaders`; power-of-two/alignment relationships; `SizeOfImage` alignment and section extent; header overlap; raw file bounds/alignment; duplicate/overlapping raw and virtual mappings; and unmappable virtual-only/raw-padding bytes.
+- No code change made in this review: the examined candidates were either already rejected by current checks or require a spec-grounded fixture before changing behavior. Avoided adding a test that merely codifies an uncertain interpretation.
+- Remaining meaningful validation gap is still external: no independently sourced redistributable PE fixture with recorded provenance/license and SHA-256, and no differential result against an independent parser. Synthetic fixture tests do not close that gap.
+- PR #24 remains open/draft; no merge.
