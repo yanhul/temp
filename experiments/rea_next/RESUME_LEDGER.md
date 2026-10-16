@@ -64,3 +64,14 @@ PR #24 remains open and draft; no merge performed.
 - PR workflow run #87 (38531433896): compile PASS, 59 tests PASS.
 - PR workflow run #91 (38531511215): compile PASS, 60 tests PASS.
 - PR workflow run #97 (38679099772): compile PASS, 61 tests PASS on prior head 6d1a52ba1616a8200b2fa43432df0c8497f60304.
+
+
+## Continuation update (2026-10-16)
+
+- VERIFIED: GitHub contents write permission is currently available. A write to `experiments/rea_next/test_evidence_graph.py` succeeded and created commit `8bf0aa925b2d140a556a8c0b4476853817be905b` on `feat/rea-evidence-graph-prototype`.
+- Added regression tests for `kind` and `status` values supplied as `str` subclasses. The implementation intentionally requires plain `str` values; tests assert rejection and that the graph remains unchanged.
+- VERIFIED prior head only: run #107 (`38849146909`) for commit `b77b489e775164903584761720243f5958c9f196` succeeded. Exact job `116806272058`: compile step and unit tests completed; log says `Ran 63 tests in 0.206s` and `OK`. This run does NOT verify the new tests.
+- CURRENT CODE/TEST COMMIT: `8bf0aa925b2d140a556a8c0b4476853817be905b`.
+- CI STATUS FOR CURRENT COMMIT: NOT YET VERIFIED. Fetching PR-triggered workflow runs for this exact SHA returned no runs. Do not infer pass from prior run #107.
+- Open risk/blocker: workflow dispatch/status is not yet visible through the current read path. Next action: inspect PR checks/workflow runs for the exact SHA; fetch job logs if a run appears. If no run is scheduled, diagnose workflow trigger configuration/permissions before claiming verification. Keep PR #24 draft and never merge.
+- Still NOT VERIFIED: real-world PE fixtures with provenance/license, independent parser differential comparison, paired REA benchmark with independent ground truth, and durable AIOS adapter.
