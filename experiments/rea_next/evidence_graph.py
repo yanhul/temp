@@ -34,7 +34,7 @@ class EvidenceGraph:
     """Append-only evidence graph scoped to one immutable artifact digest."""
 
     def __init__(self, artifact_sha256: str) -> None:
-        if not isinstance(artifact_sha256, str) or not _SHA256.fullmatch(artifact_sha256):
+        if type(artifact_sha256) is not str or not _SHA256.fullmatch(artifact_sha256):
             raise EvidenceError("artifact_sha256 must be a lowercase SHA-256 digest")
         self.artifact_sha256 = artifact_sha256
         self._items: dict[str, Evidence] = {}
@@ -46,21 +46,25 @@ class EvidenceGraph:
     def add(self, item: Evidence) -> None:
         if not isinstance(item, Evidence):
             raise EvidenceError("item must be an Evidence record")
-        if not isinstance(item.evidence_id, str) or not item.evidence_id.strip() or item.evidence_id in self._items:
+        if type(item.evidence_id) is not str or not item.evidence_id.strip() or item.evidence_id in self._items:
             raise EvidenceError("evidence_id must be non-empty and unique")
         # Validate the runtime type and syntax before equality. Type annotations
         # are not enforced by Python, and arbitrary objects may spoof equality.
-        if not isinstance(item.artifact_sha256, str) or not _SHA256.fullmatch(item.artifact_sha256):
+        if type(item.artifact_sha256) is not str or not _SHA256.fullmatch(item.artifact_sha256):
             raise EvidenceError("artifact_sha256 must be a lowercase SHA-256 digest")
+        if type(item.kind) is not str:
+            raise EvidenceError("kind must be a plain string")
+        if type(item.status) is not str:
+            raise EvidenceError("status must be a plain string")
         if item.artifact_sha256 != self.artifact_sha256:
             raise EvidenceError("artifact digest mismatch; evidence belongs to another artifact")
-        if not isinstance(item.claim, str) or not item.claim.strip() or not isinstance(item.source, str) or not item.source.strip():
+        if type(item.claim) is not str or not item.claim.strip() or type(item.source) is not str or not item.source.strip():
             raise EvidenceError("claim and source are required")
         if item.kind not in ("observation", "inference", "verification"):
             raise EvidenceError("unsupported evidence kind")
         if item.status not in ("OBSERVED", "INFERRED", "VERIFIED", "UNKNOWN", "CONTRADICTED"):
             raise EvidenceError("unsupported evidence status")
-        if not isinstance(item.parent_ids, tuple) or any(not isinstance(p, str) or not p.strip() for p in item.parent_ids):
+        if not isinstance(item.parent_ids, tuple) or any(type(p) is not str or not p.strip() for p in item.parent_ids):
             raise EvidenceError("parent_ids must be a tuple of non-empty evidence IDs")
         if len(set(item.parent_ids)) != len(item.parent_ids):
             raise EvidenceError("duplicate parent reference")
@@ -74,9 +78,9 @@ class EvidenceGraph:
         if item.kind == "verification":
             if item.status not in ("VERIFIED", "UNKNOWN", "CONTRADICTED"):
                 raise EvidenceError("verification status must be VERIFIED, UNKNOWN, or CONTRADICTED")
-            if not isinstance(item.provider, str) or not item.provider.strip():
+            if type(item.provider) is not str or not item.provider.strip():
                 raise EvidenceError("verification requires a named verifier")
-            if not isinstance(item.environment_digest, str) or not _SHA256.fullmatch(item.environment_digest):
+            if type(item.environment_digest) is not str or not _SHA256.fullmatch(item.environment_digest):
                 raise EvidenceError("verification requires a lowercase SHA-256 environment digest")
         if item.kind == "verification" and item.status == "VERIFIED":
             if not item.provider.strip():
@@ -108,7 +112,7 @@ class EvidenceGraph:
             # Malformed or failing iterables must never escape as an apparent
             # successful terminal evaluation.
             return "INCONCLUSIVE"
-        if not required or any(not isinstance(claim, str) or not claim.strip() for claim in required):
+        if not required or any(type(claim) is not str or not claim.strip() for claim in required):
             return "INCONCLUSIVE"
         for claim in required:
             claim_items = [item for item in self._items.values() if item.claim == claim]
@@ -125,7 +129,7 @@ class EvidenceGraph:
 
     def lineage(self, evidence_id: str) -> tuple[Evidence, ...]:
         """Return ancestors then the requested node; unknown IDs fail closed."""
-        if not isinstance(evidence_id, str) or not evidence_id.strip():
+        if type(evidence_id) is not str or not evidence_id.strip():
             raise EvidenceError("evidence_id must be a non-empty string")
         if evidence_id not in self._items:
             raise EvidenceError(f"unknown evidence_id: {evidence_id}")
