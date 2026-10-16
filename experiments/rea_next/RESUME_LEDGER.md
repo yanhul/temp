@@ -94,3 +94,13 @@ PR #24 remains open and draft; no merge performed.
 - No code change made in this review: the examined candidates were either already rejected by current checks or require a spec-grounded fixture before changing behavior. Avoided adding a test that merely codifies an uncertain interpretation.
 - Remaining meaningful validation gap is still external: no independently sourced redistributable PE fixture with recorded provenance/license and SHA-256, and no differential result against an independent parser. Synthetic fixture tests do not close that gap.
 - PR #24 remains open/draft; no merge.
+
+
+## External PE fixture candidate audit (2026-10-16, continuation)
+
+- Inspected the public `trailofbits/pe-parse` project as an independent-parser candidate. Its README describes a PE parser with section enumeration and address reads, and documents tests using a Corkami submodule: https://github.com/trailofbits/pe-parse
+- Its test assets include `tests/assets/example.exe` (119,296 bytes; Git blob SHA `cbbda0cc32cdfbc7da2443028e5a8e6af0d162e9`) and `tests/assets/pr_153.exe` (252 bytes; Git blob SHA `fec5dd96aa094ae497780887365857f725191b9d`): https://github.com/trailofbits/pe-parse/tree/master/tests/assets
+- The pe-parse repository declares MIT for its software, but the inspected metadata does not establish the individual binary assets' origin or redistribution terms. Repository-level LICENSE is not treated as sufficient proof that those binaries are licensed for reuse. `pr_153.exe` is described as a malformed-input regression asset, so it is not suitable as the initial benign real-PE baseline.
+- Inspected `corkami/pocs` as the documented PE edge-case dataset. GitHub repository metadata currently reports no declared license, so its binaries are not selected for redistribution until file-level licensing permission is established: https://github.com/corkami/pocs
+- Decision: **no external fixture accepted yet**. The Git blob SHA values above are Git object IDs, NOT SHA-256 file digests. No SHA-256 or differential parse result is claimed. This is an evidence-based exclusion, not a completed real-fixture validation.
+- Next gate: find a benign redistributable PE whose file-specific provenance/license can be verified; calculate the actual SHA-256 from the downloaded bytes; then compare only stable header/section fields against pe-parse or another independent implementation. Do not execute the sample. Keep PR #24 draft and unmerged.
