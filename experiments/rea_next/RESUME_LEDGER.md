@@ -84,3 +84,5 @@ PR #24 remains open and draft; no merge performed.
 - VERIFIED from exact job log for run #111, job `116810040940`: Python 3.12.15; compile step completed; unit test log includes the new `kind` and `status` string-subclass rejection regressions; final summary is `Ran 65 tests in 0.039s` and `OK`.
 - This supersedes the earlier “CI STATUS FOR CURRENT COMMIT: NOT YET VERIFIED” note above. It verifies compile + 65 standard-library tests only, not real-world PE correctness or benchmark claims.
 - PR #24 remains draft and unmerged. No merge or deployment performed.
+
+- Ledger verification follow-up: the ledger-only commit `5f74ab68b4f8090c4c83bd97b3a6efeba38c1d23` was also tested by push run [#112 / 38850435539](https://github.com/yanhul/temp/actions/runs/38850435539), completed `success`. Exact job `116810223877` log reports compile completed and `Ran 65 tests in 0.048s` / `OK`. This run verifies the code plus the preceding ledger update; the subsequent ledger-only commit is re-run by CI separately.
