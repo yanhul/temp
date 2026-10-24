@@ -323,6 +323,7 @@ def run(components,netlist,add,identity_overrides=None,skip_hcpl=False):
                 "pin": str(pin.get("pin")),
                 "pin_name": pin.get("pin_name"),
                 "pin_type": pin.get("electrical_type"),
+                "resolution_diagnostics": list(pin.get("resolution_diagnostics") or []),
             })
     canonical_netlist["nets"] = [
         {"name": name, "terminals": terms} for name, terms in sorted(nets_by_name.items())
