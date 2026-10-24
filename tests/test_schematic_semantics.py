@@ -229,3 +229,32 @@ def test_authoritative_mpn_overrides_stale_library_identity_for_physical_part_ch
     assert identity
     assert identity[0][3] == "FAIL"
     assert "directionality" in identity[0][4]
+
+
+
+def test_unresolved_logical_pin_mapping_does_not_claim_nc_connection():
+    evidence={"schema":"altium-schematic-evidence.v1","status":"VERIFIED","components":[{
+        "reference":"U19","declared_value":"HCPL-0600","library_id":"HCPL-3120","pin_count":8,
+        "pins":[
+            {"pin":"1","pin_name":"NC","electrical_type":"PASSIVE","connected_net":None,
+             "resolution_diagnostics":["logical_pin_unresolved"]},
+            {"pin":"2","pin_name":"ANODE","electrical_type":"INPUT","connected_net":"LED",
+             "resolution_diagnostics":["logical_pin_unresolved"]},
+            {"pin":"3","pin_name":"CATHODE","electrical_type":"INPUT","connected_net":"LEDK",
+             "resolution_diagnostics":["logical_pin_unresolved"]},
+            {"pin":"4","pin_name":"NC","electrical_type":"PASSIVE","connected_net":"GND1",
+             "resolution_diagnostics":["logical_pin_unresolved"]},
+            {"pin":"5","pin_name":"VEE","electrical_type":"POWER","connected_net":"GND",
+             "resolution_diagnostics":["logical_pin_unresolved"]},
+            {"pin":"6","pin_name":"VO","electrical_type":"OUTPUT","connected_net":"OUT",
+             "resolution_diagnostics":["logical_pin_unresolved"]},
+            {"pin":"7","pin_name":"VO","electrical_type":"OUTPUT","connected_net":"OUT2",
+             "resolution_diagnostics":["logical_pin_unresolved"]},
+            {"pin":"8","pin_name":"VCC","electrical_type":"POWER","connected_net":"+5V",
+             "resolution_diagnostics":["logical_pin_unresolved"]}]}]}
+    findings=[]
+    ss.run(evidence,None,lambda *args: findings.append(args))
+    ids={x[0] for x in findings}
+    assert "G2-SCH-NC-PIN-CONNECTED-U19" not in ids
+    assert "G2-HCPL-NC-PIN4-CONNECTED-U19" not in ids
+    assert "G2-HCPL-NC-PIN4-UNRESOLVED-U19" in ids
