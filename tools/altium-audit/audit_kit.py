@@ -61,7 +61,7 @@ def write_terminal(out,r):
     r["status"]=r.get("status","UNKNOWN"); r["status"]=r["status"] if r["status"] in TERMINAL else "UNKNOWN"; r["terminal_status"]=r["status"]; r["schema"]="altium-audit-kit-result.v4"
     (out/"summary.json").write_text(json.dumps(r,indent=2,ensure_ascii=False))
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument("--input",required=True,type=Path); ap.add_argument("--output",required=True,type=Path); ap.add_argument("--repair",action="store_true"); ap.add_argument("--max-retries",type=int,default=3); ap.add_argument("--config",type=Path); a=ap.parse_args()
+    ap=argparse.ArgumentParser(); ap.add_argument("--input",required=True,type=Path); ap.add_argument("--output",required=True,type=Path); ap.add_argument("--repair",action="store_true"); ap.add_argument("--max-retries",type=int,default=3); ap.add_argument("--config",type=Path); ap.add_argument("--binary-parser",choices=("off","standalone"),default="off",help="run independent standalone PcbDoc binary-inventory branch in addition to the existing altium-monkey audit"); ap.add_argument("--parser-full",action="store_true",help="include all discovered OLE streams in standalone parser report"); a=ap.parse_args()
     root,out=a.input.resolve(),a.output.resolve()
     if not root.is_dir(): raise SystemExit(f"input directory does not exist: {root}")
     if a.config is None:
@@ -73,7 +73,7 @@ def main():
     (out/"intake.json").write_text(json.dumps({"schema":"altium-audit-kit-run.v4","input":{"directory":str(root),"schematic":sch.name,"pcb":pcb.name,"project":prj.name if prj else None},"repair_requested":a.repair,"max_retries":a.max_retries},indent=2))
     project_root=stage_project(out,sch,pcb,prj)
     audit_out=out/"audit-initial"; _,initial=audit(project_root,audit_out,a.config)
-    if initial is None: write_terminal(out,{"status":"BLOCKED","reason":"audit runner produced no summary.json"}); return 2
+    if initial is None:\n        terminal={"status":"BLOCKED","reason":"audit runner produced no summary.json"}\n        if standalone_evidence is not None: terminal["standalone_binary_parser"]=standalone_evidence\n        write_terminal(out,terminal); return 2
     fallback=False; blocker=None
     if prj and initial.get("gates",{}).get("G1_PARSE")=="UNKNOWN":
         dr=out/"direct-input"; dr.mkdir(exist_ok=True); shutil.copy2(sch,dr/sch.name); shutil.copy2(pcb,dr/pcb.name); do=out/"audit-direct-fallback"; _,direct=audit(dr,do,a.config)
