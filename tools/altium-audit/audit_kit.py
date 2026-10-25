@@ -85,7 +85,14 @@ def main():
     out.mkdir(parents=True,exist_ok=True); sch,pcb,prj=discover(root)
     (out/"intake.json").write_text(json.dumps({"schema":"altium-audit-kit-run.v4","input":{"directory":str(root),"schematic":sch.name,"pcb":pcb.name,"project":prj.name if prj else None},"repair_requested":a.repair,"max_retries":a.max_retries},indent=2))
     project_root=stage_project(out,sch,pcb,prj)
+    standalone_evidence=None
+    if a.binary_parser=="standalone":
+        parser_out=out/"standalone-parser"; parser_out.mkdir(parents=True,exist_ok=True)
+        parser_rc, parser_report, parser_path=run_standalone_parser(project_root/pcb.name,parser_out,a.parser_full)
+        standalone_evidence={"status":parser_report.get("status","UNKNOWN"),"report":str(parser_path),"returncode":parser_rc,"sha256":parser_report.get("source",{}).get("sha256"),"connectivity_verified":parser_report.get("routing_analysis",{}).get("connectivity_verified",False)}
     audit_out=out/"audit-initial"; _,initial=audit(project_root,audit_out,a.config)
+    if initial is not None and standalone_evidence is not None:
+        initial["standalone_binary_parser"]=standalone_evidence
     if initial is None:
         terminal={"status":"BLOCKED","reason":"audit runner produced no summary.json"}
         if standalone_evidence is not None: terminal["standalone_binary_parser"]=standalone_evidence
