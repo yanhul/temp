@@ -4,10 +4,14 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-PCB="${1:-$ROOT/audit-input-2605/Copy of QI9-2605-A01.PcbDoc}"
+PCB="${1:-$ROOT/audit-input-2605/QI9-2605-A01.PcbDoc}"
 OUT="${2:-$ROOT/work/qi9-2605-render}"
 PARSER="${3:-/tmp/altiumts}"
 
+if [[ "$(basename "$PCB")" != "QI9-2605-A01.PcbDoc" ]]; then
+  echo "ERROR: refusing non-authoritative PCB filename: $PCB" >&2
+  exit 2
+fi
 if [[ ! -s "$PCB" ]]; then
   echo "ERROR: PCB input missing or empty: $PCB" >&2
   exit 2
@@ -40,10 +44,13 @@ required = [out/"pcb-inspect.json", out/"pcb-records.json", out/"pcb-streams.jso
 missing = [str(p) for p in required if not p.is_file() or p.stat().st_size == 0]
 if missing:
     raise SystemExit("FAIL: missing parse/render outputs: " + ", ".join(missing))
+if Path(summary.get("source", "")).name != "QI9-2605-A01.PcbDoc":
+    raise SystemExit("FAIL: renderer summary source is not QI9-2605-A01.PcbDoc")
 if summary.get("status") != "RENDERED_PREVIEWS":
     raise SystemExit("FAIL: renderer did not report RENDERED_PREVIEWS")
 print(json.dumps({
     "status": "PASS_PIPELINE_OUTPUTS",
+    "sourceSha256": (out/"source-manifest.txt").read_text().split("sha256=")[-1].strip(),
     "source": summary.get("source"),
     "sourceBytes": summary.get("sourceBytes"),
     "documentType": summary.get("documentType"),
