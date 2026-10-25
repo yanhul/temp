@@ -216,7 +216,11 @@ def components_for_net(data):
                 if ib is not None: union(i,ib)
     return len(nodes),len({find(i) for i in range(len(nodes))})
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument("--pcb",required=True,type=Path); ap.add_argument("--out",required=True,type=Path); ap.add_argument("--findings",type=Path); ap.add_argument("--config",type=Path); ap.add_argument("--connectivity-manifest",type=Path); a=ap.parse_args()
+    ap=argparse.ArgumentParser(); ap.add_argument("--pcb",required=True,type=Path); ap.add_argument("--out",required=True,type=Path); ap.add_argument("--findings",type=Path); ap.add_argument("--config",type=Path); ap.add_argument("--connectivity-manifest",type=Path); ap.add_argument("--outline-evidence",type=Path,help="standalone parser JSON; KeepOut bbox is the selected placement boundary when confirmed"); a=ap.parse_args()
+    outline_evidence={}
+    if a.outline_evidence and a.outline_evidence.exists():
+        try: outline_evidence=json.loads(a.outline_evidence.read_text(encoding="utf-8"))
+        except Exception: outline_evidence={}
     pcb=AltiumPcbDoc.from_file(a.pcb); comps=list(getattr(pcb,"components",[]) or []); nets=list(getattr(pcb,"nets",[]) or [])
     industrial=evaluate_industrial_rules(a.config, pcb, (a.findings.parent / "g4_probe.json") if a.findings else None)
     geometry_probe=[]
@@ -263,6 +267,14 @@ def main():
     outline=getattr(getattr(pcb,"board",None),"outline",None)
     bb=getattr(outline,"bounding_box",None) if outline else None
     board_box=tuple(float(x) for x in bb) if bb and len(bb)==4 else None
+    board_ev=outline_evidence.get("board",{}) if isinstance(outline_evidence,dict) else {}
+    keepout_mm=board_ev.get("keepout_bbox_mm")
+    if board_ev.get("selected_outline_source")=="KeepOut" and isinstance(keepout_mm,list) and len(keepout_mm)==4:
+        try:
+            # Standalone parser coordinates are mm; altium-monkey geometry uses mils.
+            board_box=tuple(float(v)*1000.0/25.4 for v in keepout_mm)
+        except Exception:
+            pass
     for i,c in enumerate(comps):
         ref=f(c,"designator","refdes","reference")
         pos,source=component_center(pcb,c)
