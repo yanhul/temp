@@ -23,7 +23,15 @@ The kit discovers the files itself. Project name, refdes, net names and blocker 
 
 Repair is fail-closed: no authoritative authorization means no mutation; the source PcbDoc is never overwritten; repair happens only on a working copy; the repaired board is re-audited by the same runner.
 
-### Outputs
+### Deep PCB parse / Manus-style inspection
+
+The CI pipeline also runs a PCB-only parser pass before the schematic+PCB audit:
+
+`python tools/altium-audit/deep_pcb_parse.py --pcb <board.PcbDoc> --out <output-folder>`
+
+It exports parser collection counts, component/net CSVs, JSONL records for every exposed collection, the parser object/API inventory, a full-board SVG preview and per-layer SVG previews. Missing parser collections are marked unavailable/unknown rather than interpreted as zero. These previews are for review and are not DRC or fabrication evidence.
+
+## Outputs
 - `intake.json`
 - `audit-initial/`
 - `routing_repair_plan.json` when repair is requested
