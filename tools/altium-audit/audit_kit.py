@@ -53,6 +53,19 @@ def write_connectivity_manifest(out,audit_out,initial,sch,pcb):
     path.write_text(json.dumps(manifest,indent=2,ensure_ascii=False),encoding="utf-8")
     return path
 
+def run_standalone_parser(pcb, out, full=False):
+    """Run the independent binary parser as an additive branch; never replace primary audit evidence."""
+    parser = HERE/"standalone_pcbdoc_parser.py"
+    report = out/"standalone-pcbdoc-report.json"
+    cmd = [parser, pcb, "--output", report]
+    if full: cmd.append("--full")
+    rc = run(cmd)
+    data = json.loads(report.read_text(encoding="utf-8")) if report.exists() else {"status":"BLOCKED","reason":"standalone parser produced no report"}
+    data["process_returncode"] = rc
+    data["invocation"] = [str(x) for x in cmd]
+    report.write_text(json.dumps(data, indent=2, ensure_ascii=False)+"\n", encoding="utf-8")
+    return rc, data, report
+
 def audit(root,out,config=None):
     cmd=[RUNNER,"--root",root,"--out",out]
     if config: cmd+=["--config",config.resolve()]
@@ -73,7 +86,10 @@ def main():
     (out/"intake.json").write_text(json.dumps({"schema":"altium-audit-kit-run.v4","input":{"directory":str(root),"schematic":sch.name,"pcb":pcb.name,"project":prj.name if prj else None},"repair_requested":a.repair,"max_retries":a.max_retries},indent=2))
     project_root=stage_project(out,sch,pcb,prj)
     audit_out=out/"audit-initial"; _,initial=audit(project_root,audit_out,a.config)
-    if initial is None:\n        terminal={"status":"BLOCKED","reason":"audit runner produced no summary.json"}\n        if standalone_evidence is not None: terminal["standalone_binary_parser"]=standalone_evidence\n        write_terminal(out,terminal); return 2
+    if initial is None:
+        terminal={"status":"BLOCKED","reason":"audit runner produced no summary.json"}
+        if standalone_evidence is not None: terminal["standalone_binary_parser"]=standalone_evidence
+        write_terminal(out,terminal); return 2
     fallback=False; blocker=None
     if prj and initial.get("gates",{}).get("G1_PARSE")=="UNKNOWN":
         dr=out/"direct-input"; dr.mkdir(exist_ok=True); shutil.copy2(sch,dr/sch.name); shutil.copy2(pcb,dr/pcb.name); do=out/"audit-direct-fallback"; _,direct=audit(dr,do,a.config)
