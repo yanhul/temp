@@ -1,0 +1,102 @@
+name: qi9-2605-deep-parse
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "audit-input-2605/QI9-2605-A01.PcbDoc"
+      - "tools/altium-audit/parse_and_render_qi9_2605.sh"
+      - "tools/altium-audit/render_altiumts_board.mjs"
+      - ".github/workflows/qi9-2605-deep-parse.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deep-parse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/tscircuit/altiumts.git /tmp/altiumts
+          cd /tmp/altiumts
+          bun install --frozen-lockfile
+          bun run build
+          printf 'parser_commit=%s\n' "$(git rev-parse HEAD)" > "$GITHUB_WORKSPACE/work-parser-version.txt"
+
+      - name: Parse exact QI9-2605 source and render previews
+        shell: bash
+        run: |
+          set -euo pipefail
+          PCB="$GITHUB_WORKSPACE/audit-input-2605/QI9-2605-A01.PcbDoc"
+          test -s "$PCB"
+          test "$(basename "$PCB")" = "QI9-2605-A01.PcbDoc"
+          OUT="$GITHUB_WORKSPACE/work/qi9-2605-render"
+          mkdir -p "$OUT"
+          bash tools/altium-audit/parse_and_render_qi9_2605.sh "$PCB" "$OUT" /tmp/altiumts
+          set +e
+          bun /tmp/altiumts/dist/cli.js validate "$PCB" --json > "$OUT/pcb-validate.json" 2> "$OUT/pcb-validate.stderr"
+          printf '%s\n' "$?" > "$OUT/pcb-validate.exit-code"
+          bun /tmp/altiumts/dist/cli.js roundtrip "$PCB" --json > "$OUT/pcb-roundtrip.json" 2> "$OUT/pcb-roundtrip.stderr"
+          printf '%s\n' "$?" > "$OUT/pcb-roundtrip.exit-code"
+          set -e
+          python - "$PCB" "$OUT" <<'PY'
+          import hashlib, json, sys
+          from pathlib import Path
+          pcb, out = Path(sys.argv[1]), Path(sys.argv[2])
+          summary = json.loads((out / "render-summary.json").read_text())
+          manifest = (out / "source-manifest.txt").read_text()
+          expected = hashlib.sha256(pcb.read_bytes()).hexdigest()
+          if f"sha256={expected}" not in manifest:
+              raise SystemExit("FAIL: source SHA mismatch")
+          if summary.get("sourceBytes") != pcb.stat().st_size:
+              raise SystemExit("FAIL: renderer source size mismatch")
+          if Path(summary.get("source", "")).name != "QI9-2605-A01.PcbDoc":
+              raise SystemExit("FAIL: rendered source is not target PCB")
+          for name in ("pcb-inspect.json", "pcb-records.json", "pcb-streams.json", "pcb-validate.json", "pcb-roundtrip.json", "pcb-full.svg"):
+              p = out / name
+              if not p.is_file() or not p.stat().st_size:
+                  raise SystemExit(f"FAIL: missing/empty {name}")
+          for name in ("pcb-inspect.json", "pcb-records.json", "pcb-streams.json", "pcb-validate.json", "pcb-roundtrip.json"):
+              try:
+                  json.loads((out / name).read_text())
+              except Exception as exc:
+                  raise SystemExit(f"FAIL: {name} is not valid JSON: {exc}")
+          validate_rc = int((out/"pcb-validate.exit-code").read_text().strip())
+          roundtrip_rc = int((out/"pcb-roundtrip.exit-code").read_text().strip())
+          print(json.dumps({
+              "status": "PARSE_RENDER_ARTIFACTS_PRESENT",
+              "validation": "PASS" if validate_rc == 0 else "BLOCKED_OR_FAILED",
+              "roundtrip": "PASS" if roundtrip_rc == 0 else "BLOCKED_OR_FAILED",
+              "source": str(pcb),
+              "sha256": expected,
+              "bytes": pcb.stat().st_size,
+              "documentType": summary.get("documentType"),
+              "components": summary.get("componentCount"),
+              "nets": summary.get("netCount"),
+              "pads": summary.get("padCount"),
+              "tracks": summary.get("trackCount"),
+              "vias": summary.get("viaCount"),
+              "validateExit": validate_rc,
+              "roundtripExit": roundtrip_rc,
+              "svgBytes": (out/"pcb-full.svg").stat().st_size
+          }, indent=2))
+          PY
+
+      - name: Upload QI9-2605 parse evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qi9-2605-deep-parse
+          path: |
+            work/qi9-2605-render/
+            work-parser-version.txt
+          if-no-files-found: error
