@@ -23,13 +23,21 @@ The kit discovers the files itself. Project name, refdes, net names and blocker 
 
 Repair is fail-closed: no authoritative authorization means no mutation; the source PcbDoc is never overwritten; repair happens only on a working copy; the repaired board is re-audited by the same runner.
 
-### Deep PCB parse / Manus-style inspection
+### Deep PCB parse / Manus skill workflow
 
-The CI pipeline also runs a PCB-only parser pass before the schematic+PCB audit:
+The CI pipeline uses the same parser and command sequence specified by the `altium-pcb-placement-routing` skill: [tscircuit/altiumts](https://github.com/tscircuit/altiumts), built with Bun. It runs:
 
-`python tools/altium-audit/deep_pcb_parse.py --pcb <board.PcbDoc> --out <output-folder>`
+```sh
+bun dist/cli.js inspect board.PcbDoc --json
+bun dist/cli.js validate board.PcbDoc --json
+bun dist/cli.js records board.PcbDoc --json
+bun dist/cli.js streams board.PcbDoc --json
+bun dist/cli.js roundtrip board.PcbDoc --json
+```
 
-It exports parser collection counts, component/net CSVs, JSONL records for every exposed collection, the parser object/API inventory, a full-board SVG preview and per-layer SVG previews. Missing parser collections are marked unavailable/unknown rather than interpreted as zero. These previews are for review and are not DRC or fabrication evidence.
+It then renders `pcb-full.svg` plus TOP/BOTTOM and selected internal-layer previews with the parser's own SVG serializers. Artifacts include the exact source SHA-256, parser commit, raw parser outputs, validation and round-trip exit codes, record/layer metrics, and render summary. Net IDs are not inferred from record ordering. Missing collections and unresolved net references remain unknown, not zero.
+
+The parser is read-only for this workflow. SVG/structural validation do not replace native Altium DRC, stackup/impedance checks, schematic-intent review, or fabrication validation.
 
 ## Outputs
 - `intake.json`
