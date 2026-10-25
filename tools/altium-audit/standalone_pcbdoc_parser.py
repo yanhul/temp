@@ -224,14 +224,22 @@ def load_pcbdoc(path):
     native_matches_dims=bool(native_bbox and dim_size and abs((native_bbox[2]-native_bbox[0])-dim_size[0])<=2000 and abs((native_bbox[3]-native_bbox[1])-dim_size[1])<=2000)
     keepout_matches_dims=bool(ko and dim_size and abs((ko[2]-ko[0])-dim_size[0])<=2000 and abs((ko[3]-ko[1])-dim_size[1])<=2000)
     conflict=bool(native_bbox and dim_size and not native_matches_dims)
-    if native_matches_dims and (not ko or keepout_matches_dims):
-        border=native_bbox; source="Board6 native outline vertices (cross-checked)"
-    elif keepout_matches_dims:
-        border=ko; source="KeepOut bbox cross-checked against dimension annotations; Board6 outline conflicts" if conflict else "KeepOut bbox cross-checked against dimension annotations"
+    # User-selected audit basis: use KeepOut when it matches the dimension annotations.
+    # Keep the contradictory native Board6 geometry visible as a separate warning.
+    if keepout_matches_dims:
+        border=ko
+        source="KeepOut bbox selected for placement audit; cross-checked against dimension annotations"
+        if conflict:
+            source += "; native Board6 outline conflicts"
+        selected_outline_verified=True
+    elif native_matches_dims:
+        border=native_bbox; source="Board6 native outline vertices cross-checked against dimension annotations"
+        selected_outline_verified=True
     else:
         border=native_bbox or ko or dim_border
-        source="CONFLICT: outline candidates disagree; selected candidate is not verified"
-    pcb["true_outline"]={"border":border,"border_source":source,"outline_polygon":board_poly,"native_outline_bbox":native_bbox,"keepout_bbox":ko,"outline_conflict":conflict,"outline_verified":bool(native_matches_dims and (not ko or keepout_matches_dims)),"shape_region":shape,"dim_x_mm":u2mm(max(dx)) if dx else None,"dim_y_mm":u2mm(max(dy)) if dy else None}
+        source="CONFLICT: no outline candidate matches dimension annotations; selected candidate is not verified"
+        selected_outline_verified=False
+    pcb["true_outline"]={"border":border,"border_source":source,"outline_polygon":board_poly,"native_outline_bbox":native_bbox,"keepout_bbox":ko,"outline_conflict":conflict,"outline_verified":selected_outline_verified,"selected_outline_source":"KeepOut" if keepout_matches_dims else ("Board6" if native_matches_dims else "unverified"),"shape_region":shape,"dim_x_mm":u2mm(max(dx)) if dx else None,"dim_y_mm":u2mm(max(dy)) if dy else None}
     pcb["streams"]={k:{"size_bytes":len(v),"sha256":hashlib.sha256(v).hexdigest()} for k,v in streams.items()}
     pcb["source"]={"path":str(path),"size_bytes":path.stat().st_size,"sha256":hashlib.sha256(path.read_bytes()).hexdigest()}
     return pcb
@@ -305,6 +313,7 @@ def build_report(pcb,file_path,conn=None,full=False):
         s=t["shape_region"]; report["board"]["board_shape_region_bbox_mm"]=[round(u2mm(s[2]-s[0]),2),round(u2mm(s[3]-s[1]),2)]
     report["board"]["outline_verified"] = bool(t.get("outline_verified"))
     report["board"]["outline_conflict"] = bool(t.get("outline_conflict"))
+    report["board"]["selected_outline_source"] = t.get("selected_outline_source", "unverified")
     report["board"]["native_outline_bbox_mm"] = [round(u2mm(v),2) for v in t["native_outline_bbox"]] if t.get("native_outline_bbox") else None
     report["board"]["keepout_bbox_mm"] = [round(u2mm(v),2) for v in t["keepout_bbox"]] if t.get("keepout_bbox") else None
     report["board"]["outline_vertex_count"] = len(t.get("outline_polygon", []))
