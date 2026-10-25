@@ -32,14 +32,20 @@ jobs:
       - name: Run PcbDoc forensics regression tests
         run: python -m unittest discover -s tests -p 'test_pcbdoc_forensics.py' -v
       - name: Compile forensics scripts
-        run: python -m py_compile tools/altium-audit/pcbdoc-forensics/explore_format.py tools/altium-audit/pcbdoc-forensics/dump_raw.py
+        run: python -m py_compile tools/altium-audit/pcbdoc-forensics/explore_format.py tools/altium-audit/pcbdoc-forensics/dump_raw.py tools/altium-audit/pcbdoc-forensics/validate_record_framing.py
       - name: Inventory actual committed PcbDoc
         run: |
           python tools/altium-audit/pcbdoc-forensics/explore_format.py "Copy of QI9-2605-A01.PcbDoc" --json pcbdoc-stream-inventory.json
           sha256sum "Copy of QI9-2605-A01.PcbDoc" pcbdoc-stream-inventory.json
-      - name: Upload source-bound stream inventory
+      - name: Validate primitive record framing
+        run: |
+          python tools/altium-audit/pcbdoc-forensics/validate_record_framing.py "Copy of QI9-2605-A01.PcbDoc" --json pcbdoc-record-framing.json
+          sha256sum pcbdoc-record-framing.json
+      - name: Upload source-bound forensic reports
         uses: actions/upload-artifact@v4
         with:
-          name: pcbdoc-stream-inventory
-          path: pcbdoc-stream-inventory.json
+          name: pcbdoc-forensics-reports
+          path: |
+            pcbdoc-stream-inventory.json
+            pcbdoc-record-framing.json
           if-no-files-found: error
