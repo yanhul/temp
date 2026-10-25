@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - "audit 2605/QI9-2605-A01.PcbDoc"
+      - "audit-input-2605/QI9-2605-A01.PcbDoc"
       - "tools/altium-audit/parse_and_render_qi9_2605.sh"
       - "tools/altium-audit/render_altiumts_board.mjs"
       - ".github/workflows/qi9-2605-deep-parse.yml"
@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PCB="$GITHUB_WORKSPACE/audit 2605/QI9-2605-A01.PcbDoc"
+          PCB="$GITHUB_WORKSPACE/audit-input-2605/QI9-2605-A01.PcbDoc"
           test -s "$PCB"
           test "$(basename "$PCB")" = "QI9-2605-A01.PcbDoc"
           OUT="$GITHUB_WORKSPACE/work/qi9-2605-render"
