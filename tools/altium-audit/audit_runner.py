@@ -769,7 +769,14 @@ def main():
     ap.add_argument("--archive", type=pathlib.Path)
     ap.add_argument("--source-sha256", type=str)
     ap.add_argument("--config", type=pathlib.Path, help="optional project-local config; never required by the engine")
+    ap.add_argument("--outline-evidence", type=pathlib.Path, help="standalone parser JSON; selected KeepOut bbox may override native bbox for component-bound screening")
     args = ap.parse_args()
+    outline_evidence = {}
+    if args.outline_evidence and args.outline_evidence.exists():
+        try:
+            outline_evidence = json.loads(args.outline_evidence.read_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"WARNING: cannot read outline evidence: {exc}", file=sys.stderr)
     root, out = args.root, args.out
     project_config = {}
     if args.config and args.config.exists():
@@ -1190,12 +1197,27 @@ def main():
     outline = getattr(getattr(pcb,"board",None),"outline",None)
     vertices = list(getattr(outline,"vertices",[]) or []) if outline else []
     if vertices:
-        bb = getattr(outline,"bounding_box",None)
+        native_bb = getattr(outline,"bounding_box",None)
+        selected_bb = native_bb
+        selected_source = "native Board6 outline bbox"
+        board_ev = outline_evidence.get("board", {}) if isinstance(outline_evidence, dict) else {}
+        keepout_mm = board_ev.get("keepout_bbox_mm")
+        selected = board_ev.get("selected_outline_source")
+        if selected == "KeepOut" and isinstance(keepout_mm, list) and len(keepout_mm) == 4:
+            try:
+                # Standalone parser reports mm; altium-monkey geometry uses mils.
+                selected_bb = tuple(float(v) * 1000.0 / 25.4 for v in keepout_mm)
+                selected_source = "KeepOut bbox selected by standalone parser; native Board6 outline conflicts"
+                add(findings,"G6-BOARD-OUTLINE-KEEP_OUT","INFO","physical","VERIFIED",
+                    f"Placement boundary screening uses selected KeepOut bbox {keepout_mm} mm, cross-checked against dimension annotations; native Board6 bbox={native_bb!r} remains conflicting geometry.","VERIFIED")
+            except Exception:
+                selected_bb = native_bb
+        bb = selected_bb
         add(findings,"G6-BOARD-OUTLINE","INFO","physical","VERIFIED",
-            f"Parsed board outline with {len(vertices)} vertices; bounding_box={bb!r}.","VERIFIED")
+            f"Native Board6 outline has {len(vertices)} vertices and bbox={native_bb!r}; component-bound screening source={selected_source}, bbox={bb!r}.","VERIFIED")
         add(findings,"G6-BOARD-OUTLINE-CLOSED","INFO","physical",
             "VERIFIED" if len(vertices) >= 3 else "UNKNOWN",
-            "Altium board outline is represented as an ordered polygon; closure is implicit from the final vertex back to the first.","VERIFIED")
+            "Native Board6 outline is represented as an ordered polygon; closure is implicit from the final vertex back to the first. This does not certify KeepOut bbox as a fabrication polygon.","VERIFIED")
         if bb and len(bb) == 4:
             x0,y0,x1,y1 = map(float,bb)
             outside = []
