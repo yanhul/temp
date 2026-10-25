@@ -35,7 +35,10 @@ jobs:
           assert report["source"]["sha256"] == actual_sha, "report source hash mismatch"
           assert report["source"]["size_bytes"] == source.stat().st_size, "report source size mismatch"
           assert len(report["streams"]) > 0, "no OLE streams were inventoried"
-          assert report.get("status") != "PASS", "heuristic parser must not claim complete audit PASS"\n          from pathlib import Path as _Path\n          assert (_Path("e2e/standalone-parser/svg/top.svg")).is_file(), "top SVG preview missing"\n          assert (_Path("e2e/standalone-parser/svg/bottom.svg")).is_file(), "bottom SVG preview missing"\n          assert (_Path("e2e/standalone-parser/svg/svg-summary.json")).is_file(), "SVG manifest missing"
+          assert report.get("status") != "PASS", "heuristic parser must not claim complete audit PASS"
+          assert Path("e2e/standalone-parser/svg/top.svg").is_file(), "top SVG preview missing"
+          assert Path("e2e/standalone-parser/svg/bottom.svg").is_file(), "bottom SVG preview missing"
+          assert Path("e2e/standalone-parser/svg/svg-summary.json").is_file(), "SVG manifest missing"
           routing = report.get("routing_analysis", {})
           assert routing.get("connectivity_verified") is False, "heuristic geometry must not certify connectivity"
           assert "heuristic" in routing.get("method", "").lower(), "routing method must disclose heuristic nature"
