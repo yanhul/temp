@@ -1,0 +1,57 @@
+name: standalone-pcbdoc-parser-e2e
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'audit-input-2605/**'
+      - 'tools/altium-audit/**'
+      - '.github/workflows/standalone-pcbdoc-parser-e2e.yml'
+permissions:
+  contents: read
+jobs:
+  parser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install parser and audit dependencies
+        run: python -m pip install -r tools/altium-audit/requirements.txt
+      - name: Run standalone parser against the actual QI9-2605 board
+        run: |
+          mkdir -p e2e/standalone-parser
+          python tools/altium-audit/standalone_pcbdoc_parser.py "audit-input-2605/Copy of QI9-2605-A01.PcbDoc" --output e2e/standalone-parser/report.json --full
+      - name: Validate report identity and fail-closed semantics
+        run: |
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          source = Path("audit-input-2605/Copy of QI9-2605-A01.PcbDoc")
+          report_path = Path("e2e/standalone-parser/report.json")
+          report = json.loads(report_path.read_text(encoding="utf-8"))
+          actual_sha = hashlib.sha256(source.read_bytes()).hexdigest()
+          assert report["source"]["sha256"] == actual_sha, "report source hash mismatch"
+          assert report["source"]["size_bytes"] == source.stat().st_size, "report source size mismatch"
+          assert report["stream_count"] > 0, "no OLE streams were inventoried"
+          assert report["status"] != "PASS", "heuristic parser must not claim complete audit PASS"
+          routing = report.get("routing_analysis", {})
+          assert routing.get("connectivity_verified") is False, "heuristic inventory cannot certify connectivity"
+          assert routing.get("airwire_count") is None, "airwire count must remain unknown without validated connectivity"
+          print("SOURCE_SHA256=" + actual_sha)
+          print("STREAM_COUNT=" + str(report["stream_count"]))
+          print("ROUTING_STATUS=" + str(routing.get("status")))
+          print("CONNECTIVITY_VERIFIED=false")
+          print("PARSER_E2E=PASS (inventory and fail-closed checks only; not a PCB correctness PASS)")
+          PY
+      - name: Run existing Altium audit kit as independent cross-check
+        continue-on-error: true
+        run: |
+          python tools/altium-audit/audit_kit.py --input audit-input-2605 --output e2e/altium-audit-kit --config altium-audit-2605.config.json --binary-parser standalone --parser-full
+      - if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: qi9-2605-standalone-parser-evidence
+          path: e2e
+          if-no-files-found: warn
