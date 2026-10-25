@@ -65,8 +65,17 @@ jobs:
               p = out / name
               if not p.is_file() or not p.stat().st_size:
                   raise SystemExit(f"FAIL: missing/empty {name}")
+          for name in ("pcb-inspect.json", "pcb-records.json", "pcb-streams.json", "pcb-validate.json", "pcb-roundtrip.json"):
+              try:
+                  json.loads((out / name).read_text())
+              except Exception as exc:
+                  raise SystemExit(f"FAIL: {name} is not valid JSON: {exc}")
+          validate_rc = int((out/"pcb-validate.exit-code").read_text().strip())
+          roundtrip_rc = int((out/"pcb-roundtrip.exit-code").read_text().strip())
           print(json.dumps({
               "status": "PARSE_RENDER_ARTIFACTS_PRESENT",
+              "validation": "PASS" if validate_rc == 0 else "BLOCKED_OR_FAILED",
+              "roundtrip": "PASS" if roundtrip_rc == 0 else "BLOCKED_OR_FAILED",
               "source": str(pcb),
               "sha256": expected,
               "bytes": pcb.stat().st_size,
@@ -76,8 +85,8 @@ jobs:
               "pads": summary.get("padCount"),
               "tracks": summary.get("trackCount"),
               "vias": summary.get("viaCount"),
-              "validateExit": (out/"pcb-validate.exit-code").read_text().strip(),
-              "roundtripExit": (out/"pcb-roundtrip.exit-code").read_text().strip(),
+              "validateExit": validate_rc,
+              "roundtripExit": roundtrip_rc,
               "svgBytes": (out/"pcb-full.svg").stat().st_size
           }, indent=2))
           PY
