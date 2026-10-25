@@ -35,6 +35,19 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r tools/altium-audit/requirements.txt
 
+      - name: Manus-style deep PCB parse and render
+        shell: bash
+        run: |
+          set -euo pipefail
+          PCB="$(find work/project -type f -name '*.PcbDoc' | head -1)"
+          test -n "$PCB"
+          python tools/altium-audit/deep_pcb_parse.py --pcb "$PCB" --out work/deep-parse
+          test -s work/deep-parse/deep-parse-summary.json
+          test -s work/deep-parse/DEEP_PARSE_REPORT.md
+          test -s work/deep-parse/components.csv
+          test -s work/deep-parse/nets.csv
+          test -s work/deep-parse/board-overview.svg
+
       - name: Verify project-independent audit engine
         run: python tests/test_altium_audit_project_independence.py
 
@@ -89,7 +102,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: altium-audit-report
-          path: work/audit/
+          path: |
+            work/audit/
+            work/deep-parse/
           if-no-files-found: error
 
       - name: Finalize audit status
