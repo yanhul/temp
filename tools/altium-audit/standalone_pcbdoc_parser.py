@@ -244,10 +244,17 @@ def load_pcbdoc(path):
     pcb["source"]={"path":str(path),"size_bytes":path.stat().st_size,"sha256":hashlib.sha256(path.read_bytes()).hexdigest()}
     return pcb
 def pad_bbox(p):
+    """Conservative axis-aligned envelope of a pad after its stored rotation."""
     if p["layer"]==1:w,h=p["topw"],p["toph"]
     elif p["layer"]==32:w,h=p["botw"],p["both"]
     else:w,h=max(p["topw"],p["botw"]),max(p["toph"],p["both"])
-    return p["x"]-w/2,p["y"]-h/2,p["x"]+w/2,p["y"]+h/2
+    # Rotating a rectangle changes its axis-aligned extents. Using the
+    # rotated envelope avoids under-reporting edge clearance for diagonal pads.
+    theta=math.radians(float(p.get("rot",0.0)))
+    c=abs(math.cos(theta)); s=abs(math.sin(theta))
+    ex=(c*abs(w)+s*abs(h))/2
+    ey=(s*abs(w)+c*abs(h))/2
+    return p["x"]-ex,p["y"]-ey,p["x"]+ex,p["y"]+ey
 def point_seg_dist(x1,y1,x2,y2,x,y):
     dx=x2-x1; dy=y2-y1; ll=dx*dx+dy*dy
     t=max(0,min(1,((x-x1)*dx+(y-y1)*dy)/ll)) if ll else 0
@@ -335,7 +342,7 @@ def build_report(pcb,file_path,conn=None,full=False):
             c=pcb["components"][ci]
             edge_rows.append({"component_index":ci,"designator":c.get("SOURCEDESIGNATOR","?"),"pad_envelope_edge_clearance_mm":round(u2mm(edge),3)})
         edge_rows.sort(key=lambda x:x["pad_envelope_edge_clearance_mm"])
-        report["placement_screen"]={"method":"axis-aligned pad envelope against board-outline bounding box; not body/courtyard DRC","component_count_with_pads":len(edge_rows),"components_with_pad_envelope_within_3mm_of_bbox_edge":[x for x in edge_rows if x["pad_envelope_edge_clearance_mm"] < 3],"components_with_pad_envelope_outside_bbox":[x for x in edge_rows if x["pad_envelope_edge_clearance_mm"] < 0],"body_collision_check":"NOT_PERFORMED: footprint body/courtyard geometry is not decoded by this parser"}
+        report["placement_screen"]={"method":"rotation-aware conservative pad envelope against selected KeepOut/outline bounding box; not body/courtyard DRC","component_count_with_pads":len(edge_rows),"components_with_pad_envelope_within_3mm_of_bbox_edge":[x for x in edge_rows if x["pad_envelope_edge_clearance_mm"] < 3],"components_with_pad_envelope_outside_bbox":[x for x in edge_rows if x["pad_envelope_edge_clearance_mm"] < 0],"body_collision_check":"NOT_PERFORMED: footprint body/courtyard streams exist in PcbDoc but are not yet decoded; no body-collision PASS claimed"}
     tl=sum(math.hypot(x["x2"]-x["x1"],x["y2"]-x["y1"]) for x in pcb["tracks"] if x["layer"]==1); bl=sum(math.hypot(x["x2"]-x["x1"],x["y2"]-x["y1"]) for x in pcb["tracks"] if x["layer"]==32)
     report["copper"]={"top_length_mm":round(u2mm(tl),1),"bottom_length_mm":round(u2mm(bl),1),"track_widths_mil":sorted({mil(x["width"]) for x in pcb["tracks"] if x["layer"] in (1,32)}),"vias":[{"diameter_mil":mil(v["diameter"]),"hole_mil":mil(v["hole"]),"x_mm":round(u2mm(v["x"]),3),"y_mm":round(u2mm(v["y"]),3),"net":net_name(pcb,v["net"])} for v in pcb["vias"]]}
     report["rules"]=[{k:p.get(k) for k in ("RULEKIND","NAME","GAP","MINLIMIT","MAXLIMIT","PREFEREDWIDTH","PREFERREDWIDTH") if p.get(k) not in (None,"-")} for p in pcb["rules"] if p.get("RULEKIND") in ("Clearance","Width","RoutingVias")]
