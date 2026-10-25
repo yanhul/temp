@@ -16,6 +16,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Bun and build altiumts parser
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build pinned parser checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/tscircuit/altiumts.git /tmp/altiumts
+          cd /tmp/altiumts
+          printf 'parser_commit=%s\\n' "$(git rev-parse HEAD)" | tee "$GITHUB_WORKSPACE/work-altiumts-version.txt"
+          bun install --frozen-lockfile
+          bun run build
+
       - name: Reconstruct archive from ordered base64 parts
         shell: bash
         run: |
@@ -35,18 +50,32 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r tools/altium-audit/requirements.txt
 
-      - name: Manus-style deep PCB parse and render
+      - name: Manus-skill parse, validate, records, streams and round-trip
         shell: bash
         run: |
           set -euo pipefail
           PCB="$(find work/project -type f -name '*.PcbDoc' | head -1)"
           test -n "$PCB"
-          python tools/altium-audit/deep_pcb_parse.py --pcb "$PCB" --out work/deep-parse
-          test -s work/deep-parse/deep-parse-summary.json
-          test -s work/deep-parse/DEEP_PARSE_REPORT.md
-          test -s work/deep-parse/components.csv
-          test -s work/deep-parse/nets.csv
-          test -s work/deep-parse/board-overview.svg
+          mkdir -p work/deep-parse
+          printf 'source=%s\\nsize_bytes=%s\\nsha256=%s\\n' "$PCB" "$(stat -c %s "$PCB")" "$(sha256sum "$PCB" | cut -d' ' -f1)" > work/deep-parse/source-manifest.txt
+          bun /tmp/altiumts/dist/cli.js inspect "$PCB" --json > work/deep-parse/pcb-inspect.json
+          bun /tmp/altiumts/dist/cli.js records "$PCB" --json > work/deep-parse/pcb-records.json
+          bun /tmp/altiumts/dist/cli.js streams "$PCB" --json > work/deep-parse/pcb-streams.json
+          set +e
+          bun /tmp/altiumts/dist/cli.js validate "$PCB" --json > work/deep-parse/pcb-validate.json 2> work/deep-parse/pcb-validate.stderr
+          printf '%s\\n' "$?" > work/deep-parse/pcb-validate.exit-code
+          bun /tmp/altiumts/dist/cli.js roundtrip "$PCB" --json > work/deep-parse/pcb-roundtrip.json 2> work/deep-parse/pcb-roundtrip.stderr
+          printf '%s\\n' "$?" > work/deep-parse/pcb-roundtrip.exit-code
+          set -e
+          node tools/altium-audit/render_altiumts_board.mjs /tmp/altiumts "$PCB" work/deep-parse
+          python tools/altium-audit/summarize_altiumts_records.py work/deep-parse/pcb-records.json > work/deep-parse/record-metrics.txt
+          printf 'parser_commit=%s\\n' "$(git -C /tmp/altiumts rev-parse HEAD)" > work/deep-parse/parser-version.txt
+          test -s work/deep-parse/pcb-inspect.json
+          test -s work/deep-parse/pcb-records.json
+          test -s work/deep-parse/pcb-streams.json
+          test -s work/deep-parse/pcb-validate.json
+          test -s work/deep-parse/pcb-full.svg
+          test -s work/deep-parse/render-summary.json
 
       - name: Verify project-independent audit engine
         run: python tests/test_altium_audit_project_independence.py
@@ -105,6 +134,7 @@ jobs:
           path: |
             work/audit/
             work/deep-parse/
+            work-altiumts-version.txt
           if-no-files-found: error
 
       - name: Finalize audit status
