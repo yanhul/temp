@@ -1,0 +1,56 @@
+name: pcbdoc-binary-forensics
+
+on:
+  push:
+    branches:
+      - "feat/pcbdoc-binary-forensics"
+    paths:
+      - "tools/altium-audit/pcbdoc-forensics/**"
+      - "tests/test_pcbdoc_forensics.py"
+      - ".github/workflows/pcbdoc-binary-forensics.yml"
+      - "Copy of QI9-2605-A01.PcbDoc"
+  pull_request:
+    paths:
+      - "tools/altium-audit/pcbdoc-forensics/**"
+      - "tests/test_pcbdoc_forensics.py"
+      - ".github/workflows/pcbdoc-binary-forensics.yml"
+      - "Copy of QI9-2605-A01.PcbDoc"
+  workflow_dispatch:
+
+jobs:
+  forensics-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install isolated forensics dependency
+        run: python -m pip install -r tools/altium-audit/pcbdoc-forensics/requirements.txt
+      - name: Verify olefile is installed in the active interpreter
+        run: python -c "import sys, olefile; print(sys.executable); print('olefile', getattr(olefile, '__version__', 'installed'))"
+      - name: Run PcbDoc forensics regression tests
+        run: python -m unittest discover -s tests -p 'test_pcbdoc_forensics.py' -v
+      - name: Compile forensics scripts
+        run: python -m py_compile tools/altium-audit/pcbdoc-forensics/explore_format.py tools/altium-audit/pcbdoc-forensics/dump_raw.py tools/altium-audit/pcbdoc-forensics/validate_record_framing.py tools/altium-audit/pcbdoc-forensics/validate_pads_nested.py
+      - name: Inventory actual committed PcbDoc
+        run: |
+          python tools/altium-audit/pcbdoc-forensics/explore_format.py "Copy of QI9-2605-A01.PcbDoc" --json pcbdoc-stream-inventory.json
+          sha256sum "Copy of QI9-2605-A01.PcbDoc" pcbdoc-stream-inventory.json
+      - name: Validate primitive record framing
+        run: |
+          python tools/altium-audit/pcbdoc-forensics/validate_record_framing.py "Copy of QI9-2605-A01.PcbDoc" --json pcbdoc-record-framing.json
+          sha256sum pcbdoc-record-framing.json
+      - name: Validate nested Pads6 records
+        run: |
+          python tools/altium-audit/pcbdoc-forensics/validate_pads_nested.py "Copy of QI9-2605-A01.PcbDoc" --json pcbdoc-pads-nested.json
+          sha256sum pcbdoc-pads-nested.json
+      - name: Upload source-bound forensic reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcbdoc-forensics-reports
+          path: |
+            pcbdoc-stream-inventory.json
+            pcbdoc-record-framing.json
+            pcbdoc-pads-nested.json
+          if-no-files-found: error
