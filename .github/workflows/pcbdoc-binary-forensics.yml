@@ -8,11 +8,13 @@ on:
       - "tools/altium-audit/pcbdoc-forensics/**"
       - "tests/test_pcbdoc_forensics.py"
       - ".github/workflows/pcbdoc-binary-forensics.yml"
+      - "Copy of QI9-2605-A01.PcbDoc"
   pull_request:
     paths:
       - "tools/altium-audit/pcbdoc-forensics/**"
       - "tests/test_pcbdoc_forensics.py"
       - ".github/workflows/pcbdoc-binary-forensics.yml"
+      - "Copy of QI9-2605-A01.PcbDoc"
   workflow_dispatch:
 
 jobs:
@@ -31,3 +33,13 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_pcbdoc_forensics.py' -v
       - name: Compile forensics scripts
         run: python -m py_compile tools/altium-audit/pcbdoc-forensics/explore_format.py tools/altium-audit/pcbdoc-forensics/dump_raw.py
+      - name: Inventory actual committed PcbDoc
+        run: |
+          python tools/altium-audit/pcbdoc-forensics/explore_format.py "Copy of QI9-2605-A01.PcbDoc" --json pcbdoc-stream-inventory.json
+          sha256sum "Copy of QI9-2605-A01.PcbDoc" pcbdoc-stream-inventory.json
+      - name: Upload source-bound stream inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcbdoc-stream-inventory
+          path: pcbdoc-stream-inventory.json
+          if-no-files-found: error
