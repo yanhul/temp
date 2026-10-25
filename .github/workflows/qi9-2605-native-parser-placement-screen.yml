@@ -1,0 +1,52 @@
+name: qi9-2605-native-parser-placement-screen
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "tools/altium-audit/standalone_pcbdoc_parser.py"
+      - "audit-input-2605/**"
+      - ".github/workflows/qi9-2605-native-parser-placement-screen.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parse-and-screen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install parser dependencies
+        run: python -m pip install -r tools/altium-audit/requirements.txt
+      - name: Parse native PcbDoc and generate placement screen
+        run: |
+          python tools/altium-audit/standalone_pcbdoc_parser.py "audit-input-2605/Copy of QI9-2605-A01.PcbDoc" --full --no-analysis -o qi9-2605-native-parser-report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = json.loads(Path("qi9-2605-native-parser-report.json").read_text())
+          assert p["counts"]["components"] > 0, p["counts"]
+          assert p["counts"]["pads"] > 0, p["counts"]
+          assert p["board"].get("size_mm") == [122.0, 86.0], p.get("board")
+          assert p["board"].get("outline_verified") is True, p.get("board")
+          assert "placement_screen" in p, "placement screen missing"
+          print(json.dumps({
+              "status": "PASS_PARSE_AND_PAD_SCREEN",
+              "source": p["source"],
+              "counts": p["counts"],
+              "board": p["board"],
+              "placement_screen": p["placement_screen"],
+          }, indent=2))
+          PY
+      - name: Upload native parser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qi9-2605-native-parser-placement-evidence
+          path: qi9-2605-native-parser-report.json
+          if-no-files-found: warn
+          retention-days: 14
