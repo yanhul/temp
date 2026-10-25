@@ -210,9 +210,16 @@ def load_pcbdoc(path):
     for d in pcb["dimensions"]:
         x=abs(d["x2"]-d["x1"]); y=abs(d["y2"]-d["y1"]); span=max(x,y)
         if span and min(x,y)<=.005*span: (dx if x>=y else dy).append(span)
-    border=ko or ((0,0,max(dx),max(dy)) if dx and dy else None)
-    source="KeepOut bbox" if ko else ("dimension annotations" if border else None)
-    pcb["true_outline"]={"border":border,"border_source":source,"shape_region":shape,"dim_x_mm":u2mm(max(dx)) if dx else None,"dim_y_mm":u2mm(max(dy)) if dy else None}
+    # Prefer the native Board6 outline vertices when present. KeepOut is only
+    # a fallback because its bounding box is not necessarily the routed board edge.
+    board_poly=pcb["outline"] if len(pcb["outline"]) >= 3 else []
+    if board_poly:
+        ox=[p[0] for p in board_poly]; oy=[p[1] for p in board_poly]
+        border=(min(ox),min(oy),max(ox),max(oy)); source="Board6 native outline vertices"
+    else:
+        border=ko or ((0,0,max(dx),max(dy)) if dx and dy else None)
+        source="KeepOut bbox (fallback; not verified outline)" if ko else ("dimension annotations (fallback; not verified outline)" if border else None)
+    pcb["true_outline"]={"border":border,"border_source":source,"outline_polygon":board_poly,"shape_region":shape,"dim_x_mm":u2mm(max(dx)) if dx else None,"dim_y_mm":u2mm(max(dy)) if dy else None}
     pcb["streams"]={k:{"size_bytes":len(v),"sha256":hashlib.sha256(v).hexdigest()} for k,v in streams.items()}
     pcb["source"]={"path":str(path),"size_bytes":path.stat().st_size,"sha256":hashlib.sha256(path.read_bytes()).hexdigest()}
     return pcb
@@ -283,7 +290,28 @@ def build_report(pcb,file_path,conn=None,full=False):
     if t["border"]:
         b=t["border"]; report["board"]={"size_mm":[round(u2mm(b[2]-b[0]),2),round(u2mm(b[3]-b[1]),2)],"outline_bbox_mm":[round(u2mm(v),2) for v in b],"outline_source":t["border_source"],"dimension_annotations_mm":[round(t["dim_x_mm"],2),round(t["dim_y_mm"],2)] if t["dim_x_mm"] and t["dim_y_mm"] else None}
     if t["shape_region"]:
-        s=t["shape_region"]; report["board"]["stale_board_shape_region_mm"]=[round(u2mm(s[2]-s[0]),2),round(u2mm(s[3]-s[1]),2)]
+        s=t["shape_region"]; report["board"]["board_shape_region_bbox_mm"]=[round(u2mm(s[2]-s[0]),2),round(u2mm(s[3]-s[1]),2)]
+    report["board"]["outline_verified"] = bool(t.get("outline_polygon") and len(t["outline_polygon"]) >= 3)
+    report["board"]["outline_vertex_count"] = len(t.get("outline_polygon", []))
+    # Component body/courtyard geometry is not present in the parsed component
+    # property records. Report pad-envelope edge clearance as a screening metric,
+    # never as proof that component bodies fit or do not collide.
+    by_component=defaultdict(list)
+    for p in pcb["pads"]:
+        if p["component"] != COMPONENT_NONE and p["component"] < len(pcb["components"]):
+            b=pad_bbox(p); by_component[p["component"]].append((b,p))
+    if t["border"]:
+        bx1,by1,bx2,by2=t["border"]
+        edge_rows=[]
+        for ci,items in by_component.items():
+            boxes=[b for b,p in items]
+            x1=min(b[0] for b in boxes); y1=min(b[1] for b in boxes)
+            x2=max(b[2] for b in boxes); y2=max(b[3] for b in boxes)
+            edge=min(x1-bx1,y1-by1,bx2-x2,by2-y2)
+            c=pcb["components"][ci]
+            edge_rows.append({"component_index":ci,"designator":c.get("SOURCEDESIGNATOR","?"),"pad_envelope_edge_clearance_mm":round(u2mm(edge),3)})
+        edge_rows.sort(key=lambda x:x["pad_envelope_edge_clearance_mm"])
+        report["placement_screen"]={"method":"axis-aligned pad envelope against board-outline bounding box; not body/courtyard DRC","component_count_with_pads":len(edge_rows),"components_with_pad_envelope_within_3mm_of_bbox_edge":[x for x in edge_rows if x["pad_envelope_edge_clearance_mm"] < 3],"components_with_pad_envelope_outside_bbox":[x for x in edge_rows if x["pad_envelope_edge_clearance_mm"] < 0],"body_collision_check":"NOT_PERFORMED: footprint body/courtyard geometry is not decoded by this parser"}
     tl=sum(math.hypot(x["x2"]-x["x1"],x["y2"]-x["y1"]) for x in pcb["tracks"] if x["layer"]==1); bl=sum(math.hypot(x["x2"]-x["x1"],x["y2"]-x["y1"]) for x in pcb["tracks"] if x["layer"]==32)
     report["copper"]={"top_length_mm":round(u2mm(tl),1),"bottom_length_mm":round(u2mm(bl),1),"track_widths_mil":sorted({mil(x["width"]) for x in pcb["tracks"] if x["layer"] in (1,32)}),"vias":[{"diameter_mil":mil(v["diameter"]),"hole_mil":mil(v["hole"]),"x_mm":round(u2mm(v["x"]),3),"y_mm":round(u2mm(v["y"]),3),"net":net_name(pcb,v["net"])} for v in pcb["vias"]]}
     report["rules"]=[{k:p.get(k) for k in ("RULEKIND","NAME","GAP","MINLIMIT","MAXLIMIT","PREFEREDWIDTH","PREFERREDWIDTH") if p.get(k) not in (None,"-")} for p in pcb["rules"] if p.get("RULEKIND") in ("Clearance","Width","RoutingVias")]
