@@ -27,7 +27,7 @@ jobs:
           set -euo pipefail
           git clone --depth 1 https://github.com/tscircuit/altiumts.git /tmp/altiumts
           cd /tmp/altiumts
-          printf 'parser_commit=%s\\n' "$(git rev-parse HEAD)" | tee "$GITHUB_WORKSPACE/work-altiumts-version.txt"
+          printf 'parser_commit=%s\n' "$(git rev-parse HEAD)" | tee "$GITHUB_WORKSPACE/work-altiumts-version.txt"
           bun install --frozen-lockfile
           bun run build
 
@@ -57,19 +57,19 @@ jobs:
           PCB="$(find work/project -type f -name '*.PcbDoc' | head -1)"
           test -n "$PCB"
           mkdir -p work/deep-parse
-          printf 'source=%s\\nsize_bytes=%s\\nsha256=%s\\n' "$PCB" "$(stat -c %s "$PCB")" "$(sha256sum "$PCB" | cut -d' ' -f1)" > work/deep-parse/source-manifest.txt
+          printf 'source=%s\nsize_bytes=%s\nsha256=%s\n' "$PCB" "$(stat -c %s "$PCB")" "$(sha256sum "$PCB" | cut -d' ' -f1)" > work/deep-parse/source-manifest.txt
           bun /tmp/altiumts/dist/cli.js inspect "$PCB" --json > work/deep-parse/pcb-inspect.json
           bun /tmp/altiumts/dist/cli.js records "$PCB" --json > work/deep-parse/pcb-records.json
           bun /tmp/altiumts/dist/cli.js streams "$PCB" --json > work/deep-parse/pcb-streams.json
           set +e
           bun /tmp/altiumts/dist/cli.js validate "$PCB" --json > work/deep-parse/pcb-validate.json 2> work/deep-parse/pcb-validate.stderr
-          printf '%s\\n' "$?" > work/deep-parse/pcb-validate.exit-code
+          printf '%s\n' "$?" > work/deep-parse/pcb-validate.exit-code
           bun /tmp/altiumts/dist/cli.js roundtrip "$PCB" --json > work/deep-parse/pcb-roundtrip.json 2> work/deep-parse/pcb-roundtrip.stderr
-          printf '%s\\n' "$?" > work/deep-parse/pcb-roundtrip.exit-code
+          printf '%s\n' "$?" > work/deep-parse/pcb-roundtrip.exit-code
           set -e
           node tools/altium-audit/render_altiumts_board.mjs /tmp/altiumts "$PCB" work/deep-parse
           python tools/altium-audit/summarize_altiumts_records.py work/deep-parse/pcb-records.json > work/deep-parse/record-metrics.txt
-          printf 'parser_commit=%s\\n' "$(git -C /tmp/altiumts rev-parse HEAD)" > work/deep-parse/parser-version.txt
+          printf 'parser_commit=%s\n' "$(git -C /tmp/altiumts rev-parse HEAD)" > work/deep-parse/parser-version.txt
           test -s work/deep-parse/pcb-inspect.json
           test -s work/deep-parse/pcb-records.json
           test -s work/deep-parse/pcb-streams.json
