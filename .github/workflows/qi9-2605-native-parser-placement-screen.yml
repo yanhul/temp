@@ -54,6 +54,8 @@ jobs:
               "placement_screen": p["placement_screen"],
           }, indent=2))
           PY
+      - name: Compile parser and Audit Kit entrypoints
+        run: python -m py_compile tools/altium-audit/standalone_pcbdoc_parser.py tools/altium-audit/audit_runner.py tools/altium-audit/audit_kit.py tools/altium-audit/placement_routing_plan.py
       - name: Run full Audit Kit with KeepOut evidence (audit only)
         id: audit_kit
         continue-on-error: true
