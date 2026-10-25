@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-PCB="${1:-$ROOT/audit-input-2605/QI9-2605-A01.PcbDoc}"
+PCB="${1:-$ROOT/audit 2605/QI9-2605-A01.PcbDoc}"
 OUT="${2:-$ROOT/work/qi9-2605-render}"
 PARSER="${3:-/tmp/altiumts}"
 
