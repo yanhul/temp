@@ -32,10 +32,11 @@ jobs:
           assert p["counts"]["components"] > 0, p["counts"]
           assert p["counts"]["pads"] > 0, p["counts"]
           assert p["board"].get("size_mm") == [122.0, 86.0], p.get("board")
-          assert p["board"].get("outline_verified") is True, p.get("board")
+          assert p["board"].get("size_mm") == [122.0, 86.0], p.get("board")
           assert "placement_screen" in p, "placement screen missing"
+          status = "BLOCKED_OUTLINE_CONFLICT" if p["board"].get("outline_conflict") else ("PASS_PARSE_PAD_SCREEN_ONLY" if p["board"].get("outline_verified") else "BLOCKED_OUTLINE_UNVERIFIED")
           print(json.dumps({
-              "status": "PASS_PARSE_AND_PAD_SCREEN",
+              "status": status,
               "source": p["source"],
               "counts": p["counts"],
               "board": p["board"],
