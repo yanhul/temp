@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Validate record framing for single-subrecord Altium V6 primitive streams.
+"""Validate byte framing for supported single-subrecord Altium V6 primitive streams.
 
-This is intentionally not a geometry decoder. It validates byte boundaries and
-record IDs for Tracks6, Arcs6, Vias6 and Pads6, binding every result to source SHA-256.
+Pads6 is deliberately reported as UNSUPPORTED because its records contain nested/
+secondary subrecords; treating it as a flat stream caused a false framing failure.
+This tool does not decode geometry or claim connectivity/DRC validity.
 """
 from __future__ import annotations
 import argparse
@@ -11,7 +12,10 @@ import json
 from pathlib import Path
 
 OLE_MAGIC = bytes.fromhex("D0CF11E0A1B11AE1")
-EXPECTED_TYPES = {"Arcs6": 1, "Pads6": 2, "Vias6": 3, "Tracks6": 4}
+EXPECTED_TYPES = {"Arcs6": 1, "Vias6": 3, "Tracks6": 4}
+UNSUPPORTED_STREAMS = {
+    "Pads6": "Pad records contain additional subrecords and require a dedicated nested-record parser."
+}
 MAX_RECORDS = 2_000_000
 
 
@@ -51,7 +55,9 @@ def analyze_stream(data: bytes, stream_name: str, header_count: int | None = Non
             errors.append({"offset": pos, "error": "record_limit_exceeded"})
             break
         pos = end
-    result = {
+    matches = None if header_count is None else header_count == len(records)
+    status = "PASS" if not errors and pos == len(data) and matches is not False else "BLOCKED"
+    return {
         "stream": stream_name,
         "expected_record_type": expected,
         "stream_size_bytes": len(data),
@@ -59,13 +65,11 @@ def analyze_stream(data: bytes, stream_name: str, header_count: int | None = Non
         "bytes_consumed": pos,
         "trailing_bytes": len(data) - pos,
         "header_count": header_count,
-        "header_count_matches": None if header_count is None else header_count == len(records),
-        "status": "PASS" if not errors and pos == len(data) else "BLOCKED",
+        "header_count_matches": matches,
+        "status": status,
         "errors": errors,
-        "records": records,
-        "note": "Framing validation only; not geometry, connectivity, layer or DRC validation."
+        "note": "Framing only; not geometry, connectivity, layer or DRC validation."
     }
-    return result
 
 
 def inspect(pcbdoc: Path) -> dict:
@@ -78,30 +82,46 @@ def inspect(pcbdoc: Path) -> dict:
     sha = sha256_file(pcbdoc)
     results = []
     with olefile.OleFileIO(str(pcbdoc)) as ole:
-        for name, expected in EXPECTED_TYPES.items():
+        for name, reason in UNSUPPORTED_STREAMS.items():
+            results.append({
+                "stream": name,
+                "status": "UNSUPPORTED",
+                "header_count": _read_header_count(ole, name),
+                "reason": reason,
+                "note": "Excluded from PASS accounting; this family remains unaudited."
+            })
+        for name in EXPECTED_TYPES:
             data_path = [name, "Data"]
-            header_path = [name, "Header"]
             if not ole.exists(data_path):
                 results.append({"stream": name, "status": "BLOCKED", "errors": [{"error": "missing_data_stream"}]})
                 continue
             with ole.openstream(data_path) as stream:
                 data = stream.read()
-            header_count = None
-            if ole.exists(header_path):
-                with ole.openstream(header_path) as stream:
-                    header = stream.read()
-                if len(header) == 4:
-                    header_count = int.from_bytes(header, "little")
-            results.append(analyze_stream(data, name, header_count))
-    all_pass = all(r.get("status") == "PASS" and r.get("header_count_matches") is not False for r in results)
+            results.append(analyze_stream(data, name, _read_header_count(ole, name)))
+    supported = [r for r in results if r["stream"] in EXPECTED_TYPES]
+    supported_pass = all(r.get("status") == "PASS" for r in supported)
+    all_supported_present = len(supported) == len(EXPECTED_TYPES)
+    status = "PASS" if supported_pass and all_supported_present and not UNSUPPORTED_STREAMS else "PARTIAL"
+    if not supported_pass:
+        status = "BLOCKED"
     return {
         "source": str(pcbdoc),
         "source_size_bytes": pcbdoc.stat().st_size,
         "source_sha256": sha,
-        "status": "PASS" if all_pass else "BLOCKED",
+        "status": status,
         "families": results,
-        "scope": "record framing only; geometry and electrical semantics remain unverified"
+        "unsupported_families": list(UNSUPPORTED_STREAMS),
+        "scope": "Arcs6, Vias6 and Tracks6 framing only; Pads6 nested records and all geometry/electrical semantics remain unverified"
     }
+
+
+def _read_header_count(ole, name: str) -> int | None:
+    path = [name, "Header"]
+    if not ole.exists(path):
+        return None
+    with ole.openstream(path) as stream:
+        header = stream.read()
+    return int.from_bytes(header, "little") if len(header) == 4 else None
 
 
 def main() -> int:
@@ -117,7 +137,7 @@ def main() -> int:
     print(rendered)
     args.json.parent.mkdir(parents=True, exist_ok=True)
     args.json.write_text(rendered + "\n", encoding="utf-8")
-    return 0 if report["status"] == "PASS" else 2
+    return 0 if report["status"] in {"PASS", "PARTIAL"} else 2
 
 
 if __name__ == "__main__":
