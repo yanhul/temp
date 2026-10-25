@@ -210,16 +210,28 @@ def load_pcbdoc(path):
     for d in pcb["dimensions"]:
         x=abs(d["x2"]-d["x1"]); y=abs(d["y2"]-d["y1"]); span=max(x,y)
         if span and min(x,y)<=.005*span: (dx if x>=y else dy).append(span)
-    # Prefer the native Board6 outline vertices when present. KeepOut is only
-    # a fallback because its bounding box is not necessarily the routed board edge.
+    # Cross-check all outline candidates. Board6/BoardRegions can contain a
+    # stale 6x4-inch shape even when dimensions and KeepOut describe the actual board.
     board_poly=pcb["outline"] if len(pcb["outline"]) >= 3 else []
+    native_bbox=None
     if board_poly:
         ox=[p[0] for p in board_poly]; oy=[p[1] for p in board_poly]
-        border=(min(ox),min(oy),max(ox),max(oy)); source="Board6 native outline vertices"
+        native_bbox=(min(ox),min(oy),max(ox),max(oy))
+    dim_border=(0,0,max(dx),max(dy)) if dx and dy else None
+    dim_size=(max(dx),max(dy)) if dx and dy else None
+    def same_size(a,b,tol=2000):
+        return bool(a and b and abs((a[2]-a[0])-(b[2]-b[0]))<=tol and abs((a[3]-a[1])-(b[3]-b[1]))<=tol)
+    native_matches_dims=bool(native_bbox and dim_size and abs((native_bbox[2]-native_bbox[0])-dim_size[0])<=2000 and abs((native_bbox[3]-native_bbox[1])-dim_size[1])<=2000)
+    keepout_matches_dims=bool(ko and dim_size and abs((ko[2]-ko[0])-dim_size[0])<=2000 and abs((ko[3]-ko[1])-dim_size[1])<=2000)
+    conflict=bool(native_bbox and dim_size and not native_matches_dims)
+    if native_matches_dims and (not ko or keepout_matches_dims):
+        border=native_bbox; source="Board6 native outline vertices (cross-checked)"
+    elif keepout_matches_dims:
+        border=ko; source="KeepOut bbox cross-checked against dimension annotations; Board6 outline conflicts" if conflict else "KeepOut bbox cross-checked against dimension annotations"
     else:
-        border=ko or ((0,0,max(dx),max(dy)) if dx and dy else None)
-        source="KeepOut bbox (fallback; not verified outline)" if ko else ("dimension annotations (fallback; not verified outline)" if border else None)
-    pcb["true_outline"]={"border":border,"border_source":source,"outline_polygon":board_poly,"shape_region":shape,"dim_x_mm":u2mm(max(dx)) if dx else None,"dim_y_mm":u2mm(max(dy)) if dy else None}
+        border=native_bbox or ko or dim_border
+        source="CONFLICT: outline candidates disagree; selected candidate is not verified"
+    pcb["true_outline"]={"border":border,"border_source":source,"outline_polygon":board_poly,"native_outline_bbox":native_bbox,"keepout_bbox":ko,"outline_conflict":conflict,"outline_verified":bool(native_matches_dims and (not ko or keepout_matches_dims)),"shape_region":shape,"dim_x_mm":u2mm(max(dx)) if dx else None,"dim_y_mm":u2mm(max(dy)) if dy else None}
     pcb["streams"]={k:{"size_bytes":len(v),"sha256":hashlib.sha256(v).hexdigest()} for k,v in streams.items()}
     pcb["source"]={"path":str(path),"size_bytes":path.stat().st_size,"sha256":hashlib.sha256(path.read_bytes()).hexdigest()}
     return pcb
@@ -291,7 +303,10 @@ def build_report(pcb,file_path,conn=None,full=False):
         b=t["border"]; report["board"]={"size_mm":[round(u2mm(b[2]-b[0]),2),round(u2mm(b[3]-b[1]),2)],"outline_bbox_mm":[round(u2mm(v),2) for v in b],"outline_source":t["border_source"],"dimension_annotations_mm":[round(t["dim_x_mm"],2),round(t["dim_y_mm"],2)] if t["dim_x_mm"] and t["dim_y_mm"] else None}
     if t["shape_region"]:
         s=t["shape_region"]; report["board"]["board_shape_region_bbox_mm"]=[round(u2mm(s[2]-s[0]),2),round(u2mm(s[3]-s[1]),2)]
-    report["board"]["outline_verified"] = bool(t.get("outline_polygon") and len(t["outline_polygon"]) >= 3)
+    report["board"]["outline_verified"] = bool(t.get("outline_verified"))
+    report["board"]["outline_conflict"] = bool(t.get("outline_conflict"))
+    report["board"]["native_outline_bbox_mm"] = [round(u2mm(v),2) for v in t["native_outline_bbox"]] if t.get("native_outline_bbox") else None
+    report["board"]["keepout_bbox_mm"] = [round(u2mm(v),2) for v in t["keepout_bbox"]] if t.get("keepout_bbox") else None
     report["board"]["outline_vertex_count"] = len(t.get("outline_polygon", []))
     # Component body/courtyard geometry is not present in the parsed component
     # property records. Report pad-envelope edge clearance as a screening metric,
