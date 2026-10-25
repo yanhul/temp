@@ -107,7 +107,11 @@ def main():
             direct.setdefault("findings",[]).append(blocker); direct.setdefault("gates",{})["G2_COMPILE"]="BLOCKED"; direct["status"]="BLOCKED"; direct["project_compile_fallback"]=True; initial=direct; fallback=True
     evidence_out = out/"audit-direct-fallback" if fallback else audit_out
     manifest=write_connectivity_manifest(out,evidence_out,initial,sch,pcb)
-    pp=out/"placement-routing-plan.json"; run([HERE/"placement_routing_plan.py","--pcb",project_root/pcb.name,"--out",pp,"--findings",evidence_out/"findings.json","--connectivity-manifest",manifest] + ([ "--config", str(a.config.resolve()) ] if a.config else []))
+    pp=out/"placement-routing-plan.json"
+    plan_cmd=[HERE/"placement_routing_plan.py","--pcb",project_root/pcb.name,"--out",pp,"--findings",evidence_out/"findings.json","--connectivity-manifest",manifest]
+    if outline_evidence and Path(outline_evidence).exists(): plan_cmd += ["--outline-evidence", str(Path(outline_evidence).resolve())]
+    if a.config: plan_cmd += ["--config", str(a.config.resolve())]
+    run(plan_cmd)
     planning=json.loads(pp.read_text()) if pp.exists() else {"design_status":"BLOCKED","placement":{"status":"UNKNOWN"},"routing":{"status":"UNKNOWN"}}
     anchor_plan=out/"anchor-first-placement-plan.json"
     if PLACEMENT_ENGINE.exists():
@@ -163,7 +167,11 @@ def main():
             _, verify_parser_report, verify_parser_path = run_standalone_parser(vrroot/pcb.name, parser_verify_out, a.parser_full)
             verify_outline_evidence = verify_parser_path
         vrc,final=audit(vrroot,vo,a.config,verify_outline_evidence)
-        vp=ad/"placement-routing-verify.json"; verify_manifest=ad/"connectivity-manifest.json"; write_connectivity_manifest(ad,vo,final,sch,pcb); prc=run([HERE/"placement_routing_plan.py","--pcb",repaired,"--out",vp,"--findings",vo/"findings.json","--connectivity-manifest",verify_manifest] + ([ "--config", str(a.config.resolve()) ] if a.config else [])); vpdata=json.loads(vp.read_text()) if vp.exists() else {}
+        vp=ad/"placement-routing-verify.json"; verify_manifest=ad/"connectivity-manifest.json"; write_connectivity_manifest(ad,vo,final,sch,pcb)
+        verify_plan_cmd=[HERE/"placement_routing_plan.py","--pcb",repaired,"--out",vp,"--findings",vo/"findings.json","--connectivity-manifest",verify_manifest]
+        if verify_outline_evidence and Path(verify_outline_evidence).exists(): verify_plan_cmd += ["--outline-evidence", str(Path(verify_outline_evidence).resolve())]
+        if a.config: verify_plan_cmd += ["--config", str(a.config.resolve())]
+        prc=run(verify_plan_cmd); vpdata=json.loads(vp.read_text()) if vp.exists() else {}
         history.append({"attempt":attempt,"stage":"VERIFY","returncode":vrc,"planner_returncode":prc,"design_status":vpdata.get("design_status"),"status":final.get("status") if final else None})
         if final is not None:
             final["repair"]=rec; final["repair_history"]=history; final["planning"]=vpdata
