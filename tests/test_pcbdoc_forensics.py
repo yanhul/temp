@@ -51,5 +51,45 @@ class PcbDocForensicsTests(unittest.TestCase):
         self.assertEqual(report["errors"][0]["error"], "unexpected_record_type")
 
 
+PADS_SCRIPT = ROOT / "validate_pads_nested.py"
+pads_spec = importlib.util.spec_from_file_location("validate_pads_nested", PADS_SCRIPT)
+pads = importlib.util.module_from_spec(pads_spec)
+assert pads_spec and pads_spec.loader
+pads_spec.loader.exec_module(pads)
+
+
+class PadsNestedRecordTests(unittest.TestCase):
+    @staticmethod
+    def record(subrecords):
+        out = bytearray([2])
+        for payload in subrecords:
+            out.extend(len(payload).to_bytes(4, "little"))
+            out.extend(payload)
+        return bytes(out)
+
+    def test_valid_nested_pad_record(self):
+        subrecords = [b"\x01P", b"", b"", b"", bytes(130), b""]
+        report = pads.parse_pad_stream(self.record(subrecords), 1)
+        self.assertEqual(report["status"], "PASS")
+        self.assertEqual(report["pads_framed"], 1)
+        self.assertTrue(report["header_count_matches"])
+        self.assertEqual(report["records"][0]["subrecord_lengths"], [2, 0, 0, 0, 130, 0])
+
+    def test_truncated_nested_pad_is_blocked(self):
+        report = pads.parse_pad_stream(bytes([2, 10, 0, 0, 0, 0xAA]), 1)
+        self.assertEqual(report["status"], "BLOCKED")
+        self.assertEqual(report["errors"][0]["error"], "subrecord_out_of_bounds")
+
+    def test_wrong_record_type_is_blocked(self):
+        report = pads.parse_pad_stream(bytes([4, 0, 0, 0, 0]), 1)
+        self.assertEqual(report["status"], "BLOCKED")
+        self.assertEqual(report["errors"][0]["error"], "unexpected_record_type")
+
+    def test_header_count_mismatch_is_blocked(self):
+        report = pads.parse_pad_stream(self.record([b"\x01P", b"", b"", b"", bytes(130), b""]), 2)
+        self.assertEqual(report["status"], "BLOCKED")
+        self.assertFalse(report["header_count_matches"])
+
+
 if __name__ == "__main__":
     unittest.main()
