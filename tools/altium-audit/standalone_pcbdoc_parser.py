@@ -353,9 +353,73 @@ def build_report(pcb,file_path,conn=None,full=False):
         def desig(i):return pcb["components"][i].get("SOURCEDESIGNATOR","?") if i<len(pcb["components"]) else "?"
         report["primitives"]={"pads":[{"name":p["name"],"component_index":p["component"],"designator":desig(p["component"]) if p["component"]!=COMPONENT_NONE else None,"net":net_name(pcb,p["net"]),"layer":layer_name(p["layer"]),"x_mm":round(u2mm(p["x"]),3),"y_mm":round(u2mm(p["y"]),3),"top_size_mm":[round(u2mm(p["topw"]),3),round(u2mm(p["toph"]),3)],"bottom_size_mm":[round(u2mm(p["botw"]),3),round(u2mm(p["both"]),3)],"hole_mm":round(u2mm(p["hole"]),3),"rotation_deg":p["rot"]} for p in pcb["pads"]],"tracks":[{"layer":layer_name(x["layer"]),"net":net_name(pcb,x["net"]),"x1_mm":round(u2mm(x["x1"]),3),"y1_mm":round(u2mm(x["y1"]),3),"x2_mm":round(u2mm(x["x2"]),3),"y2_mm":round(u2mm(x["y2"]),3),"width_mm":round(u2mm(x["width"]),4)} for x in pcb["tracks"] if x["layer"] in (1,32)],"vias":report["copper"]["vias"],"arcs":[{"layer":layer_name(x["layer"]),"net":net_name(pcb,x["net"]),"cx_mm":round(u2mm(x["cx"]),3),"cy_mm":round(u2mm(x["cy"]),3),"radius_mm":round(u2mm(x["radius"]),3),"start_angle_deg":x["sa"],"end_angle_deg":x["ea"],"width_mm":round(u2mm(x["width"]),4)} for x in pcb["arcs"] if x["layer"] in (1,32)],"components":[{"designator":c.get("SOURCEDESIGNATOR","?"),"pattern":c.get("PATTERN","?"),"layer":c.get("LAYER","?"),"x_mm":round(u2mm(parse_unit(c.get("X"))),3),"y_mm":round(u2mm(parse_unit(c.get("Y"))),3),"rotation_deg":float(c.get("ROTATION",0) or 0)} for c in pcb["components"]]}
     return report
+
+def render_board_svg(pcb, output_dir):
+    """Write read-only top/bottom SVG previews from decoded primitives (not DRC)."""
+    from html import escape
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    outline = pcb.get("true_outline", {}).get("outline_polygon") or []
+    points = [(float(x), float(y)) for x, y in outline]
+    for coll, keys in ((pcb["tracks"], ("x1","y1","x2","y2")),
+                       (pcb["pads"], ("x","y")), (pcb["vias"], ("x","y"))):
+        for item in coll:
+            points.extend((float(item[k]), float(item[keys[i+1]])) for i,k in enumerate(keys) if i % 2 == 0) if keys == ("x1","y1","x2","y2") else points.append((float(item["x"]), float(item["y"])))
+    for c in pcb["components"]:
+        points.append((parse_unit(c.get("X")), parse_unit(c.get("Y"))))
+    if not points:
+        raise ValueError("No decoded coordinates available; refusing to emit empty SVG")
+    xs, ys = [p[0] for p in points], [p[1] for p in points]
+    margin = 8 / ALT_U
+    minx, maxx = min(xs)-margin, max(xs)+margin
+    miny, maxy = min(ys)-margin, max(ys)+margin
+    width_mm, height_mm = u2mm(maxx-minx), u2mm(maxy-miny)
+    scale = min(1600 / max(width_mm, 1), 1200 / max(height_mm, 1))
+    width, height = max(1, width_mm*scale), max(1, height_mm*scale)
+    def xy(x,y): return ((x-minx)*ALT_U*scale, height-(y-miny)*ALT_U*scale)
+    def line(x1,y1,x2,y2,stroke,sw,extra=""):
+        a,b=xy(x1,y1); c,d=xy(x2,y2)
+        return f'<line x1="{a:.2f}" y1="{b:.2f}" x2="{c:.2f}" y2="{d:.2f}" stroke="{stroke}" stroke-width="{max(.35,sw*ALT_U*scale):.2f}" {extra}/>'
+    component_labels = []
+    for c in pcb["components"]:
+        x,y=xy(parse_unit(c.get("X")),parse_unit(c.get("Y")))
+        label=escape(c.get("SOURCEDESIGNATOR","?"))
+        component_labels.append(f'<text x="{x:.2f}" y="{y:.2f}" font-size="7" text-anchor="middle" fill="#f8fafc" stroke="#111827" stroke-width=".5" paint-order="stroke">{label}</text>')
+    for layer, filename, title in ((1,"top.svg","Top copper / component positions"),(32,"bottom.svg","Bottom copper / component positions")):
+        parts=[f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0f}" height="{height:.0f}" viewBox="0 0 {width:.2f} {height:.2f}">',
+               '<rect width="100%" height="100%" fill="#111827"/>',
+               f'<text x="12" y="18" font-size="12" fill="#f9fafb">{title} — heuristic preview, not DRC</text>']
+        if len(outline)>=3:
+            xypts=" ".join(f"{xy(x,y)[0]:.2f},{xy(x,y)[1]:.2f}" for x,y in outline)
+            parts.append(f'<polygon points="{xypts}" fill="none" stroke="#facc15" stroke-width="1.5"/>')
+        for t in pcb["tracks"]:
+            if t["layer"]==layer:
+                parts.append(line(t["x1"],t["y1"],t["x2"],t["y2"],"#38bdf8" if layer==1 else "#fb7185",t["width"]))
+        for a in pcb["arcs"]:
+            if a["layer"]==layer:
+                # Approximate circular arc with a full ring for context; angles are preserved in JSON.
+                x,y=xy(a["cx"],a["cy"]); r=max(.3,a["radius"]*ALT_U*scale)
+                parts.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{r:.2f}" fill="none" stroke="#38bdf8" stroke-width="{max(.35,a["width"]*ALT_U*scale):.2f}"/>')
+        for p in pcb["pads"]:
+            if p["layer"] in (layer,74):
+                x,y=xy(p["x"],p["y"])
+                dia=max(1.2,max(p["topw"],p["toph"],p["botw"],p["both"])*ALT_U*scale)
+                parts.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{dia/2:.2f}" fill="#f8fafc" fill-opacity=".75" stroke="#e5e7eb" stroke-width=".4"/>')
+        for v in pcb["vias"]:
+            x,y=xy(v["x"],v["y"]); r=max(1.2,v["diameter"]*ALT_U*scale/2)
+            parts.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{r:.2f}" fill="#fbbf24" stroke="#111827" stroke-width=".5"/>')
+        parts.extend(component_labels)
+        parts.append("</svg>")
+        (output_dir/filename).write_text("\n".join(parts)+"\n",encoding="utf-8")
+    manifest={"status":"RENDERED_PREVIEWS","files":["top.svg","bottom.svg"],"component_labels":len(pcb["components"]),
+              "source_sha256":pcb["source"]["sha256"],"source_modified":False,
+              "limitations":["component body/courtyard outlines are not decoded","arc rendering is circular context, not exact angle sweep","SVG is visual evidence only, not Altium DRC"]}
+    (output_dir/"svg-summary.json").write_text(json.dumps(manifest,indent=2)+"\n",encoding="utf-8")
+    return manifest
+
 def main():
     ap=argparse.ArgumentParser(description="Parse Altium PcbDoc binary v6 -> JSON and estimated 2-layer routing analysis")
-    ap.add_argument("file"); ap.add_argument("-o","--output"); ap.add_argument("--no-analysis",action="store_true"); ap.add_argument("--full",action="store_true")
+    ap.add_argument("file"); ap.add_argument("-o","--output"); ap.add_argument("--no-analysis",action="store_true"); ap.add_argument("--full",action="store_true"); ap.add_argument("--svg-dir", help="write read-only top.svg and bottom.svg previews")
     a=ap.parse_args()
     if not os.path.isfile(a.file): ap.error("Không tìm thấy file: %s"%a.file)
     t0=time.time(); pcb=load_pcbdoc(a.file)
@@ -369,5 +433,5 @@ def main():
         print("Nets analyzed:",len(conn)," partial/unrouted estimate:",len(unr)," airwire estimate:",sum(v["n_groups"]-1 for v in unr.values()))
     out=a.output or os.path.splitext(a.file)[0]+"_analysis.json"
     with open(out,"w",encoding="utf-8") as f:json.dump(build_report(pcb,a.file,conn,a.full),f,indent=2,ensure_ascii=False)
-    print("Đã lưu JSON:",out,"(%.1fs)"%(time.time()-t0))
+    print("Đã lưu JSON:",out,"(%.1fs)"%(time.time()-t0))\n    if a.svg_dir:\n        svg_summary=render_board_svg(pcb,a.svg_dir)\n        print("SVG_PREVIEWS=RENDERED", json.dumps(svg_summary,ensure_ascii=False))
 if __name__=="__main__":main()
