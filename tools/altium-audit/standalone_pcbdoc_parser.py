@@ -433,5 +433,8 @@ def main():
         print("Nets analyzed:",len(conn)," partial/unrouted estimate:",len(unr)," airwire estimate:",sum(v["n_groups"]-1 for v in unr.values()))
     out=a.output or os.path.splitext(a.file)[0]+"_analysis.json"
     with open(out,"w",encoding="utf-8") as f:json.dump(build_report(pcb,a.file,conn,a.full),f,indent=2,ensure_ascii=False)
-    print("Đã lưu JSON:",out,"(%.1fs)"%(time.time()-t0))\n    if a.svg_dir:\n        svg_summary=render_board_svg(pcb,a.svg_dir)\n        print("SVG_PREVIEWS=RENDERED", json.dumps(svg_summary,ensure_ascii=False))
+    print("Đã lưu JSON:",out,"(%.1fs)"%(time.time()-t0))
+    if a.svg_dir:
+        svg_summary=render_board_svg(pcb,a.svg_dir)
+        print("SVG_PREVIEWS=RENDERED", json.dumps(svg_summary,ensure_ascii=False))
 if __name__=="__main__":main()
