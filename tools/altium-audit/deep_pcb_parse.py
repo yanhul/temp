@@ -164,8 +164,10 @@ def main():
             if "xy" in p or "endpoints" in p:primitives.append(p)
     render_svg(out/"board-overview.svg",primitives)
     layers=sorted({safe_name(p.get("layer")) for p in primitives if p.get("layer") is not None})
+    layer_dir=out/"layers"
+    layer_dir.mkdir(parents=True,exist_ok=True)
     for layer in layers:
-        render_svg(out/"layers"/f"{layer}.svg",[p for p in primitives if safe_name(p.get("layer"))==layer])
+        render_svg(layer_dir/f"{layer}.svg",[p for p in primitives if safe_name(p.get("layer"))==layer])
     (out/"parser-object-api.json").write_text(json.dumps(api,indent=2,ensure_ascii=False),encoding="utf-8")
     summary={
       "schema":"altium-deep-parse/v1","status":"PARSED_WITH_LIMITS","source":{"path":src.name,"size_bytes":src.stat().st_size,"sha256":digest},
