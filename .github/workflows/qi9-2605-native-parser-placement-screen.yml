@@ -1,0 +1,106 @@
+name: qi9-2605-native-parser-placement-screen
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "tools/altium-audit/standalone_pcbdoc_parser.py"
+      - "tools/altium-audit/tests/test_standalone_pcbdoc_parser.py"
+      - "audit-input-2605/**"
+      - ".github/workflows/qi9-2605-native-parser-placement-screen.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parse-and-screen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install parser dependencies
+        run: python -m pip install -r tools/altium-audit/requirements.txt
+      - name: Regression tests for placement geometry
+        run: python -m pytest -q tools/altium-audit/tests/test_standalone_pcbdoc_parser.py
+      - name: Parse native PcbDoc and generate placement screen
+        run: |
+          python tools/altium-audit/standalone_pcbdoc_parser.py "audit-input-2605/Copy of QI9-2605-A01.PcbDoc" --full --no-analysis -o qi9-2605-native-parser-report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = json.loads(Path("qi9-2605-native-parser-report.json").read_text())
+          assert p["counts"]["components"] > 0, p["counts"]
+          assert p["counts"]["pads"] > 0, p["counts"]
+          assert p["board"].get("size_mm") == [122.0, 86.0], p.get("board")
+          assert p["board"].get("selected_outline_source") == "KeepOut", p.get("board")
+          assert "placement_screen" in p, "placement screen missing"
+          outside = p["placement_screen"]["components_with_pad_envelope_outside_bbox"]
+          if outside:
+              status = "BLOCKED_PAD_ENVELOPE_OUTSIDE_KEEP_OUT"
+          elif p["board"].get("selected_outline_source") != "KeepOut":
+              status = "BLOCKED_KEEP_OUT_NOT_SELECTED"
+          elif p["board"].get("outline_conflict"):
+              status = "PASS_KEEP_OUT_PAD_SCREEN_NATIVE_OUTLINE_CONFLICT_BODY_DRC_UNKNOWN"
+          else:
+              status = "PASS_KEEP_OUT_PAD_SCREEN_BODY_DRC_UNKNOWN" if p["board"].get("outline_verified") else "BLOCKED_OUTLINE_UNVERIFIED"
+          print(json.dumps({
+              "status": status,
+              "source": p["source"],
+              "counts": p["counts"],
+              "board": p["board"],
+              "placement_screen": p["placement_screen"],
+          }, indent=2))
+          PY
+      - name: Compile parser and Audit Kit entrypoints
+        run: python -m py_compile tools/altium-audit/standalone_pcbdoc_parser.py tools/altium-audit/audit_runner.py tools/altium-audit/audit_kit.py tools/altium-audit/placement_routing_plan.py
+      - name: Run full Audit Kit with KeepOut evidence (audit only)
+        id: audit_kit
+        continue-on-error: true
+        run: |
+          cat > qi9-2605-audit-config.json <<'JSON'
+          {
+            "schema": "altium-audit/project-config/v1",
+            "project_id": "QI9-2605-A01",
+            "policy": {
+              "fail_on_verified_issue": true,
+              "block_on_unsupported_required_check": true,
+              "never_infer_pass_from_parser_success": true
+            }
+          }
+          JSON
+          set +e
+          python tools/altium-audit/audit_kit.py --input audit-input-2605 --output qi9-2605-audit-kit --binary-parser standalone --parser-full --config qi9-2605-audit-config.json
+          rc=$?
+          set -e
+          echo "audit_kit_exit_code=$rc"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          summary = Path("qi9-2605-audit-kit/summary.json")
+          if not summary.exists():
+              raise SystemExit("Audit Kit produced no terminal summary")
+          data = json.loads(summary.read_text())
+          print(json.dumps({
+              "status": data.get("status"),
+              "terminal_status": data.get("terminal_status"),
+              "terminal_reason": data.get("terminal_reason"),
+              "standalone_binary_parser": data.get("standalone_binary_parser"),
+              "gates": data.get("gates"),
+              "placement": (data.get("planning") or {}).get("placement", {}).get("status"),
+              "routing": (data.get("planning") or {}).get("routing", {}).get("status"),
+          }, indent=2))
+          PY
+      - name: Upload native parser and full Audit Kit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qi9-2605-native-parser-and-audit-kit-evidence
+          path: |
+            qi9-2605-native-parser-report.json
+            qi9-2605-audit-kit/
+            qi9-2605-audit-config.json
+          if-no-files-found: warn
+          retention-days: 14
