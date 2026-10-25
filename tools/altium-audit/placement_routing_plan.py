@@ -280,18 +280,26 @@ def main():
         pos,source=component_center(pcb,c)
         env,env_source=component_envelope(pcb,i)
         if ref is not None and env is not None: envelopes[str(ref)]=env
-        inside=bool(pos is not None and (board_box is None or (board_box[0]<=pos[0]<=board_box[2] and board_box[1]<=pos[1]<=board_box[3])))
+        center_inside=bool(pos is not None and board_box is not None and (board_box[0]<=pos[0]<=board_box[2] and board_box[1]<=pos[1]<=board_box[3]))
+        envelope_inside=None
+        if env is not None and board_box is not None and len(env)>=4:
+            envelope_inside=bool(env[0]>=board_box[0] and env[1]>=board_box[1] and env[2]<=board_box[2] and env[3]<=board_box[3])
         placement.append({"component_index":i,"reference":str(ref) if ref is not None else None,"position":pos,
-                          "evidence_source":source,"inside_board":inside,"envelope_source":env_source,
-                          "placement_status":"VERIFIED" if pos is not None and source in ("authoritative_pick_place","authoritative_component_position","component_geometry") and inside else "UNKNOWN"})
+                          "evidence_source":source,"inside_board":center_inside,"envelope_inside_board":envelope_inside,
+                          "envelope_source":env_source,
+                          "placement_status":"VERIFIED" if pos is not None and source in ("authoritative_pick_place","authoritative_component_position","component_geometry") and center_inside else "UNKNOWN"})
     overlap_pairs=[]
     refs=sorted(envelopes)
     for i,ra in enumerate(refs):
         for rb in refs[i+1:]:
             if same_assembly_side(envelopes[ra],envelopes[rb]) and boxes_overlap(envelopes[ra],envelopes[rb]): overlap_pairs.append((ra,rb))
+    envelope_outside=[x["reference"] for x in placement if x.get("envelope_inside_board") is False]
+    envelope_unknown=[x["reference"] for x in placement if x.get("envelope_inside_board") is None]
     placement_checks={"all_positions_authoritative":all(x["placement_status"]=="VERIFIED" for x in placement),
                       "board_bounds_available":board_box is not None,"component_envelope_count":len(envelopes),
-                      "overlap_count":len(overlap_pairs),"overlap_pairs":overlap_pairs[:200],"overlap_evidence":"authoritative_component_body_or_courtyard_geometry" if envelopes else "UNAVAILABLE",
+                      "component_envelopes_outside_selected_board_bbox":envelope_outside,
+                      "component_envelopes_edge_check_unknown":envelope_unknown,
+                      "overlap_count":len(overlap_pairs),"overlap_pairs":overlap_pairs[:200],"overlap_evidence":"authoritative component-body/courtyard bbox; overlap is a screening signal, not a collision verdict" if envelopes else "UNAVAILABLE",
                       "envelope_sources":dict(sorted({x["reference"]:x.get("envelope_source") for x in placement if x.get("reference") and x.get("envelope_source")!="UNAVAILABLE"}.items()))}
     # Connectivity-driven placement is advisory at this stage. It scores the
     # current placement against net-derived component affinity but does not
@@ -380,7 +388,10 @@ def main():
     # not prevent the placement lock (Top/Bottom and assembly height are distinct).
     anchor_refs = set(str(x) for x in locked_refs)
     anchor_records = [x for x in placement if x.get("reference") in anchor_refs]
-    anchors_verified = bool(anchor_records) and all(x.get("placement_status") == "VERIFIED" for x in anchor_records)
+    anchors_verified = bool(anchor_records) and all(
+        x.get("placement_status") == "VERIFIED" and x.get("envelope_inside_board") is True
+        for x in anchor_records
+    )
     placement_status="VERIFIED" if (
         anchors_verified
         and placement_checks["board_bounds_available"]
