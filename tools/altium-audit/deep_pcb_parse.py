@@ -121,8 +121,12 @@ def render_svg(path, primitives, width=1600, height=1100):
             a,b=map(xy_px,p["endpoints"])
             parts.append(f'<line x1="{a[0]:.2f}" y1="{a[1]:.2f}" x2="{b[0]:.2f}" y2="{b[1]:.2f}" stroke="#2463a6" stroke-width="1.2"/>')
         elif p.get("xy"):
-            x,y=xy_px(p["xy"]); r=3 if p["kind"]=="pads" else 2
-            parts.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{r}" fill="#b33"/>')
+            x,y=xy_px(p["xy"])
+            color="#267b48" if p["kind"]=="components" else "#b33" if p["kind"]=="pads" else "#555"
+            r=4 if p["kind"]=="components" else 3 if p["kind"]=="pads" else 2
+            parts.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{r}" fill="{color}"/>')
+            if p.get("label"):
+                parts.append(f'<text x="{x+5:.2f}" y="{y-4:.2f}" font-family="sans-serif" font-size="9" fill="#222">{p["label"]}</text>')
     parts.append('</svg>')
     path.write_text("\n".join(parts),encoding="utf-8")
 
@@ -155,10 +159,12 @@ def main():
         with (out/f"{name}.jsonl").open("w",encoding="utf-8") as f:
             for item in items:f.write(json.dumps(item,ensure_ascii=False,default=str)+"\n")
     primitives=[]
-    for kind in ("tracks","arcs","pads","vias","regions","polygons","fills","connections"):
+    for kind in ("components","tracks","arcs","pads","vias","regions","polygons","fills","connections"):
         for row in rows.get(kind,[]):
             p={"kind":kind,"layer":row.get("layer_name",row.get("layer",row.get("layer_id"))),
                "net":row.get("net_name",row.get("netname",row.get("net_index")))}
+            if kind=="components":
+                p["label"]=str(row.get("designator") or row.get("refdes") or row.get("reference") or row.get("name") or "")
             if row.get("normalized_xy_mils"):p["xy"]=row["normalized_xy_mils"]
             if row.get("normalized_endpoints_mils"):p["endpoints"]=row["normalized_endpoints_mils"]
             if "xy" in p or "endpoints" in p:primitives.append(p)
