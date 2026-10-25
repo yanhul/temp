@@ -66,9 +66,10 @@ def run_standalone_parser(pcb, out, full=False):
     report.write_text(json.dumps(data, indent=2, ensure_ascii=False)+"\n", encoding="utf-8")
     return rc, data, report
 
-def audit(root,out,config=None):
+def audit(root,out,config=None,outline_evidence=None):
     cmd=[RUNNER,"--root",root,"--out",out]
     if config: cmd+=["--config",config.resolve()]
+    if outline_evidence and Path(outline_evidence).exists(): cmd += ["--outline-evidence", Path(outline_evidence).resolve()]
     rc=run(cmd); return rc,json.loads((out/"summary.json").read_text()) if (out/"summary.json").exists() else None
 def write_terminal(out,r):
     r["status"]=r.get("status","UNKNOWN"); r["status"]=r["status"] if r["status"] in TERMINAL else "UNKNOWN"; r["terminal_status"]=r["status"]; r["schema"]="altium-audit-kit-result.v4"
@@ -90,7 +91,8 @@ def main():
         parser_out=out/"standalone-parser"; parser_out.mkdir(parents=True,exist_ok=True)
         parser_rc, parser_report, parser_path=run_standalone_parser(project_root/pcb.name,parser_out,a.parser_full)
         standalone_evidence={"status":parser_report.get("status","UNKNOWN"),"report":str(parser_path),"returncode":parser_rc,"sha256":parser_report.get("source",{}).get("sha256"),"connectivity_verified":parser_report.get("routing_analysis",{}).get("connectivity_verified",False)}
-    audit_out=out/"audit-initial"; _,initial=audit(project_root,audit_out,a.config)
+    outline_evidence = (out/"standalone-parser"/"standalone-pcbdoc-report.json") if standalone_evidence is not None else None
+    audit_out=out/"audit-initial"; _,initial=audit(project_root,audit_out,a.config,outline_evidence)
     if initial is not None and standalone_evidence is not None:
         initial["standalone_binary_parser"]=standalone_evidence
     if initial is None:
@@ -99,7 +101,7 @@ def main():
         write_terminal(out,terminal); return 2
     fallback=False; blocker=None
     if prj and initial.get("gates",{}).get("G1_PARSE")=="UNKNOWN":
-        dr=out/"direct-input"; dr.mkdir(exist_ok=True); shutil.copy2(sch,dr/sch.name); shutil.copy2(pcb,dr/pcb.name); do=out/"audit-direct-fallback"; _,direct=audit(dr,do,a.config)
+        dr=out/"direct-input"; dr.mkdir(exist_ok=True); shutil.copy2(sch,dr/sch.name); shutil.copy2(pcb,dr/pcb.name); do=out/"audit-direct-fallback"; _,direct=audit(dr,do,a.config,outline_evidence)
         if direct is not None:
             blocker={"id":"G2-PROJECT-COMPILE","severity":"BLOCKER","domain":"compile","status":"BLOCKED","object":prj.name,"evidence":"Project compile failed; structural SCH+PCB audit continued directly.","confidence":"FACT"}
             direct.setdefault("findings",[]).append(blocker); direct.setdefault("gates",{})["G2_COMPILE"]="BLOCKED"; direct["status"]="BLOCKED"; direct["project_compile_fallback"]=True; initial=direct; fallback=True
@@ -154,7 +156,13 @@ def main():
         if rec.get("status")!="MUTATED" or not repaired.exists(): initial["status"]="BLOCKED"; initial["terminal_reason"]="mutation receipt invalid"; initial["repair_history"]=history; write_terminal(out,initial); return 1
         vrroot=ad/"verify-input"; vrroot.mkdir(exist_ok=True); shutil.copy2(project_root/sch.name,vrroot/sch.name); shutil.copy2(repaired,vrroot/pcb.name)
         if prj and not fallback: shutil.copy2(project_root/prj.name,vrroot/prj.name)
-        vo=ad/"audit-verify"; vrc,final=audit(vrroot,vo,a.config)
+        vo=ad/"audit-verify"
+        verify_outline_evidence = None
+        if a.binary_parser == "standalone":
+            parser_verify_out = ad/"standalone-parser-verify"; parser_verify_out.mkdir(parents=True, exist_ok=True)
+            _, verify_parser_report, verify_parser_path = run_standalone_parser(vrroot/pcb.name, parser_verify_out, a.parser_full)
+            verify_outline_evidence = verify_parser_path
+        vrc,final=audit(vrroot,vo,a.config,verify_outline_evidence)
         vp=ad/"placement-routing-verify.json"; verify_manifest=ad/"connectivity-manifest.json"; write_connectivity_manifest(ad,vo,final,sch,pcb); prc=run([HERE/"placement_routing_plan.py","--pcb",repaired,"--out",vp,"--findings",vo/"findings.json","--connectivity-manifest",verify_manifest] + ([ "--config", str(a.config.resolve()) ] if a.config else [])); vpdata=json.loads(vp.read_text()) if vp.exists() else {}
         history.append({"attempt":attempt,"stage":"VERIFY","returncode":vrc,"planner_returncode":prc,"design_status":vpdata.get("design_status"),"status":final.get("status") if final else None})
         if final is not None:
