@@ -153,9 +153,11 @@ def extract(path: Path, include_binary: bool = False) -> dict[str, Any]:
             continue
         root_metadata[name] = serialize(value, include_binary=include_binary)
 
-    # Also record the public property surface, including access failures, for future
-    # library versions whose fields are not dataclass/slots/instance attributes.
+    # Exhaustively serialize every public non-callable property, including
+    # arbitrary library model instances. Do not filter by a hand-maintained type
+    # allowlist: that can silently omit newly added model types and polygon/pour data.
     public_surface = {}
+    public_property_inventory = {}
     for name in dir(board):
         if name.startswith("_") or name in COLLECTION_CANDIDATES or name in root_fields:
             continue
@@ -163,11 +165,19 @@ def extract(path: Path, include_binary: bool = False) -> dict[str, Any]:
             value = getattr(board, name)
         except Exception as exc:
             public_surface[name] = {"__read_error__": f"{type(exc).__name__}: {exc}"}
+            public_property_inventory[name] = {"status": "READ_ERROR", "error_type": type(exc).__name__}
             continue
         if callable(value):
             continue
-        if isinstance(value, (str, int, float, bool, type(None), list, tuple, set, frozenset, dict, enum.Enum, bytes, bytearray)) or dataclasses.is_dataclass(value):
-            public_surface[name] = serialize(value, include_binary=include_binary)
+        public_surface[name] = serialize(value, include_binary=include_binary)
+        entry = {"type": f"{type(value).__module__}.{type(value).__qualname__}"}
+        if isinstance(value, (list, tuple, set, frozenset, Mapping)):
+            entry["count"] = len(value)
+            if not isinstance(value, Mapping):
+                entry["item_types"] = dict(sorted(Counter(
+                    f"{type(item).__module__}.{type(item).__qualname__}" for item in value
+                ).items()))
+        public_property_inventory[name] = entry
 
     return {
         "schema": "pcbreview.altium_monkey_full_extract/1.0",
@@ -183,6 +193,7 @@ def extract(path: Path, include_binary: bool = False) -> dict[str, Any]:
         "root_metadata": root_metadata,
         "collections": collections,
         "additional_public_properties": public_surface,
+        "additional_public_property_inventory": public_property_inventory,
         "limitations": [
             "This exports the public object model decoded by the installed altium-monkey version; it does not imply every undocumented Altium binary record is supported.",
             "A successful parse is not an Altium DRC, electrical-connectivity, manufacturing, or release certification.",
