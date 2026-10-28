@@ -14,6 +14,7 @@ import json
 import math
 import sys
 from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -89,7 +90,7 @@ def serialize(value: Any, *, depth: int = 0, seen: set[int] | None = None,
         return {"__truncated__": "maximum object depth"}
     if isinstance(value, (list, tuple, set, frozenset)):
         return [serialize(v, depth=depth+1, seen=seen, include_binary=include_binary) for v in value]
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {str(k): serialize(v, depth=depth+1, seen=seen, include_binary=include_binary)
                 for k, v in value.items()}
     if callable(value):
@@ -116,7 +117,7 @@ def inventory_collection(value: Any) -> dict[str, Any]:
         items = list(value)
         types = Counter(f"{type(x).__module__}.{type(x).__qualname__}" for x in items)
         return {"count": len(items), "item_types": dict(sorted(types.items()))}
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {"count": len(value), "mapping": True}
     return {"count": None, "value_type": f"{type(value).__module__}.{type(value).__qualname__}"}
 
