@@ -29,11 +29,25 @@ jobs:
       - run: python -m pip install pytest
       - name: Semantic and phase-policy regression tests
         run: python -m pytest -q tests/test_part_identity.py tests/test_schematic_semantics.py tests/test_e2e_phase_policy.py
+      - name: Stage authoritative schematic and latest PCB under project-linked filename
+        shell: bash
+        run: |
+          set -euo pipefail
+          staging=work-2605/input
+          mkdir -p "$staging"
+          cp audit-input-2605/QI9-2605-A01.PrjPcb "$staging/QI9-2605-A01.PrjPcb"
+          cp audit-input-2605/QI9-2605-A01_.SchDoc "$staging/QI9-2605-A01_.SchDoc"
+          # The project references QI9-2605-A01.PcbDoc. The newest board's
+          # bytes are in "Copy of ..."; stage those bytes under the linked name.
+          cp "audit-input-2605/Copy of QI9-2605-A01.PcbDoc" "$staging/QI9-2605-A01.PcbDoc"
+          test "$(find "$staging" -maxdepth 1 -iname '*.SchDoc' | wc -l)" -eq 1
+          test "$(find "$staging" -maxdepth 1 -iname '*.PcbDoc' | wc -l)" -eq 1
+          sha256sum "audit-input-2605/Copy of QI9-2605-A01.PcbDoc" "$staging/QI9-2605-A01.PcbDoc"
       - name: Run schematic phase and classify truthful design status
         shell: bash
         run: |
           set +e
-          python tools/altium-audit/e2e_phase.py --phase schematic --input audit-input-2605 --output work-2605/schematic --config altium-audit-2605.config.json
+          python tools/altium-audit/e2e_phase.py --phase schematic --input work-2605/input --output work-2605/schematic --config altium-audit-2605.config.json
           rc=$?
           set -e
           python - "work-2605/schematic/phase_receipt.json" "$rc" <<'PY'
