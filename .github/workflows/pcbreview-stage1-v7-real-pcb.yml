@@ -6,6 +6,7 @@ on:
       - 'Copy of QI9-2605-A01.PcbDoc'
       - 'audit-input-2605/**'
       - 'tools/altium-audit/standalone_pcbdoc_parser.py'
+      - 'tools/altium-audit/pcbreview_v7_full_extract.py'
       - 'tools/altium_audit/pcbreview_v7_contracts.py'
       - 'tools/altium_audit/tests/test_pcbreview_v7_contracts.py'
       - 'tools/altium-audit/requirements.txt'
@@ -39,7 +40,8 @@ jobs:
         run: |
           test -s "audit-input-2605/Copy of QI9-2605-A01.PcbDoc"
           mkdir -p e2e/pcbreview-v7
-          python tools/altium-audit/standalone_pcbdoc_parser.py "audit-input-2605/Copy of QI9-2605-A01.PcbDoc" --output e2e/pcbreview-v7/report.json --full --svg-dir e2e/pcbreview-v7/svg
+          python tools/altium-audit/standalone_pcbdoc_parser.py "audit-input-2605/Copy of QI9-2605-A01.PcbDoc" --output e2e/pcbreview-v7/render-report.json --full --svg-dir e2e/pcbreview-v7/svg
+          python tools/altium-audit/pcbreview_v7_full_extract.py "audit-input-2605/Copy of QI9-2605-A01.PcbDoc" --output e2e/pcbreview-v7/report.json
       - name: Enforce honest evidence boundaries and preserve board identity
         run: |
           python - <<'PY'
@@ -53,6 +55,13 @@ jobs:
           assert report.get("source", {}).get("sha256") == sha, "PCB source SHA256 mismatch"
           assert report.get("source", {}).get("size_bytes") == source.stat().st_size, "PCB source size mismatch"
           assert report.get("streams"), "no OLE streams parsed"
+          coverage = report.get("parse_coverage", {})
+          decoded = report.get("decoded_data", {})
+          assert coverage.get("routing_ready") is False, "unverified parser must never mark routing ready"
+          assert len(decoded.get("pads", [])) == report.get("counts", {}).get("pads"), "full pad records missing"
+          assert len(decoded.get("tracks", [])) == report.get("counts", {}).get("tracks"), "full track records missing"
+          assert len(decoded.get("components", [])) == report.get("counts", {}).get("components"), "full component records missing"
+          assert coverage.get("record_parse_errors") is not None, "parse error accounting missing"
           assert report.get("status") != "PASS", "heuristic parser must not claim full audit PASS"
           assert routing.get("connectivity_verified") is False, "heuristic parser must not certify connectivity"
           assert "heuristic" in str(routing.get("method", "")).lower(), "routing method must disclose heuristic nature"
@@ -62,6 +71,10 @@ jobs:
           print("PCB_SHA256=" + sha)
           print("PCB_BYTES=" + str(source.stat().st_size))
           print("OLE_STREAMS=" + str(len(report["streams"])))
+          print("FULL_EXTRACT_COMPONENTS=" + str(len(decoded["components"])))
+          print("FULL_EXTRACT_PADS=" + str(len(decoded["pads"])))
+          print("FULL_EXTRACT_TRACKS=" + str(len(decoded["tracks"])))
+          print("PARSE_COVERAGE_DIAGNOSTICS=present")
           print("ROUTING_METHOD=" + str(routing.get("method")))
           print("AIRWIRE_ESTIMATE=" + str(routing.get("total_airwires_estimate")))
           print("CONNECTIVITY_VERIFIED=false")
