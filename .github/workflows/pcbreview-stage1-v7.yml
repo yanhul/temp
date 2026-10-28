@@ -1,0 +1,26 @@
+name: pcbreview-stage1-v7-contract-tests
+on:
+  push:
+    branches: [fix/pcbreview-stage1-v7-fail-closed]
+    paths:
+      - 'tools/altium_audit/pcbreview_v7_contracts.py'
+      - 'tools/altium_audit/tests/test_pcbreview_v7_contracts.py'
+      - '.github/workflows/pcbreview-stage1-v7.yml'
+  pull_request:
+    paths:
+      - 'tools/altium_audit/pcbreview_v7_contracts.py'
+      - 'tools/altium_audit/tests/test_pcbreview_v7_contracts.py'
+      - '.github/workflows/pcbreview-stage1-v7.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run v7 fail-closed regression tests
+        run: python -m unittest discover -s tools/altium_audit/tests -p 'test_pcbreview_v7_contracts.py' -v

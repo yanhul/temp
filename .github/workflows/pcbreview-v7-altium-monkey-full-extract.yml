@@ -1,0 +1,45 @@
+name: pcbreview-v7-altium-monkey-full-extract
+
+on:
+  push:
+    branches:
+      - fix/pcbreview-stage1-v7-fail-closed
+    paths:
+      - 'tools/altium-audit/pcbreview_v7_altium_monkey_extract.py'
+      - '.github/workflows/pcbreview-v7-altium-monkey-full-extract.yml'
+      - 'audit-input-2605/Copy of QI9-2605-A01.PcbDoc'
+  workflow_dispatch:
+
+jobs:
+  extract-real-board:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install declared parser library
+        run: python -m pip install -r tools/altium-audit/requirements.txt
+      - name: Extract all public decoded PcbDoc model fields
+        run: |
+          python tools/altium-audit/pcbreview_v7_altium_monkey_extract.py "audit-input-2605/Copy of QI9-2605-A01.PcbDoc" --output e2e/pcbreview-v7/altium-monkey-full.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("e2e/pcbreview-v7/altium-monkey-full.json").read_text())
+          assert report["status"] == "PARSED_UNVERIFIED"
+          assert report["source"]["sha256"]
+          for name in ("components", "pads", "tracks", "vias", "arcs"):
+              assert name in report["collections"], f"missing decoded collection: {name}"
+              assert report["collections"][name]["inventory"]["count"] is not None
+          assert report["collections"]["components"]["inventory"]["count"] > 0
+          assert report["collections"]["pads"]["inventory"]["count"] > 0
+          assert report["collections"]["tracks"]["inventory"]["count"] > 0
+          print("ALTIUM_MONKEY_FULL_MODEL_EXPORT=PASS")
+          print("SOURCE_SHA256=" + report["source"]["sha256"])
+          print("COLLECTION_INVENTORY=" + json.dumps({k:v["inventory"] for k,v in report["collections"].items()}, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pcbreview-v7-altium-monkey-full-model
+          path: e2e/pcbreview-v7/altium-monkey-full.json

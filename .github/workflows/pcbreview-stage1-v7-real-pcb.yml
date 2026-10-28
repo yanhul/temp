@@ -1,0 +1,88 @@
+name: pcbreview-stage1-v7-real-pcb
+on:
+  push:
+    branches: [fix/pcbreview-stage1-v7-fail-closed]
+    paths:
+      - 'Copy of QI9-2605-A01.PcbDoc'
+      - 'audit-input-2605/**'
+      - 'tools/altium-audit/standalone_pcbdoc_parser.py'
+      - 'tools/altium-audit/pcbreview_v7_full_extract.py'
+      - 'tools/altium_audit/pcbreview_v7_contracts.py'
+      - 'tools/altium_audit/tests/test_pcbreview_v7_contracts.py'
+      - 'tools/altium-audit/requirements.txt'
+      - '.github/workflows/pcbreview-stage1-v7-real-pcb.yml'
+  pull_request:
+    paths:
+      - 'Copy of QI9-2605-A01.PcbDoc'
+      - 'audit-input-2605/**'
+      - 'tools/altium-audit/standalone_pcbdoc_parser.py'
+      - 'tools/altium_audit/pcbreview_v7_contracts.py'
+      - 'tools/altium_audit/tests/test_pcbreview_v7_contracts.py'
+      - 'tools/altium-audit/requirements.txt'
+      - '.github/workflows/pcbreview-stage1-v7-real-pcb.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pcb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install parser dependencies
+        run: python -m pip install -r tools/altium-audit/requirements.txt
+      - name: Run v7 contract regressions
+        run: python -m unittest discover -s tools/altium_audit/tests -p 'test_pcbreview_v7_contracts.py' -v
+      - name: Parse actual QI9-2605 PcbDoc and render previews
+        run: |
+          test -s "audit-input-2605/Copy of QI9-2605-A01.PcbDoc"
+          mkdir -p e2e/pcbreview-v7
+          python tools/altium-audit/standalone_pcbdoc_parser.py "audit-input-2605/Copy of QI9-2605-A01.PcbDoc" --output e2e/pcbreview-v7/render-report.json --full --svg-dir e2e/pcbreview-v7/svg
+          python tools/altium-audit/pcbreview_v7_full_extract.py "audit-input-2605/Copy of QI9-2605-A01.PcbDoc" --output e2e/pcbreview-v7/report.json
+      - name: Enforce honest evidence boundaries and preserve board identity
+        run: |
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          source = Path("audit-input-2605/Copy of QI9-2605-A01.PcbDoc")
+          report_path = Path("e2e/pcbreview-v7/report.json")
+          report = json.loads(report_path.read_text(encoding="utf-8"))
+          routing = report.get("routing_analysis", {})
+          sha = hashlib.sha256(source.read_bytes()).hexdigest()
+          assert report.get("source", {}).get("sha256") == sha, "PCB source SHA256 mismatch"
+          assert report.get("source", {}).get("size_bytes") == source.stat().st_size, "PCB source size mismatch"
+          assert report.get("streams"), "no OLE streams parsed"
+          coverage = report.get("parse_coverage", {})
+          decoded = report.get("decoded_data", {})
+          assert coverage.get("routing_ready") is False, "unverified parser must never mark routing ready"
+          assert len(decoded.get("pads", [])) == report.get("counts", {}).get("pads"), "full pad records missing"
+          assert len(decoded.get("tracks", [])) == report.get("counts", {}).get("tracks"), "full track records missing"
+          assert len(decoded.get("components", [])) == report.get("counts", {}).get("components"), "full component records missing"
+          assert coverage.get("record_parse_errors") is not None, "parse error accounting missing"
+          assert report.get("status") != "PASS", "heuristic parser must not claim full audit PASS"
+          assert routing.get("connectivity_verified") is False, "heuristic parser must not certify connectivity"
+          assert "heuristic" in str(routing.get("method", "")).lower(), "routing method must disclose heuristic nature"
+          assert isinstance(routing.get("total_airwires_estimate"), int), "airwire estimate missing"
+          for name in ("top.svg", "bottom.svg", "svg-summary.json"):
+              assert (Path("e2e/pcbreview-v7/svg") / name).is_file(), f"missing render output: {name}"
+          print("PCB_SHA256=" + sha)
+          print("PCB_BYTES=" + str(source.stat().st_size))
+          print("OLE_STREAMS=" + str(len(report["streams"])))
+          print("FULL_EXTRACT_COMPONENTS=" + str(len(decoded["components"])))
+          print("FULL_EXTRACT_PADS=" + str(len(decoded["pads"])))
+          print("FULL_EXTRACT_TRACKS=" + str(len(decoded["tracks"])))
+          print("PARSE_COVERAGE_DIAGNOSTICS=present")
+          print("ROUTING_METHOD=" + str(routing.get("method")))
+          print("AIRWIRE_ESTIMATE=" + str(routing.get("total_airwires_estimate")))
+          print("CONNECTIVITY_VERIFIED=false")
+          print("REAL_PCB_PARSE_AND_RENDER=PASS; design correctness remains unverified")
+          PY
+      - if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcbreview-stage1-v7-real-pcb-evidence
+          path: e2e/pcbreview-v7
+          if-no-files-found: warn
