@@ -89,6 +89,46 @@ def main():
                     last_error = e
             if last_error is not None:
                 meta.setdefault("errors",[]).append({"method":"to_surface_svg","side":side_name,"error":repr(last_error)})
+    # Extract the authoritative rectangular board boundary from the rendered Keep-Out layer.
+    # Altium's parsed BoardOutline can be a stale/default rectangle; do not silently substitute it.
+    import re
+    keepout_path = out / "to_layer_svgs_keepout.svg"
+    boundary = {"status": "BLOCKED", "method": "Keep-Out layer magenta track primitives", "lines": []}
+    if keepout_path.exists():
+        svg = keepout_path.read_text(errors="replace")
+        for m in re.finditer(r'<line\\b[^>]*>', svg, re.I):
+            tag = m.group(0)
+            if not re.search(r'stroke=["\\\']#FF00FF["\\\']', tag, re.I):
+                continue
+            if not re.search(r'data-layer-name=["\\\'](?:KEEPOUT|KEEP-OUT LAYER)["\\\']', tag, re.I):
+                continue
+            vals = {}
+            for key in ("x1", "y1", "x2", "y2"):
+                mm = re.search(r'\\b' + key + r'=["\\\']([-+0-9.eE]+)["\\\']', tag)
+                if mm: vals[key] = float(mm.group(1))
+            if len(vals) == 4:
+                boundary["lines"].append(vals)
+        xs = [v[k] for v in boundary["lines"] for k in ("x1", "x2")]
+        ys = [v[k] for v in boundary["lines"] for k in ("y1", "y2")]
+        # Require exactly four axis-aligned edges spanning the same bbox before declaring a rectangle.
+        if len(boundary["lines"]) == 4 and len(xs) == 8 and len(ys) == 8:
+            min_x, max_x, min_y, max_y = min(xs), max(xs), min(ys), max(ys)
+            edges = set()
+            for v in boundary["lines"]:
+                if abs(v["x1"] - v["x2"]) < 1e-6:
+                    edges.add(("v", round(v["x1"], 4), round(min(v["y1"], v["y2"]), 4), round(max(v["y1"], v["y2"]), 4)))
+                elif abs(v["y1"] - v["y2"]) < 1e-6:
+                    edges.add(("h", round(v["y1"], 4), round(min(v["x1"], v["x2"]), 4), round(max(v["x1"], v["x2"]), 4)))
+            expected = {("v", round(min_x,4), round(min_y,4), round(max_y,4)), ("v", round(max_x,4), round(min_y,4), round(max_y,4)), ("h", round(min_y,4), round(min_x,4), round(max_x,4)), ("h", round(max_y,4), round(min_x,4), round(max_x,4))}
+            if edges == expected:
+                boundary.update({"status":"VERIFIED", "bbox_mm":{"min_x":min_x,"max_x":max_x,"min_y":min_y,"max_y":max_y}, "size_mm":{"width":round(max_x-min_x,4),"height":round(max_y-min_y,4)}})
+    meta["keepout_board_boundary"] = boundary
+    # Suppress exploratory string-enum KeyErrors when enum-based fallback succeeded.
+    successful_sides = {v.get("side") for k,v in meta["rendered"].items() if k.startswith("surface_")}
+    if successful_sides:
+        meta["errors"] = [e for e in meta.get("errors", []) if not (e.get("method") == "to_surface_svg" and e.get("kwargs", {}).get("side") in successful_sides)]
+        if not meta["errors"]: meta.pop("errors", None)
+
     # Save introspection and board outline evidence even if rendering API differs.
     board=getattr(pcb,"board",None)
     outline=getattr(board,"outline",None) if board is not None else None
