@@ -79,3 +79,13 @@ A new optional, evidence-only backend was added: `visio_vector.py`. It uses PyMu
 - GitHub Actions syntax-check workflow was observed queued for commit `14f33c5d553f7d2e8b365df439a07beef671383f`; do not call CI passing until a completed result is fetched.
 
 This is a safe fallback/intake layer, not a replacement for the primary SchematicNetlist backend and not permission to merge the draft PR.
+
+
+## One-run OCR + vector evidence pass — 2026-10-29
+
+- Tesseract OCR was run against the actual schematic pages 5–13, rendered at 2526×1786 pixels (216 dpi), using TSV output so text confidence and bounding boxes are retained. Batch duration: **20.3 s**.
+- OCR words at confidence >=20 per page: **272, 174, 138, 139, 128, 137, 128, 122, 127**. These are text-detection counts, not verified component or net counts.
+- A conservative refdes-like token filter found **142 candidate occurrences / 129 unique strings**. False reads such as `C414` and `D114` are present, so the candidate list is explicitly not a BOM and cannot be used to create symbol instances without review.
+- Added optional `ocr_vector_adapter.py` (Tesseract TSV evidence) and `test_ocr_vector_adapter.py` (candidate-pattern and invalid-page guards). These are evidence/intake modules, not a netlist generator.
+- Actual vector inventory plus OCR token evidence now exists for all nine schematic pages. Still **BLOCKED for netlist/KiCad generation**: no validated symbol detector, pin-anchor mapping, crossing/junction semantics, or golden-netlist comparison exists. Generating a schematic before these gates pass would risk inventing electrical connections.
+- The existing Actions syntax job passed on run `40834342844` for earlier commit `14f33c5d553f7d2e8b365df439a07beef671383f`; this does not prove the later OCR adapter or electrical conversion passes. Later commit-specific CI was not confirmed at report time.
