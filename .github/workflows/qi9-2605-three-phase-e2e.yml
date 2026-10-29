@@ -16,6 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python -m pip install -r tools/altium-audit/requirements.txt
+      - name: Run schematic parser regression tests
+        run: python -m pytest tests/test_audit_runner_designator.py tests/test_schematic_parser_contract.py tests/test_schematic_semantics.py tests/test_e2e_phase_scope.py -q
       - name: Run schematic phase and validate truthful receipt
         shell: bash
         run: |
@@ -61,6 +63,7 @@ jobs:
           PY
   placement:
     needs: schematic
+    if: ${{ always() && needs.schematic.result != 'cancelled' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -73,7 +76,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          python tools/altium-audit/e2e_phase.py --phase placement --input audit-input-2605 --output e2e/placement --config altium-audit-2605.config.json --upstream-receipt e2e/schematic/phase_receipt.json
+          python tools/altium-audit/e2e_phase.py --phase placement --input audit-input-2605 --output e2e/placement --config altium-audit-2605.config.json --upstream-receipt e2e/schematic/phase_receipt.json --diagnostic-only
           rc=$?
           set -e
           python - "e2e/placement/phase_receipt.json" "placement" "$rc" <<'PY'
@@ -114,6 +117,7 @@ jobs:
           PY
   routing:
     needs: placement
+    if: ${{ always() && needs.placement.result != 'cancelled' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -126,7 +130,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          python tools/altium-audit/e2e_phase.py --phase routing --input audit-input-2605 --output e2e/routing --config altium-audit-2605.config.json --upstream-receipt e2e/placement/phase_receipt.json
+          python tools/altium-audit/e2e_phase.py --phase routing --input audit-input-2605 --output e2e/routing --config altium-audit-2605.config.json --upstream-receipt e2e/placement/phase_receipt.json --diagnostic-only
           rc=$?
           set -e
           python - "e2e/routing/phase_receipt.json" "routing" "$rc" <<'PY'

@@ -21,8 +21,11 @@ class ProjectIndependenceTests(unittest.TestCase):
         self.assertIn('field(obj, "parameters")', text)
         self.assertIn('field(obj, "children")', text)
         self.assertIn('"designator" in kind', text)
-        self.assertIn('field(child, "text", "value")', text)
-        # The child lookup must precede generic/name fallbacks: schematic\n        # component.name is the library symbol name, not its reference.\n        self.assertLess(text.index('for child in list(field(obj, "children") or [])'),\n                        text.index('v = field(obj, "designator", "refdes", "reference", "id")'))\n
+        self.assertIn('field(child, "text", "value", "parameter_value")', text)
+        # Resolve typed/dict child records before direct refdes fallbacks.
+        self.assertLess(text.index("def candidate(child):"),
+                        text.index('v = field(obj, "designator", "refdes", "reference", "logical_designator", "physical_designator")'))
+
     def test_direct_mode_preserves_live_schematic_objects_for_reconciliation(self):
         text = ENGINE.read_text(encoding="utf-8")
         self.assertIn('sch_components = list(getattr(schdoc, "components", []) or [])', text)

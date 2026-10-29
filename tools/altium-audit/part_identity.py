@@ -70,8 +70,11 @@ AUTHORITATIVE_PART_SPECS = {
 
 
 def profile_key(identity: Any) -> str:
-    """Map compiled library/order-code strings onto authoritative families."""
-    n = norm(identity)
+    """Map library/order-code strings; strip only constrained generated Altium suffixes."""
+    raw = str(identity or "").strip()
+    # Example: CH9121T_C45354919 -> CH9121T. Never fuzzy-match arbitrary prefixes.
+    raw = re.sub(r"[_-]c[0-9a-f]{8,}$", "", raw, flags=re.IGNORECASE)
+    n = norm(raw)
     if "HCPL3120" in n:
         return "HCPL3120"
     if "HCPL0600" in n:
@@ -95,6 +98,7 @@ def resolve_declared_vs_compiled(
     compiled_library: str | None,
     observed_pins: dict[str, dict[str, Any]] | None,
     declared_profile_override: str | None = None,
+    compiled_part_identity: str | None = None,
 ) -> dict[str, Any]:
     """Return CONSISTENT, CONTRADICTION, or UNKNOWN.
 
@@ -116,7 +120,11 @@ def resolve_declared_vs_compiled(
         }
 
     declared_spec = AUTHORITATIVE_PART_SPECS.get(effective_declared)
-    compiled_spec = AUTHORITATIVE_PART_SPECS.get(compiled)
+    # A compiled library/symbol identifier is not automatically the physical
+    # part fitted by the user. Compare electrical/package specifications only
+    # when a separate, explicitly sourced physical-part identity is supplied.
+    physical_compiled = profile_key(compiled_part_identity) if compiled_part_identity else ""
+    compiled_spec = AUTHORITATIVE_PART_SPECS.get(physical_compiled)
     if declared_spec and compiled_spec:
         conflicts = {
             key: {"declared": declared_spec.get(key), "compiled": compiled_spec.get(key)}
@@ -136,11 +144,19 @@ def resolve_declared_vs_compiled(
     compiled_profile = AUTHORITATIVE_PIN_PROFILES.get(compiled)
 
     if not declared_profile or not compiled_profile:
-        if declared == compiled:
-            return {"state": "CONSISTENT", "reason": "Declared and compiled identities match.", "evidence": []}
+        # Matching strings are only a label match. They do not prove that the
+        # compiled symbol's pin functions match the declared physical part.
+        # A sourced part specification can establish part identity, but pin
+        # mapping remains a separate verification requirement.
+        if declared == compiled and declared_spec and compiled_spec and declared_spec.get("source") and compiled_spec.get("source"):
+            return {
+                "state": "CONSISTENT",
+                "reason": "Declared and compiled identities match the same sourced authoritative part specification; pin mapping remains a separate check.",
+                "evidence": [{"attribute": "part_spec_source", "declared": declared_spec["source"], "compiled": compiled_spec["source"]}],
+            }
         return {
             "state": "UNKNOWN",
-            "reason": "Different identities are present, but one or both lack an authoritative pin fingerprint.",
+            "reason": "A label match or library suffix is not a pin fingerprint; one or both identities lack an authoritative pin-function profile.",
             "evidence": [],
         }
 

@@ -16,21 +16,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare immutable input
+      - name: Prepare immutable input and lineage
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p work/project work/audit work/auditkit
-          ARCHIVE=$(python -c 'import json; print(json.load(open("altium-audit.config.json"))["source_archive"])')
-          PARTS=$(python -c 'import json; print(json.load(open("altium-audit.config.json"))["base64_parts_dir"])')
-          test -s "$ARCHIVE"
-          test -d "$PARTS"
-          find "$PARTS" -maxdepth 1 -name 'part_*.txt' -print | sort | xargs cat | base64 -d > work/project.zip
-          cmp -s "$ARCHIVE" work/project.zip
+          python tools/altium-audit/reconstruct_source.py \
+            --config altium-audit.config.json \
+            --archive work/project.zip \
+            --sha256 work/source.sha256 \
+            --provenance work/source-provenance.json \
+            --commit-sha "$GITHUB_SHA"
           unzip -q work/project.zip -d work/project
-          sha256sum work/project.zip | awk '{print $1}' > work/source.sha256
+          cp work/source-provenance.json work/auditkit/source-provenance.json
           printf 'commit_sha=%s\n' "$GITHUB_SHA" > work/lineage.txt
-          printf 'archive=%s\n' "$ARCHIVE" >> work/lineage.txt
+          printf 'archive_label=%s\n' "$(python -c 'import json; print(json.load(open("altium-audit.config.json"))["source_archive"])')" >> work/lineage.txt
           printf 'archive_sha256=%s\n' "$(cat work/source.sha256)" >> work/lineage.txt
 
       - name: Install pinned parser
