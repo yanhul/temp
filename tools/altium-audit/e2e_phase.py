@@ -16,7 +16,10 @@ def audit(root,out,cfg):
  if cfg:c+=["--config",cfg]
  rc=run(c); f=out/"summary.json"
  return rc,json.loads(f.read_text()) if f.exists() else {}
-DEFERRED_NON_GATING_IDS = {"G2-SCH-NC-PIN-CONNECTED-U19","G2-HCPL-NC-PIN4-CONNECTED-U19","G2-SCH-NC-PIN-CONNECTED-U24","G2-HCPL-NC-PIN4-CONNECTED-U24","G2-SCH-NC-PIN-CONNECTED-U29","G2-HCPL-NC-PIN4-CONNECTED-U29","G2-SCH-IDENTITY-EVIDENCE-D5","G2-SCH-IDENTITY-EVIDENCE-D12","G2-SCH-IDENTITY-EVIDENCE-D13"}
+# Only the documented HCPL NC cases are deferred for this project's explicit
+# policy. Identity contradictions for D5/D12/D13 are never exempted by footprint
+# reuse; a footprint match is not evidence of electrical identity.
+DEFERRED_NON_GATING_IDS = {"G2-SCH-NC-PIN-CONNECTED-U19","G2-HCPL-NC-PIN4-CONNECTED-U19","G2-SCH-NC-PIN-CONNECTED-U24","G2-HCPL-NC-PIN4-CONNECTED-U24","G2-SCH-NC-PIN-CONNECTED-U29","G2-HCPL-NC-PIN4-CONNECTED-U29"}
 
 def required_schematic_unknowns(findings, block_unknown=True):
  if not block_unknown:
