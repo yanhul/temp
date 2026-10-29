@@ -40,7 +40,7 @@ def _intersection(a, b, c, d, tol=EPS):
         return None, "parallel_or_collinear"
     t = _cross(*qmp, *s) / den
     u = _cross(*qmp, *r) / den
-    if -tol <= t <= 1 + tol and -tol <= u <= 1 + tol:
+    if -1e-6 <= t <= 1 + 1e-6 and -1e-6 <= u <= 1 + 1e-6:
         t = min(1.0, max(0.0, t)); u = min(1.0, max(0.0, u))
         p = (ax + t * r[0], ay + t * r[1])
         on_a_end = t <= tol or t >= 1 - tol
