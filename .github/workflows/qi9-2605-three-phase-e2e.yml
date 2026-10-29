@@ -63,6 +63,7 @@ jobs:
           PY
   placement:
     needs: schematic
+    if: ${{ always() && needs.schematic.result != 'cancelled' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,7 +76,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          python tools/altium-audit/e2e_phase.py --phase placement --input audit-input-2605 --output e2e/placement --config altium-audit-2605.config.json --upstream-receipt e2e/schematic/phase_receipt.json
+          python tools/altium-audit/e2e_phase.py --phase placement --input audit-input-2605 --output e2e/placement --config altium-audit-2605.config.json --upstream-receipt e2e/schematic/phase_receipt.json --diagnostic-only
           rc=$?
           set -e
           python - "e2e/placement/phase_receipt.json" "placement" "$rc" <<'PY'
@@ -116,6 +117,7 @@ jobs:
           PY
   routing:
     needs: placement
+    if: ${{ always() && needs.placement.result != 'cancelled' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -128,7 +130,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          python tools/altium-audit/e2e_phase.py --phase routing --input audit-input-2605 --output e2e/routing --config altium-audit-2605.config.json --upstream-receipt e2e/placement/phase_receipt.json
+          python tools/altium-audit/e2e_phase.py --phase routing --input audit-input-2605 --output e2e/routing --config altium-audit-2605.config.json --upstream-receipt e2e/placement/phase_receipt.json --diagnostic-only
           rc=$?
           set -e
           python - "e2e/routing/phase_receipt.json" "routing" "$rc" <<'PY'

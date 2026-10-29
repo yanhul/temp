@@ -46,3 +46,10 @@ def test_identity_evidence_is_split_into_distinct_root_causes():
     assert [f["id"] for f in buckets["verified_identity_contradiction"]] == ["G2-SCH-IDENTITY-EVIDENCE-D5"]
     assert [f["id"] for f in buckets["insufficient_discriminating_evidence"]] == ["G2-SCH-IDENTITY-UNRESOLVED-Q1"]
 
+
+
+def test_diagnostic_only_mode_never_promotes_blocked_upstream_phase():
+    source = (Path(__file__).resolve().parents[1] / "tools" / "altium-audit" / "e2e_phase.py").read_text(encoding="utf-8")
+    assert '--diagnostic-only' in source
+    assert 'final_ok=ok and pre and upstream_ok and not a.diagnostic_only' in source
+    assert 'final_ok=ok and upstream_ok and not a.diagnostic_only' in source

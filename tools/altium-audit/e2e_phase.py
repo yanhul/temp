@@ -101,7 +101,7 @@ def receipt(out,phase,status,evidence,up=None):
     "finding_inventory":evidence.get("finding_inventory",{"total":0,"errors":[],"warnings":[],"informational":[],"blocking":[],"unknown":[]})}
  (out/"phase_receipt.json").write_text(json.dumps(r,indent=2,ensure_ascii=False)); print(json.dumps(r,indent=2)); return 0 if status=="PASS" else 1
 def main():
- ap=argparse.ArgumentParser(); ap.add_argument("--phase",choices=["schematic","placement","routing"],required=True); ap.add_argument("--input",type=Path,required=True); ap.add_argument("--output",type=Path,required=True); ap.add_argument("--config",type=Path); ap.add_argument("--upstream-receipt",type=Path); a=ap.parse_args()
+ ap=argparse.ArgumentParser(); ap.add_argument("--phase",choices=["schematic","placement","routing"],required=True); ap.add_argument("--input",type=Path,required=True); ap.add_argument("--output",type=Path,required=True); ap.add_argument("--config",type=Path); ap.add_argument("--upstream-receipt",type=Path); ap.add_argument("--diagnostic-only",action="store_true",help="run non-mutating downstream diagnostics when upstream is blocked; receipt never PASS"); a=ap.parse_args()
  root=a.input.resolve(); out=a.output.resolve(); s,b,p=discover(root); out.mkdir(parents=True,exist_ok=True)
  up=hashlib.sha256(a.upstream_receipt.read_bytes()).hexdigest() if a.upstream_receipt and a.upstream_receipt.exists() else None
  if a.phase=="schematic":
@@ -118,20 +118,31 @@ def main():
    ur=json.loads(a.upstream_receipt.read_text())
   except Exception:
    return receipt(out,"PLACEMENT","BLOCKED",{"reason":"invalid schematic upstream receipt"},up)
-  if ur.get("phase")!="SCHEMATIC" or ur.get("status")!="PASS": return receipt(out,"PLACEMENT","BLOCKED",{"reason":"schematic prerequisite not VERIFIED","upstream_phase":ur.get("phase"),"upstream_status":ur.get("status")},up)
+  upstream_ok=ur.get("phase")=="SCHEMATIC" and ur.get("status")=="PASS"
+  if not upstream_ok and not a.diagnostic_only: return receipt(out,"PLACEMENT","BLOCKED",{"reason":"schematic prerequisite not VERIFIED","upstream_phase":ur.get("phase"),"upstream_status":ur.get("status")},up)
   rc,x=audit(root,out/"audit",a.config); g=x.get("gates",{}); pre=all(g.get(k)=="VERIFIED" for k in ["G0_INTAKE","G1_PARSE","G2_COMPILE","G3_CONNECTIVITY"])
   findings=x.get("findings",[]); inv=finding_inventory(findings)
-  if not pre:return receipt(out,"PLACEMENT","BLOCKED",{"reason":"schematic prerequisite failed","runner_rc":rc,"gates":g,"finding_inventory":inv},up)
+  if not pre and not a.diagnostic_only:return receipt(out,"PLACEMENT","BLOCKED",{"reason":"schematic prerequisite failed","runner_rc":rc,"gates":g,"finding_inventory":inv},up)
   nl=json.loads((out/"audit"/"netlist.json").read_text()); m=out/"connectivity-manifest.json"; m.write_text(json.dumps({"schema":"altium-connectivity-manifest.v2","status":"VERIFIED","basis":"phase-1 G3_CONNECTIVITY","nets":nl.get("nets",[])} ,indent=2))
   intelligence=out/"connectivity-intelligence.json"; irc=run([HERE/"connectivity_intelligence.py","--netlist",out/"audit"/"netlist.json","--out",intelligence]);
   plan=out/"placement-routing-plan.json"; prc=run([PLANNER,"--pcb",b,"--out",plan,"--findings",out/"audit"/"findings.json","--connectivity-manifest",m]+(["--config",a.config] if a.config else [])); z=json.loads(plan.read_text()) if plan.exists() else {}; pl=z.get("placement",{}); ok=pl.get("status") in ("VERIFIED","PASS") and pl.get("lock",{}).get("status")=="LOCKED"
-  return receipt(out,"PLACEMENT","PASS" if ok else "BLOCKED",{"planner_rc":prc,"connectivity_intelligence_rc":irc,"placement":pl,"routing":"DEFERRED","finding_inventory":inv,"downstream_impact":{"routing":"ALLOWED_WITH_FINDINGS" if not inv["blocking"] else "BLOCKED","note":"Placement PASS does not erase schematic findings; downstream must retain and account for them."}},up)
+  final_ok=ok and pre and upstream_ok and not a.diagnostic_only
+  return receipt(out,"PLACEMENT","PASS" if final_ok else "BLOCKED",{"planner_rc":prc,"connectivity_intelligence_rc":irc,"placement":pl,"routing":"DEFERRED","diagnostic_only":bool(a.diagnostic_only),"upstream_status":ur.get("status"),"audit_gates":g,"finding_inventory":inv,"downstream_impact":{"routing":"BLOCKED" if not final_ok else ("ALLOWED_WITH_FINDINGS" if not inv["blocking"] else "BLOCKED"),"note":"Diagnostic-only execution never authorizes placement mutation or phase PASS; placement PASS does not erase schematic findings."}},up)
  if not a.upstream_receipt or not a.upstream_receipt.exists(): return receipt(out,"ROUTING","BLOCKED",{"reason":"missing placement upstream receipt"},up)
  try:
   ur=json.loads(a.upstream_receipt.read_text())
  except Exception:
   return receipt(out,"ROUTING","BLOCKED",{"reason":"invalid placement upstream receipt"},up)
- if ur.get("phase")!="PLACEMENT" or ur.get("status")!="PASS": return receipt(out,"ROUTING","BLOCKED",{"reason":"placement prerequisite not VERIFIED","upstream_phase":ur.get("phase"),"upstream_status":ur.get("status")},up)
+ upstream_ok=ur.get("phase")=="PLACEMENT" and ur.get("status")=="PASS"
+ if not upstream_ok and not a.diagnostic_only: return receipt(out,"ROUTING","BLOCKED",{"reason":"placement prerequisite not VERIFIED","upstream_phase":ur.get("phase"),"upstream_status":ur.get("status")},up)
  rc,x=audit(root,out/"audit",a.config); g=x.get("gates",{}); findings=x.get("findings",[]); inv=finding_inventory(findings); req={k:g.get(k) for k in ["G3_CONNECTIVITY","G6_PLACEMENT","G7_ROUTING"]}; ok=all(v=="VERIFIED" for v in req.values())
- return receipt(out,"ROUTING","PASS" if ok else "BLOCKED",{"runner_rc":rc,"required_gates":req,"finding_inventory":inv,"routing_repair":"DEFERRED_TO_ROUTING_MUTATION_STAGE","downstream_impact":{"mutation":"BLOCKED" if inv["blocking"] else "REQUIRES_FINDING_REVIEW"}} ,up)
+ repair_plan=out/"routing-repair-plan.json"
+ repair_rc=run([HERE/"routing_repair_plan.py","--pcb",b,"--out",repair_plan]) if a.diagnostic_only else None
+ repair_summary={}
+ if repair_plan.exists():
+  try:
+   rp=json.loads(repair_plan.read_text()); repair_summary={"status":rp.get("status"),"net_count":len(rp.get("nets",[]) or []),"mutation_authorized":bool(rp.get("mutation_authorized",False))}
+  except Exception as exc: repair_summary={"parse_error":str(exc)}
+ final_ok=ok and upstream_ok and not a.diagnostic_only
+ return receipt(out,"ROUTING","PASS" if final_ok else "BLOCKED",{"runner_rc":rc,"required_gates":req,"diagnostic_only":bool(a.diagnostic_only),"upstream_status":ur.get("status"),"finding_inventory":inv,"routing_repair_plan_rc":repair_rc,"routing_repair_plan":repair_summary,"routing_repair":"PLAN_ONLY_NO_MUTATION; no authorization or board edit is performed in diagnostic-only mode","downstream_impact":{"mutation":"BLOCKED","reason":"diagnostic-only mode or upstream gate not PASS"}} ,up)
 if __name__=="__main__": raise SystemExit(main())
