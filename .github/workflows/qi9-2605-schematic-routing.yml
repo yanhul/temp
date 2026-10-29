@@ -83,9 +83,13 @@ jobs:
       - name: Install specialist PDF schematic backend
         run: |
           sudo apt-get update
-          sudo apt-get install -y tesseract-ocr
+          sudo apt-get install -y tesseract-ocr poppler-utils
           python -m pip install 'git+https://github.com/sphrd/SchematicNetlist.git'
           python -m pip install opencv-python-headless pytesseract numpy pymupdf
+      - name: Export per-page SVG and raw vector geometry evidence
+        shell: bash
+        run: |
+          python tools/pdf-schematic/export_svg_evidence.py "[QI9-2605-A01] Module ADC.pdf" --out work/svg-evidence
       - name: Extract reusable PDF vector/text primitives (no OCR, no inferred connectivity)
         shell: bash
         run: |
