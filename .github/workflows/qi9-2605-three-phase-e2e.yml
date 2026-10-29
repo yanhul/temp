@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: python -m pip install -r tools/altium-audit/requirements.txt
       - name: Run schematic parser regression tests
-        run: python -m pytest tests/test_audit_runner_designator.py tests/test_schematic_parser_contract.py tests/test_schematic_semantics.py -q
+        run: python -m pytest tests/test_audit_runner_designator.py tests/test_schematic_parser_contract.py tests/test_schematic_semantics.py tests/test_e2e_phase_scope.py -q
       - name: Run schematic phase and validate truthful receipt
         shell: bash
         run: |
