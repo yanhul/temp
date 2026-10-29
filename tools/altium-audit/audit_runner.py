@@ -98,6 +98,21 @@ def as_name(obj: Any):
     v = field(obj, "designator", "refdes", "reference", "logical_designator", "physical_designator")
     return str(v).strip() if v is not None and str(v).strip() else None
 
+def required_schematic_unknowns(findings, block_unknown=True):
+    """Return required schematic UNKNOWNs under the project's fail-closed policy.
+
+    UNKNOWN is not a verified defect, so it blocks rather than fails the gate.
+    Explicitly deferred findings must be removed by the caller before invoking
+    this helper; identity evidence gaps are never silently promoted to PASS.
+    """
+    if not block_unknown:
+        return []
+    return [
+        f for f in findings
+        if f.get("domain") == "schematic" and f.get("status") == "UNKNOWN"
+    ]
+
+
 def add(findings, fid, severity, domain, status, evidence, confidence="VERIFIED", obj=None):
     findings.append({
         "id": fid, "severity": severity, "domain": domain, "status": status,
@@ -1488,6 +1503,11 @@ def main():
 
     deferred_non_gating_ids = {"G2-SCH-NC-PIN-CONNECTED-U19","G2-HCPL-NC-PIN4-CONNECTED-U19","G2-SCH-NC-PIN-CONNECTED-U24","G2-HCPL-NC-PIN4-CONNECTED-U24","G2-SCH-NC-PIN-CONNECTED-U29","G2-HCPL-NC-PIN4-CONNECTED-U29","G2-HCPL-TOPOLOGY-ADC1_DATA","G2-HCPL-TOPOLOGY-ADC2_DATA","G2-HCPL-TOPOLOGY-ADC3_DATA"}
     gate_findings = [f for f in findings if f.get("id") not in deferred_non_gating_ids]
+    identity_policy = project_config.get("policy") or {}
+    required_unknowns = required_schematic_unknowns(
+        gate_findings,
+        block_unknown=bool(identity_policy.get("block_on_unsupported_required_check", True)),
+    )
 
     def gate_for(prefix):
         fs=[f for f in gate_findings if f["id"].startswith(prefix)]
@@ -1501,7 +1521,7 @@ def main():
         "G1_PARSE":"VERIFIED" if parse_contract_ok else "BLOCKED",
         "G2_COMPILE": (
             "FAIL" if diagnostics or any(f["id"].startswith("G2-SCH-") or f["id"].startswith("G2-NET-") for f in gate_findings if f["status"]=="FAIL") else
-            "BLOCKED" if any(f["id"]=="G2-COMPILE" and f["status"]=="BLOCKED" for f in gate_findings) or any(f["status"]=="BLOCKED" and f["domain"]=="schematic" for f in gate_findings) else
+            "BLOCKED" if required_unknowns or any(f["id"]=="G2-COMPILE" and f["status"]=="BLOCKED" for f in gate_findings) or any(f["status"]=="BLOCKED" and f["domain"]=="schematic" for f in gate_findings) else
             "VERIFIED"
         ),
         "G3_CONNECTIVITY":"VERIFIED" if not any(f["id"].startswith("G3-") and f["status"] in ("FAIL","UNKNOWN","BLOCKED") for f in findings) else "BLOCKED",

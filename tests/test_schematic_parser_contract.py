@@ -63,3 +63,22 @@ def test_write_schematic_evidence_supports_netlist_b0_field_aliases(tmp_path):
     assert c["reference"] == "J1"
     assert c["pins"][0]["pin"] == "1"
     assert c["pins"][0]["connected_net"] == "UART_RX0"
+
+
+def test_required_schematic_unknowns_block_but_do_not_mislabel_as_failure():
+    unknown = {
+        "id": "G2-SCH-IDENTITY-UNRESOLVED-D12",
+        "domain": "schematic",
+        "status": "UNKNOWN",
+        "severity": "INFO",
+    }
+    deferred = {
+        "id": "G2-SCH-NC-PIN-CONNECTED-U19",
+        "domain": "schematic",
+        "status": "UNKNOWN",
+        "severity": "INFO",
+    }
+    assert audit_runner.required_schematic_unknowns([unknown]) == [unknown]
+    assert audit_runner.required_schematic_unknowns([unknown], block_unknown=False) == []
+    # Explicit project-deferred findings are filtered by the gate before this helper.
+    assert audit_runner.required_schematic_unknowns([deferred]) == [deferred]
