@@ -422,6 +422,14 @@ def topology_components(pcb, netlist=None):
             return False
         return a == b or a in multi or b in multi
 
+    def point_segment_distance(point, start, end):
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        if dx == 0 and dy == 0:
+            return distance(point, start)
+        t = max(0.0, min(1.0, ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / (dx * dx + dy * dy)))
+        projection = (start[0] + t * dx, start[1] + t * dy)
+        return distance(point, projection)
+
     net_names = sorted(set(str(v) for v in pad_labels.values()))
     result = {}
 
