@@ -1,8 +1,8 @@
 """Geometric topology candidates for flattened schematic PDFs.
 
-This module splits straight vector strokes at geometric intersections so a later
-symbol/pin/net adapter can reuse the geometry. It deliberately does NOT union
-crossings into electrical nets: PDFs often draw crossings without junctions.
+Splits vector strokes at segment intersections using a bounding-box sweep to avoid
+quadratic all-pairs work on dense pages. This is geometry only: crossings do not
+become electrical nets without independent junction/pin/label evidence.
 """
 from __future__ import annotations
 
@@ -16,50 +16,41 @@ def _cross(ax, ay, bx, by):
     return ax * by - ay * bx
 
 
-def _point_on_segment(p, a, b, tol=EPS):
-    px, py = p; ax, ay = a; bx, by = b
-    dx, dy = bx - ax, by - ay
-    length2 = dx * dx + dy * dy
-    if length2 <= tol * tol:
-        return math.hypot(px - ax, py - ay) <= tol
-    t = ((px - ax) * dx + (py - ay) * dy) / length2
-    if t < -tol or t > 1 + tol:
-        return False
-    qx, qy = ax + max(0.0, min(1.0, t)) * dx, ay + max(0.0, min(1.0, t)) * dy
-    return math.hypot(px - qx, py - qy) <= tol
-
-
 def _intersection(a, b, c, d, tol=EPS):
-    """Return a single intersection point; collinear overlaps are left ambiguous."""
+    """Return a unique segment intersection; collinear overlap stays unresolved."""
     ax, ay = a; bx, by = b; cx, cy = c; dx, dy = d
-    r = (bx - ax, by - ay); s = (dx - cx, dy - cy)
-    den = _cross(*r, *s)
-    qmp = (cx - ax, cy - ay)
-    if abs(den) <= tol:
-        # Parallel/collinear overlap cannot safely be reduced to a unique node.
+    rx, ry = bx - ax, by - ay
+    sx, sy = dx - cx, dy - cy
+    rlen = math.hypot(rx, ry); slen = math.hypot(sx, sy)
+    den = _cross(rx, ry, sx, sy)
+    qx, qy = cx - ax, cy - ay
+    # Scale parallel tolerance by segment lengths, not coordinate units.
+    if abs(den) <= 1e-10 * max(1.0, rlen * slen):
         return None, "parallel_or_collinear"
-    t = _cross(*qmp, *s) / den
-    u = _cross(*qmp, *r) / den
-    if -1e-6 <= t <= 1 + 1e-6 and -1e-6 <= u <= 1 + 1e-6:
+    t = _cross(qx, qy, sx, sy) / den
+    u = _cross(qx, qy, rx, ry) / den
+    # Convert the geometric tolerance into a parameter tolerance per segment.
+    ta = tol / max(rlen, tol)
+    tb = tol / max(slen, tol)
+    if -ta <= t <= 1 + ta and -tb <= u <= 1 + tb:
         t = min(1.0, max(0.0, t)); u = min(1.0, max(0.0, u))
-        p = (ax + t * r[0], ay + t * r[1])
-        on_a_end = t <= tol or t >= 1 - tol
-        on_b_end = u <= tol or u >= 1 - tol
-        if on_a_end and on_b_end:
-            kind = "endpoint_endpoint"
-        elif on_a_end or on_b_end:
-            kind = "endpoint_on_segment"
-        else:
-            kind = "interior_crossing"
-        return (round(p[0], 4), round(p[1], 4)), kind
+        px, py = ax + t * rx, ay + t * ry
+        # Snap only to an actual endpoint within the distance tolerance.
+        da = min(math.hypot(px-ax, py-ay), math.hypot(px-bx, py-by))
+        db = min(math.hypot(px-cx, py-cy), math.hypot(px-dx, py-dy))
+        on_a_end, on_b_end = da <= tol, db <= tol
+        kind = ("endpoint_endpoint" if on_a_end and on_b_end else
+                "endpoint_on_segment" if on_a_end or on_b_end else
+                "interior_crossing")
+        return (round(px, 4), round(py, 4)), kind
     return None, "disjoint"
 
 
 def build_geometric_topology(lines, tolerance=EPS):
-    """Split vector lines at intersections and return non-electrical candidates.
+    """Split vector lines at geometric intersections; never emits electrical nets.
 
     Input lines: [{"a":[x,y], "b":[x,y], ...}, ...].
-    Output explicitly leaves every intersection's electrical status unknown.
+    Output preserves source indices and explicitly marks connectivity unknown.
     """
     normalized = []
     for index, line in enumerate(lines):
@@ -67,24 +58,41 @@ def build_geometric_topology(lines, tolerance=EPS):
         if not a or not b:
             continue
         a = (float(a[0]), float(a[1])); b = (float(b[0]), float(b[1]))
+        if not all(math.isfinite(v) for v in (*a, *b)):
+            continue
         if math.dist(a, b) <= tolerance:
             continue
-        normalized.append({"source_line_index": index, "a": a, "b": b})
+        normalized.append({"source_line_index": index, "a": a, "b": b,
+                           "bbox": (min(a[0],b[0]), min(a[1],b[1]),
+                                    max(a[0],b[0]), max(a[1],b[1]))})
+
     cuts = {i: [item["a"], item["b"]] for i, item in enumerate(normalized)}
     intersections = []
-    for i, first in enumerate(normalized):
-        for j in range(i + 1, len(normalized)):
-            second = normalized[j]
-            p, kind = _intersection(first["a"], first["b"], second["a"], second["b"], tolerance)
+    # Sweep by minimum X; only compare segments whose bounding boxes overlap.
+    ordered_indices = sorted(range(len(normalized)), key=lambda i: normalized[i]["bbox"][0])
+    active = []
+    candidate_pair_count = 0
+    for i in ordered_indices:
+        current = normalized[i]
+        xmin, ymin, xmax, ymax = current["bbox"]
+        active = [j for j in active if normalized[j]["bbox"][2] >= xmin - tolerance]
+        for j in active:
+            other = normalized[j]
+            _, oymin, _, oymax = other["bbox"]
+            if oymax < ymin - tolerance or ymax < oymin - tolerance:
+                continue
+            candidate_pair_count += 1
+            p, kind = _intersection(other["a"], other["b"], current["a"], current["b"], tolerance)
             if p is None:
                 continue
-            cuts[i].append(p); cuts[j].append(p)
+            cuts[j].append(p); cuts[i].append(p)
             intersections.append({
                 "xy": list(p),
-                "source_line_indices": [first["source_line_index"], second["source_line_index"]],
+                "source_line_indices": sorted([other["source_line_index"], current["source_line_index"]]),
                 "geometry_kind": kind,
                 "electrical_status": "UNKNOWN_NO_JUNCTION_AUTHORITY",
             })
+        active.append(i)
 
     edges = []
     for i, line in enumerate(normalized):
@@ -106,7 +114,6 @@ def build_geometric_topology(lines, tolerance=EPS):
                 "electrical_status": "GEOMETRY_ONLY_NOT_A_NET",
             })
 
-    # Deduplicate coincident intersections while preserving all source-line pairs.
     grouped = defaultdict(set)
     kinds = defaultdict(set)
     for item in intersections:
@@ -114,18 +121,17 @@ def build_geometric_topology(lines, tolerance=EPS):
         grouped[key].update(item["source_line_indices"])
         kinds[key].add(item["geometry_kind"])
     nodes = [{
-        "xy": list(xy),
-        "source_line_indices": sorted(indices),
+        "xy": list(xy), "source_line_indices": sorted(indices),
         "geometry_kinds": sorted(kinds[xy]),
         "electrical_status": "UNKNOWN_NO_JUNCTION_AUTHORITY",
     } for xy, indices in sorted(grouped.items())]
     return {
         "schema": "pdf2kicad.geometric-topology-candidates/1",
         "input_line_count": len(normalized),
+        "candidate_pair_count": candidate_pair_count,
         "split_edge_count": len(edges),
         "intersection_candidate_count": len(nodes),
-        "edges": edges,
-        "intersection_candidates": nodes,
+        "edges": edges, "intersection_candidates": nodes,
         "electrical_connectivity": "NOT_INFERRED",
         "warning": "Geometric crossings/endpoints are not electrical junction proof.",
     }
