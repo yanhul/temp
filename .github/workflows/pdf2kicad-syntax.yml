@@ -1,0 +1,49 @@
+name: PDF2KiCad branch syntax and unit tests
+on:
+  push:
+    branches:
+      - feat/pdf2kicad-verification-integration
+    paths:
+      - 'experiments/pdf2kicad-verification/**'
+      - '.github/workflows/pdf2kicad-syntax.yml'
+  pull_request:
+    paths:
+      - 'experiments/pdf2kicad-verification/**'
+      - '.github/workflows/pdf2kicad-syntax.yml'
+  workflow_dispatch:
+jobs:
+  syntax-and-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/pdf2kicad-verification-integration
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install parser dependencies
+        run: |
+          python -m pip install --upgrade pip pymupdf pdfminer.six pypdf kiutils
+          python -m pip install 'git+https://github.com/sphrd/SchematicNetlist.git'
+      - name: Smoke-test SchematicNetlist CLI
+        run: |
+          schematic-netlist --help
+          schematic-netlist doctor
+      - name: Compile all Python modules
+        run: python -m py_compile experiments/pdf2kicad-verification/*.py
+      - name: Run unit tests
+        working-directory: experiments/pdf2kicad-verification
+        run: python -m unittest -v
+      - name: Check expected modules exist
+        run: |
+          test -f experiments/pdf2kicad-verification/pdfx.py
+          test -f experiments/pdf2kicad-verification/padsx.py
+          test -f experiments/pdf2kicad-verification/netsx.py
+          test -f experiments/pdf2kicad-verification/main.py
+          test -f experiments/pdf2kicad-verification/gen.py
+          test -f experiments/pdf2kicad-verification/kcx.py
+          test -f experiments/pdf2kicad-verification/validate_output.py
+          test -f experiments/pdf2kicad-verification/dump_debug.py
+          test -f experiments/pdf2kicad-verification/verify_netlist.py
+          test -f experiments/pdf2kicad-verification/visio_vector.py
+          test -f experiments/pdf2kicad-verification/ocr_vector_adapter.py
