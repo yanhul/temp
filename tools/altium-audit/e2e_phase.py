@@ -126,8 +126,26 @@ def main():
   nl=json.loads((out/"audit"/"netlist.json").read_text()); m=out/"connectivity-manifest.json"; m.write_text(json.dumps({"schema":"altium-connectivity-manifest.v2","status":"VERIFIED","basis":"phase-1 G3_CONNECTIVITY","nets":nl.get("nets",[])} ,indent=2))
   intelligence=out/"connectivity-intelligence.json"; irc=run([HERE/"connectivity_intelligence.py","--netlist",out/"audit"/"netlist.json","--out",intelligence]);
   plan=out/"placement-routing-plan.json"; prc=run([PLANNER,"--pcb",b,"--out",plan,"--findings",out/"audit"/"findings.json","--connectivity-manifest",m]+(["--config",a.config] if a.config else [])); z=json.loads(plan.read_text()) if plan.exists() else {}; pl=z.get("placement",{}); ok=pl.get("status") in ("VERIFIED","PASS") and pl.get("lock",{}).get("status")=="LOCKED"
+  # Emit a placement-only review packet so reviewers can work on component
+  # arrangement without conflating it with routing closure. No PCB mutation occurs.
+  placement_review={
+   "schema":"altium-placement-review.v1",
+   "status":"VERIFIED" if ok else "BLOCKED",
+   "mode":"REVIEW_ONLY_NO_MUTATION",
+   "upstream_schematic_status":ur.get("status"),
+   "diagnostic_only":bool(a.diagnostic_only),
+   "placement_status":pl.get("status"),
+   "lock":pl.get("lock",{}),
+   "checks":pl.get("checks",{}),
+   "components":pl.get("components",[]),
+   "connectivity_intelligence":pl.get("connectivity_intelligence",{}),
+   "routing":"DEFERRED",
+   "next_action":"REVIEW_CANDIDATE_MOVES" if pl.get("connectivity_intelligence",{}).get("candidate_moves") else "RESOLVE_PLACEMENT_EVIDENCE",
+   "mutation":"FORBIDDEN"
+  }
+  (out/"placement-review.json").write_text(json.dumps(placement_review,indent=2,ensure_ascii=False))
   final_ok=ok and pre and upstream_ok and not a.diagnostic_only
-  return receipt(out,"PLACEMENT","PASS" if final_ok else "BLOCKED",{"planner_rc":prc,"connectivity_intelligence_rc":irc,"placement":pl,"routing":"DEFERRED","diagnostic_only":bool(a.diagnostic_only),"upstream_status":ur.get("status"),"audit_gates":g,"finding_inventory":inv,"downstream_impact":{"routing":"BLOCKED" if not final_ok else ("ALLOWED_WITH_FINDINGS" if not inv["blocking"] else "BLOCKED"),"note":"Diagnostic-only execution never authorizes placement mutation or phase PASS; placement PASS does not erase schematic findings."}},up)
+  return receipt(out,"PLACEMENT","PASS" if final_ok else "BLOCKED",{"planner_rc":prc,"connectivity_intelligence_rc":irc,"placement_review":"placement-review.json","placement":pl,"routing":"DEFERRED","diagnostic_only":bool(a.diagnostic_only),"upstream_status":ur.get("status"),"audit_gates":g,"finding_inventory":inv,"downstream_impact":{"routing":"BLOCKED" if not final_ok else ("ALLOWED_WITH_FINDINGS" if not inv["blocking"] else "BLOCKED"),"note":"Placement review is independent diagnostic output. Diagnostic-only execution never authorizes placement mutation or phase PASS; placement PASS does not erase schematic findings."}},up)
  if not a.upstream_receipt or not a.upstream_receipt.exists(): return receipt(out,"ROUTING","BLOCKED",{"reason":"missing placement upstream receipt"},up)
  try:
   ur=json.loads(a.upstream_receipt.read_text())

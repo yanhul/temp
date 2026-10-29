@@ -53,3 +53,12 @@ def test_diagnostic_only_mode_never_promotes_blocked_upstream_phase():
     assert '--diagnostic-only' in source
     assert 'final_ok=ok and pre and upstream_ok and not a.diagnostic_only' in source
     assert 'final_ok=ok and upstream_ok and not a.diagnostic_only' in source
+
+
+def test_placement_review_contract_is_separate_from_routing():
+    from pathlib import Path
+    source = (Path(__file__).resolve().parents[1] / "tools" / "altium-audit" / "e2e_phase.py").read_text(encoding="utf-8")
+    assert '"schema":"altium-placement-review.v1"' in source
+    assert '"routing":"DEFERRED"' in source
+    assert '"mutation":"FORBIDDEN"' in source
+    assert 'placement-review.json' in source
