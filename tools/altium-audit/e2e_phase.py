@@ -23,6 +23,44 @@ def required_schematic_unknowns(findings, block_unknown=True):
   return []
  return [f for f in findings if f.get("domain")=="schematic" and f.get("status")=="UNKNOWN" and f.get("id") not in DEFERRED_NON_GATING_IDS]
 
+def classify_identity_finding(f):
+ """Separate evidence gaps from missing reference profiles and verified conflicts.
+
+ This is diagnostic classification only; it never changes gate status.
+ """
+ fid=str(f.get("id",""))
+ status=str(f.get("status","")).upper()
+ evidence=str(f.get("evidence","") or f.get("message","") or "")
+ if fid.startswith("G2-SCH-IDENTITY-EVIDENCE-") and status=="FAIL":
+  return "verified_identity_contradiction"
+ if fid.startswith("G2-SCH-IDENTITY-UNRESOLVED-"):
+  msg=evidence.lower()
+  if "lack an authoritative pin fingerprint" in msg or "authoritative pin fingerprint" in msg:
+   return "reference_profile_missing"
+  if "no observed pin-function evidence" in msg or "missing" in msg and ("pin" in msg or "evidence" in msg):
+   return "parser_evidence_missing"
+  return "insufficient_discriminating_evidence"
+ if status=="UNKNOWN" and f.get("domain") in {"schematic","compile","connectivity","parse"}:
+  msg=evidence.lower()
+  if any(k in msg for k in ("parser omitted","not parsed","missing from parse","parse missing","no observed pin-function evidence")):
+   return "parser_evidence_missing"
+  if "authoritative" in msg and any(k in msg for k in ("profile","fingerprint","datasheet")):
+   return "reference_profile_missing"
+ return "other_or_unclassified"
+
+def identity_evidence_inventory(findings):
+ buckets={
+  "parser_evidence_missing":[],
+  "reference_profile_missing":[],
+  "insufficient_discriminating_evidence":[],
+  "verified_identity_contradiction":[],
+  "other_or_unclassified":[],
+ }
+ for f in findings if isinstance(findings,list) else []:
+  if str(f.get("id","")).startswith("G2-SCH-IDENTITY-") or (f.get("status")=="UNKNOWN" and f.get("domain") in {"schematic","compile","connectivity","parse"}):
+   buckets[classify_identity_finding(f)].append(f)
+ return buckets
+
 def finding_inventory(findings, phase=None):
  if not isinstance(findings,list):
   findings=[]
@@ -42,7 +80,7 @@ def finding_inventory(findings, phase=None):
   "warnings":warnings,
   "informational":informational,
   "blocking": [f for f in effective if f.get("status") in ("FAIL","BLOCKED") and f.get("severity") in ("HIGH","BLOCKER")],
-  "unknown": [f for f in findings if f.get("status")=="UNKNOWN"],
+  "unknown": [f for f in findings if f.get("status")=="UNKNOWN"],\n  "identity_evidence": identity_evidence_inventory(findings),
  }
 
 def receipt(out,phase,status,evidence,up=None):
