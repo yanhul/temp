@@ -92,7 +92,7 @@ jobs:
           schematic-netlist analyze "[QI9-2605-A01] Module ADC.pdf" -o work/pdf-backend --no-excel --no-spice --no-cache > work/backend.stdout.txt 2> work/backend.stderr.txt
           rc=$?
           set -e
-          printf '%s\\n' "$rc" > work/backend.exit_code
+          printf '%s\n' "$rc" > work/backend.exit_code
           exit "$rc"
       - name: Build truthful run manifest
         if: always()
@@ -112,13 +112,35 @@ jobs:
               "input": "[QI9-2605-A01] Module ADC.pdf",
               "backend": "SchematicNetlist",
               "backend_exit_code": rc,
-              "status": "EXTRACTED_UNVERIFIED" if rc == 0 else "BLOCKED_BACKEND_FAILURE",
+              "status": "BLOCKED_BACKEND_FAILURE" if rc != 0 else "BLOCKED_EXTRACTION_QUALITY",
               "kicad_schematic_generated": False,
               "netlist_connectivity_independently_verified": False,
               "outputs": outputs,
           }
-          (root / "run_manifest.json").write_text(json.dumps(manifest, indent=2) + "\\n")
+          netlists = list((root / "pdf-backend").glob("*_netlist.json"))
+          quality = {"netlist_found": bool(netlists), "part_count": 0, "net_count": 0, "unnamed_pin_count": 0, "warnings_dropped_wire_ends": 0}
+          if netlists:
+              data = json.loads(netlists[0].read_text(encoding="utf-8"))
+              quality["part_count"] = len(data.get("parts", []))
+              quality["net_count"] = len(data.get("nets", []))
+              quality["unnamed_pin_count"] = sum(1 for part in data.get("parts", []) for pin in part.get("pins", []) if not pin.get("number") or not pin.get("net"))
+          logs = list((root / "pdf-backend").glob("*_engine_log.txt"))
+          if logs:
+              import re
+              for line in logs[0].read_text(encoding="utf-8", errors="replace").splitlines():
+                  m = re.search(r"(\d+) wire end\(s\).*\(dropped\)", line)
+                  if m:
+                      quality["warnings_dropped_wire_ends"] += int(m.group(1))
+          quality_pass = rc == 0 and quality["netlist_found"] and quality["part_count"] >= 10 and quality["net_count"] < 1000 and quality["warnings_dropped_wire_ends"] == 0 and quality["unnamed_pin_count"] == 0
+          manifest["quality"] = quality
+          manifest["status"] = "EXTRACTED_UNVERIFIED" if quality_pass else ("BLOCKED_BACKEND_FAILURE" if rc != 0 else "BLOCKED_EXTRACTION_QUALITY")
+          manifest["kicad_schematic_generated"] = False
+          manifest["netlist_connectivity_independently_verified"] = False
+          (root / "run_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
           print(json.dumps(manifest, indent=2))
+          if rc == 0 and not quality_pass:
+              print("BLOCKED: backend exit code was zero but extraction quality failed; do not use this netlist.")
+              raise SystemExit(2)
           PY
       - name: Upload PDF backend outputs
         if: always()
