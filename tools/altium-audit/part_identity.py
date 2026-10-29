@@ -70,8 +70,11 @@ AUTHORITATIVE_PART_SPECS = {
 
 
 def profile_key(identity: Any) -> str:
-    """Map compiled library/order-code strings onto authoritative families."""
-    n = norm(identity)
+    """Map library/order-code strings; strip only constrained generated Altium suffixes."""
+    raw = str(identity or "").strip()
+    # Example: CH9121T_C45354919 -> CH9121T. Never fuzzy-match arbitrary prefixes.
+    raw = re.sub(r"[_-]c[0-9a-f]{8,}$", "", raw, flags=re.IGNORECASE)
+    n = norm(raw)
     if "HCPL3120" in n:
         return "HCPL3120"
     if "HCPL0600" in n:
