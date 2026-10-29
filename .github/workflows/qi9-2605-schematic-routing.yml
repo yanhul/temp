@@ -175,6 +175,23 @@ jobs:
           mkdir -p work-native/kicad work-native/svg work-native/evidence
           go run github.com/rveen/golib/formats/altium/cmd/schconv@latest -kicad -out work-native/kicad 'audit-input-2605/QI9-2605-A01.SchDoc' 2>&1 | tee work-native/evidence/kicad-conversion.log
           go run github.com/rveen/golib/formats/altium/cmd/schconv@latest -svg -out work-native/svg 'audit-input-2605/QI9-2605-A01.SchDoc' 2>&1 | tee work-native/evidence/svg-conversion.log
+      - name: Validate with KiCad CLI and export connectivity netlist
+        continue-on-error: true
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y kicad
+          kicad-cli version > work-native/evidence/kicad-cli-version.txt
+          set +e
+          kicad-cli sch erc --output work-native/evidence/erc.rpt work-native/kicad/QI9-2605-A01.kicad_sch > work-native/evidence/erc.stdout.txt 2> work-native/evidence/erc.stderr.txt
+          erc_rc=$?
+          kicad-cli sch export netlist --output work-native/evidence/QI9-2605-A01.net work-native/kicad/QI9-2605-A01.kicad_sch > work-native/evidence/netlist.stdout.txt 2> work-native/evidence/netlist.stderr.txt
+          net_rc=$?
+          set -e
+          printf '%s\\n' "$erc_rc" > work-native/evidence/erc.exit_code
+          printf '%s\\n' "$net_rc" > work-native/evidence/netlist.exit_code
+          test -s work-native/evidence/erc.rpt || true
+          test -s work-native/evidence/QI9-2605-A01.net || true
       - name: Validate KiCad output structure
         shell: bash
         run: |
@@ -210,7 +227,7 @@ jobs:
             "output": str(p), "output_bytes": p.stat().st_size,
             "output_sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
             "counts": counts, "sexpr_balanced": True,
-            "kicad_cli_erc_run": False, "connectivity_equivalence_verified": False,
+            "kicad_cli_erc_run": Path("work-native/evidence/erc.exit_code").exists(), "kicad_cli_erc_exit_code": Path("work-native/evidence/erc.exit_code").read_text().strip() if Path("work-native/evidence/erc.exit_code").exists() else None, "kicad_netlist_exported": Path("work-native/evidence/QI9-2605-A01.net").is_file() and Path("work-native/evidence/QI9-2605-A01.net").stat().st_size > 0, "connectivity_equivalence_verified": False,
             "status": "CONVERTED_UNVERIFIED"
           }
           Path("work-native/evidence/conversion_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
