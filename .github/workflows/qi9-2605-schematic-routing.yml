@@ -1,3 +1,4 @@
+# Re-run the 2605 audit against the current authoritative input set (2026-10-29).
 name: qi9-2605-schematic-gate-conformance
 
 on:
