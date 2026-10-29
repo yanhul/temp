@@ -5,6 +5,7 @@ from collections import Counter
 from pathlib import Path
 import json, math
 import fitz
+from topology_candidates import build_geometric_topology
 
 
 def _xy(p):
@@ -43,9 +44,11 @@ def extract_vector_page(doc, page_index, min_line_length=1.0):
     ends = Counter((round(p[k][0], 2), round(p[k][1], 2))
                    for p in lines for k in ("a", "b"))
     junctions = [{"xy": list(xy), "endpoint_count": n} for xy,n in ends.items() if n >= 3]
+    topology = build_geometric_topology(lines)
     return {"schema": "pdf2kicad.vector-evidence/1", "page_1based": page_index+1,
             "page_size_pt": [round(page.rect.width,4), round(page.rect.height,4)],
             "electrical_connectivity": "NOT_INFERRED",
+            "geometric_topology_candidates": topology,
             "summary": {"drawings": len(paths), "lines_over_min_length": len(lines),
                         "curves": curves, "rectangles": rects, "quadrilaterals": quads,
                         "text_words": len(words), "endpoint_junction_candidates": len(junctions)},
