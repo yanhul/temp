@@ -80,7 +80,8 @@ def finding_inventory(findings, phase=None):
   "warnings":warnings,
   "informational":informational,
   "blocking": [f for f in effective if f.get("status") in ("FAIL","BLOCKED") and f.get("severity") in ("HIGH","BLOCKER")],
-  "unknown": [f for f in findings if f.get("status")=="UNKNOWN"],\n  "identity_evidence": identity_evidence_inventory(findings),
+  "unknown": [f for f in findings if f.get("status")=="UNKNOWN"],
+  "identity_evidence": identity_evidence_inventory(findings),
  }
 
 def receipt(out,phase,status,evidence,up=None):
