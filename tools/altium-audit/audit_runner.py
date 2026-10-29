@@ -677,14 +677,24 @@ def write_schematic_evidence(out, components, netlist, project_id=None, compiled
 
     def props(obj):
         out = {}
-        raw = f(obj, "parameters", "properties")
-        if isinstance(raw, dict):
-            for k, v in raw.items():
-                if isinstance(v, dict):
-                    v = f(v, "text", "value", "parameter_value")
-                if v is not None:
-                    out[str(k).strip().lower()] = txt(v)
-        for child in items(raw) + items(f(obj, "children")):
+        # Merge every exposed property container. Do not let an empty
+        # parameters collection mask a populated properties projection.
+        # This matters for Value/MPN/Footprint identity evidence across parser
+        # versions, which expose the same source data through different fields.
+        containers = [f(obj, "parameters"), f(obj, "properties")]
+        for raw in containers:
+            if isinstance(raw, dict):
+                for k, v in raw.items():
+                    if isinstance(v, dict):
+                        v = f(v, "text", "value", "parameter_value")
+                    if v is not None:
+                        out[str(k).strip().lower()] = txt(v)
+            for child in items(raw):
+                name = txt(f(child, "name", "parameter_name", "key", "key_name"))
+                value = txt(f(child, "text", "value", "parameter_value"))
+                if name and value:
+                    out[name.lower()] = value
+        for child in items(f(obj, "children")):
             name = txt(f(child, "name", "parameter_name", "key", "key_name"))
             value = txt(f(child, "text", "value", "parameter_value"))
             if name and value:
