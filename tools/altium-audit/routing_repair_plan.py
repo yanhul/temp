@@ -98,16 +98,22 @@ def main():
                 meta.append({"kind":"via","xy":q,"layer_start":f(v,"layer_start"),
                              "layer_end":f(v,"layer_end")})
                 tolerances.append(max(1.0,dia/2.0))
+        route_edges=[]
         for typ,items in (("track",tracks),("arc",arcs)):
             for obj in items:
                 z=ep(obj)
                 if z:
+                    ia=len(nodes)
+                    layer=f(obj,"layer","layer_name")
                     nodes.extend(z)
                     meta.extend([
-                        {"kind":typ,"xy":z[0],"layer":f(obj,"layer","layer_name")},
-                        {"kind":typ,"xy":z[1],"layer":f(obj,"layer","layer_name")}
+                        {"kind":typ,"xy":z[0],"layer":layer},
+                        {"kind":typ,"xy":z[1],"layer":layer}
                     ])
                     tolerances.extend([1.0,1.0])
+                    # A track/arc is itself continuous copper: connect its
+                    # endpoints directly, independent of pads/vias touching it.
+                    route_edges.append((ia,ia+1,z[0],z[1]))
 
         if len(nodes)<2: continue
 
@@ -121,27 +127,28 @@ def main():
             a,b=find(a),find(b)
             if a!=b: parent[b]=a
 
-        # Conservative coincidence join. Keep the same 1 mil base tolerance
-        # used by the audit graph, while allowing pad/via copper diameter to
-        # connect a route endpoint that lands inside the actual terminal.
+        # Join coincident copper only when layers can physically connect.
+        # Through vias and multilayer pads are the explicit cross-layer bridges.
+        def layer_key(value):
+            return str(value).strip().upper().replace("_","-") if value is not None else ""
+        def multilayer(item):
+            return layer_key(item.get("layer")) in {"74","MULTI-LAYER","MULTILAYER","MULTI LAYER"}
         snap=defaultdict(list)
         for i,p in enumerate(nodes):
             snap[(round(p[0]),round(p[1]))].append(i)
         for ids in snap.values():
-            for j in ids[1:]: union(ids[0],j)
-
-        route_edges=[]
-        for obj in tracks+arcs:
-            z=ep(obj)
-            if not z: continue
-            ia=next((i for i,p in enumerate(nodes) if meta[i]["kind"]=="track" and p==z[0]),None)
-            if ia is None:
-                ia=next((i for i,p in enumerate(nodes) if meta[i]["kind"]=="arc" and p==z[0]),None)
-            ib=next((i for i,p in enumerate(nodes) if meta[i]["kind"]=="track" and p==z[1]),None)
-            if ib is None:
-                ib=next((i for i,p in enumerate(nodes) if meta[i]["kind"]=="arc" and p==z[1]),None)
-            if ia is not None and ib is not None:
-                route_edges.append((ia,ib,z[0],z[1]))
+            for pos,i in enumerate(ids):
+                for j in ids[pos+1:]:
+                    mi,mj=meta[i],meta[j]
+                    if mi["kind"]=="via" or mj["kind"]=="via" or multilayer(mi) or multilayer(mj):
+                        union(i,j)
+                    elif layer_key(mi.get("layer"))==layer_key(mj.get("layer")):
+                        union(i,j)
+        # Do not rely on a pad/via intersection to connect the endpoints of
+        # the same copper primitive; that omission caused false islands and
+        # repeated identical repair attempts.
+        for ia,ib,_,_ in route_edges:
+            union(ia,ib)
 
         def point_segment_distance(p,a,b):
             dx,dy=b[0]-a[0],b[1]-a[1]
