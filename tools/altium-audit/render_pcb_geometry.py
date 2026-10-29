@@ -68,14 +68,27 @@ def main():
             side=getattr(enum_cls,side_name,None)
             if side is None:
                 continue
-            try:
-                raw=fn(side)
-                if isinstance(raw,str) and "<svg" in raw[:2000]:
-                    target=out/("surface_"+side_name.lower()+".svg")
-                    target.write_text(raw)
-                    meta["rendered"][target.name]={"bytes":target.stat().st_size,"via":"to_surface_svg","side":side_name}
-            except Exception as e:
-                meta.setdefault("errors",[]).append({"method":"to_surface_svg","side":side_name,"error":repr(e)})
+            # The library may index role colors for absent surface roles and raise
+            # KeyError((side, role)); omit absent roles first, then try explicit role order.
+            attempts_surface = [
+                ((), {"include_missing_roles": False}),
+                ((), {"include_missing_roles": False, "role_order": list(getattr(altium_monkey, "PCB_SurfaceRole", []))}),
+                ((), {}),
+            ]
+            last_error = None
+            for positional, kw in attempts_surface:
+                try:
+                    raw=fn(side, *positional, **kw)
+                    if isinstance(raw,str) and "<svg" in raw[:2000]:
+                        target=out/("surface_"+side_name.lower()+".svg")
+                        target.write_text(raw)
+                        meta["rendered"][target.name]={"bytes":target.stat().st_size,"via":"to_surface_svg","side":side_name,"kwargs":kw}
+                        last_error = None
+                        break
+                except Exception as e:
+                    last_error = e
+            if last_error is not None:
+                meta.setdefault("errors",[]).append({"method":"to_surface_svg","side":side_name,"error":repr(last_error)})
     # Save introspection and board outline evidence even if rendering API differs.
     board=getattr(pcb,"board",None)
     outline=getattr(board,"outline",None) if board is not None else None
