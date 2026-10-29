@@ -59,6 +59,18 @@ class GeometricTopologyTests(unittest.TestCase):
         self.assertEqual(result["intersection_candidate_count"], 0)
         self.assertEqual(result["split_edge_count"], 100)
 
+    def test_candidate_pair_budget_fails_closed_and_reports_partial_topology(self):
+        lines = [
+            {"a": [0, 0], "b": [100, 100]},
+            {"a": [0, 100], "b": [100, 0]},
+            {"a": [0, 50], "b": [100, 50]},
+        ]
+        result = build_geometric_topology(lines, max_candidate_pairs=1)
+        self.assertTrue(result["topology_truncated"])
+        self.assertEqual(result["candidate_pair_count"], 1)
+        self.assertIn("partial", result["warning"].lower())
+        self.assertEqual(result["electrical_connectivity"], "NOT_INFERRED")
+
     def test_non_finite_coordinates_are_rejected(self):
         result = build_geometric_topology([
             {"a": [0, 0], "b": [1, 0]},
