@@ -383,10 +383,10 @@ def run(components,netlist,add,identity_overrides=None,skip_hcpl=False):
                 add("G2-SCH-NC-PIN-CONNECTED-"+ref,"BLOCKER","schematic","FAIL",
                     "Authoritative NC pin(s) are connected: %s." % identity["connected_nc_pins"],
                     "VERIFIED",ref)
-            elif identity["state"]=="UNKNOWN" and _norm(i.get("value"))!=_norm(i.get("library")):
+            elif identity["state"]=="UNKNOWN":
                 add("G2-SCH-IDENTITY-UNRESOLVED-"+ref,"INFO","schematic","UNKNOWN",
-                    "Declared value %r and authoritative physical identity candidate %r cannot be distinguished from pin evidence: %s"
-                    %(i["value"],i.get("mpn") or i["library"],identity["reason"]),"FACT",ref)
+                    "Declared value %r and compiled symbol %r lack sufficient authoritative evidence to verify physical-part identity: %s"
+                    %(i["value"],i.get("library"),identity["reason"]),"FACT",ref)
 
         # Emit a per-instance isolation path receipt. This is diagnostic evidence only:
         # it never downgrades an authoritative identity/NC blocker and never repairs wiring.
