@@ -91,6 +91,24 @@ def main():
       "vertices":["vertices","points","outline_vertices","coordinates"],
       "width":["width","width_mils"],"height":["height","height_mils"]
     }.items()} if outline is not None else None
+    def summarize(obj):
+        row={"type":type(obj).__name__,"repr":repr(obj)[:1200]}
+        try:
+            row["attrs"]={k:repr(v)[:500] for k,v in vars(obj).items() if not k.startswith("_")}
+        except Exception:
+            pass
+        for key in ("name","layer","layer_name","kind","is_board_outline","is_keepout","bounding_box","bbox","bounds","vertices","points","x_mils","y_mils","width_mils","height_mils","net_name","designator","component"):
+            v=val(obj,key)
+            if v is not None: row[key]=repr(v)[:1000]
+        return row
+    geometry={}
+    for key in ("board_regions","regions","shapebased_regions","component_bodies","shapebased_component_bodies","keepout_regions","polygons","dimensions","tracks","arcs"):
+        try:
+            items=list(getattr(pcb,key,[]) or [])
+            geometry[key]={"count":len(items),"samples":[summarize(x) for x in items[:12]]}
+        except Exception as e:
+            geometry[key]={"error":repr(e)}
+    (out/"geometry-inventory.json").write_text(json.dumps(geometry,indent=2,default=str))
     meta["counts"]={k:len(val(pcb,k) or []) for k in ("components","pads","tracks","vias","arcs","regions","fills","texts","rules")}
     (out/"render-metadata.json").write_text(json.dumps(meta,indent=2,default=str))
     if not meta["rendered"]:
