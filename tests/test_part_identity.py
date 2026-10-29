@@ -19,9 +19,15 @@ def test_hcpl0600_vs_hcpl3120_is_contradiction_when_pin_fingerprint_matches_comp
     assert result["state"] == "CONTRADICTION"
 
 
-def test_generated_altium_library_suffix_does_not_create_false_unknown_identity():
+def test_generated_altium_library_suffix_does_not_fake_authoritative_identity():
     result = resolve_declared_vs_compiled("CH9121T", "ch9121t_c45354919", {})
-    assert result["state"] == "CONSISTENT"
+    assert result["state"] == "UNKNOWN"
+    assert "not a pin fingerprint" in result["reason"]
+
+
+def test_matching_unprofiled_labels_remain_unknown_without_pin_fingerprint():
+    result = resolve_declared_vs_compiled("GENERIC_DIODE", "GENERIC_DIODE", {})
+    assert result["state"] == "UNKNOWN"
 
 
 def test_same_identity_is_consistent():
