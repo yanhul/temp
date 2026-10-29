@@ -1,0 +1,128 @@
+name: qi9-2605-onepass-audit
+
+on:
+  push:
+    branches:
+      - audit/pcb-render-geometry-2605
+    paths:
+      - '.github/workflows/qi9-2605-onepass-audit.yml'
+      - 'audit-input-2605/**'
+      - 'tools/altium-audit/**'
+      - 'altium-audit-2605.config.json'
+      - 'altium-audit-2605.placement-authority.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  onepass-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install audit dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r tools/altium-audit/requirements.txt
+      - name: Verify authoritative inputs and hashes
+        run: |
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root = Path('audit-input-2605')
+          expected = {'QI9-2605-A01.SchDoc', 'QI9-2605-A01.PcbDoc', 'QI9-2605-A01.PrjPcb'}
+          found = {p.name for p in root.iterdir() if p.is_file() and p.suffix in {'.SchDoc','.PcbDoc','.PrjPcb'}}
+          if found != expected:
+              raise SystemExit(f'INPUT CONTRACT BLOCKED: expected={sorted(expected)} found={sorted(found)}')
+          for name in sorted(expected):
+              p = root / name
+              print(f'INPUT {name} bytes={p.stat().st_size} sha256={hashlib.sha256(p.read_bytes()).hexdigest()}')
+          cfg = json.loads(Path('altium-audit-2605.config.json').read_text())
+          if cfg.get('project_id') != 'QI9-2605-A01':
+              raise SystemExit('project config identity mismatch')
+          auth = Path('altium-audit-2605.placement-authority.json')
+          if not auth.is_file():
+              raise SystemExit('placement authority packet missing')
+          print('INPUT_CONTRACT=PASS')
+          PY
+      - name: Run full audit kit with fail-closed repair and verification
+        shell: bash
+        run: |
+          set +e
+          python tools/altium-audit/audit_kit.py --input audit-input-2605 --output work/onepass --repair --max-retries 3 --config altium-audit-2605.config.json
+          rc=$?
+          set -e
+          mkdir -p work/onepass
+          printf '%s\n' "$rc" > work/onepass/kit_exit_code.txt
+          echo "AUDIT_KIT_EXIT=$rc"
+      - name: Build terminal evidence receipt
+        if: always()
+        run: |
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          out = Path('work/onepass')
+          summary_path = out/'summary.json'
+          summary = json.loads(summary_path.read_text()) if summary_path.is_file() else {}
+          gates = summary.get('gates', {}) or {}
+          receipt = {
+            'schema': 'aios/pcb.eda/onepass-terminal-receipt/v1',
+            'project_id': 'QI9-2605-A01',
+            'status': summary.get('terminal_status', summary.get('status', 'BLOCKED')),
+            'design_status': summary.get('design_status'),
+            'terminal_reason': summary.get('terminal_reason', 'audit did not produce a terminal reason'),
+            'github_sha': os.environ.get('GITHUB_SHA'),
+            'workflow_run_id': os.environ.get('GITHUB_RUN_ID'),
+            'source_inputs': {
+              p.name: {'bytes': p.stat().st_size, 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
+              for p in sorted(Path('audit-input-2605').iterdir())
+              if p.is_file() and p.suffix in {'.SchDoc','.PcbDoc','.PrjPcb'}
+            },
+            'gates': gates,
+            'repair_attempts': len(summary.get('repair_history', [])),
+            'repair_history': summary.get('repair_history', []),
+            'artifacts': sorted(str(p.relative_to(out)) for p in out.rglob('*') if p.is_file()),
+            'summary': summary,
+          }
+          (out/'terminal_receipt.json').write_text(json.dumps(receipt, indent=2, sort_keys=True))
+          print(json.dumps({k: receipt[k] for k in ('schema','project_id','status','design_status','terminal_reason','github_sha','workflow_run_id','gates','repair_attempts')}, indent=2))
+          PY
+      - name: Validate evidence and enforce truthful terminal status
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          out=Path('work/onepass')
+          receipt=out/'terminal_receipt.json'
+          if not receipt.is_file(): raise SystemExit('missing terminal receipt')
+          r=json.loads(receipt.read_text())
+          if r.get('status') not in {'PASS','FAIL','BLOCKED','INCONCLUSIVE','UNKNOWN'}:
+              raise SystemExit('invalid terminal status')
+          if not (out/'summary.json').is_file():
+              raise SystemExit('missing audit summary')
+          s=json.loads((out/'summary.json').read_text())
+          if s.get('terminal_status') not in {'PASS','FAIL','BLOCKED','INCONCLUSIVE','UNKNOWN'}:
+              raise SystemExit('summary missing valid terminal status')
+          if r['status'] == 'PASS':
+              required={'G3_CONNECTIVITY','G6_PLACEMENT','G7_ROUTING'}
+              if any((s.get('gates',{}) or {}).get(k) != 'VERIFIED' for k in required):
+                  raise SystemExit('false PASS: required connectivity/placement/routing gates not VERIFIED')
+              if s.get('terminal_reason') is None:
+                  raise SystemExit('false PASS: missing terminal reason')
+          print('ONEPASS_RECEIPT_VALID=' + r['status'])
+          print('DESIGN_STATUS=' + str(r.get('design_status')))
+          print('TERMINAL_REASON=' + str(r.get('terminal_reason')))
+          PY
+      - name: Upload complete one-pass evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qi9-2605-onepass-audit-evidence
+          path: work/onepass/
+          if-no-files-found: error
+          retention-days: 90
