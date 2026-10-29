@@ -990,7 +990,7 @@ def main():
     else:
         add(findings, "G2-SCHEMATIC-SEMANTICS", "BLOCKER", "schematic", "BLOCKED",
             "Schematic semantic checker could not be loaded; functional authorization is blocked.", "FACT")
-    if compile_data is None:
+    # Cross-check the canonical compiled pin map against local schematic-library source.\n    try:\n        from local_schlib_audit import audit_local_schlibs\n        audit_local_schlibs(root, evidence_records, _semantic_add)\n    except Exception as exc:\n        add(findings, "G2-SCHLIB-SOURCE-AUDIT", "BLOCKER", "schematic", "BLOCKED",\n            f"Local SchLib audit failed closed: {type(exc).__name__}: {exc}", "FACT", None)\n\n    if compile_data is None:
         add(findings,"G2-COMPILE","BLOCKER","compile","BLOCKED",
             "No authoritative compiled schematic/netlist evidence is available. Direct SchDoc parsing is structural-only and cannot authorize connectivity, placement, or routing.","FACT")
     elif diagnostics:
