@@ -145,6 +145,16 @@ def extract_page(pdf, page_no=0):
             _walk(el, out)
         break
     out['label_texts'] = out['texts'] + _poppler_words(pdf, page_no, page_h)
+    # Keep embedded-image presence as a page-profile signal. This is not proof
+    # that the image contains a schematic; it only selects an extraction path.
+    out['image_count'] = 0
+    try:
+        import fitz
+        with fitz.open(pdf) as _doc:
+            if 0 <= page_no < len(_doc):
+                out['image_count'] = len(_doc[page_no].get_images(full=True))
+    except Exception:
+        pass
 
     combo = defaultdict(lambda: {'multi': 0, 'segs': 0})
     for o in out['objs']:
