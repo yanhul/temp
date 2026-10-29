@@ -35,6 +35,7 @@ def main():
 
     pages = []
     page_profiles = []
+    vector_evidence = []
     for i in range(npages):
         if want and i not in want:
             continue
@@ -48,6 +49,26 @@ def main():
         profile_row = profile.as_dict()
         profile_row.update({"page_1based": i + 1, "pi_token_count": n_pad_tok})
         page_profiles.append(profile_row)
+        # Preserve raw extracted evidence for every page; the downstream adapter
+        # can reuse this without rerunning PDF parsing or inventing connectivity.
+        vector_evidence.append({
+            "page_1based": i + 1,
+            "profile": profile.kind,
+            "page_size_pt": [w, h],
+            "texts": pg.get("texts", []),
+            "tokens": pg.get("tokens", []),
+            "objects": pg.get("objs", []),
+            "rectangles": pg.get("rects", []),
+            "dots": pg.get("dots", []),
+            "wire_segments_candidate": pg.get("wire_segs", []),
+            "junction_candidates": pg.get("junctions", []),
+            "junction_family_candidates": pg.get("junctions_family", []),
+            "stub_candidates": pg.get("stubs", []),
+            "body_candidates": pg.get("bodies", []),
+            "wire_color_heuristic": pg.get("wire_color"),
+            "wire_width_heuristic": pg.get("wire_width"),
+            "electrical_connectivity": "NOT_INFERRED",
+        })
         if n_pad_tok >= RE_SHEET_HINT and len(pg['objs']) > 20:
             pages.append((i, pg))
             print(f'  trang {i+1}: SMART-PDF candidate ({n_pad_tok} PI, {len(pg["objs"])} object)')
@@ -61,6 +82,14 @@ def main():
             "page_count": npages,
             "pages": page_profiles,
             "connectivity_status": "NOT_INFERRED_BY_PROFILE",
+        }, f, indent=2, ensure_ascii=False)
+    with open(os.path.join(args.out, 'pdf_vector_evidence.json'), 'w', encoding='utf-8') as f:
+        json.dump({
+            "schema": "pdf2kicad.vector-evidence/1",
+            "source": os.path.basename(args.pdf),
+            "page_count": npages,
+            "warning": "Wire/color/dot fields are geometric candidates only, not verified electrical topology.",
+            "pages": vector_evidence,
         }, f, indent=2, ensure_ascii=False)
     if not pages:
         # PI is one encoding, not a requirement for every PDF schematic.
