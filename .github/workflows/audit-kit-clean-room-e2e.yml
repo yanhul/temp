@@ -16,21 +16,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Reconstruct authoritative source
+      - name: Reconstruct and verify authoritative source
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p work/source work/clean-room-input
-          python - <<'PY'
-          import base64, json
-          from pathlib import Path
-          c=json.loads(Path("altium-audit.config.json").read_text())
-          archive=Path(c["source_archive"])
-          parts=Path(c["base64_parts_dir"])
-          raw=b"".join(p.read_bytes().strip() for p in sorted(parts.glob("part_*.txt")))
-          archive.write_bytes(base64.b64decode(raw, validate=True))
-          PY
-          unzip -q "$(python -c 'import json; print(json.load(open("altium-audit.config.json"))["source_archive"])')" -d work/source
+          mkdir -p work/source work/clean-room-input work/audit
+          python tools/altium-audit/reconstruct_source.py \
+            --config altium-audit.config.json \
+            --archive work/source.zip \
+            --sha256 work/source.sha256 \
+            --provenance work/source-provenance.json \
+            --commit-sha "$GITHUB_SHA"
+          unzip -q work/source.zip -d work/source
 
       - name: Build clean-room input
         shell: bash
@@ -71,6 +68,10 @@ jobs:
           rc=$?
           printf '%s\n' "$rc" > work/audit/kit_exit_code.txt
           exit 0
+
+      - name: Attach source provenance
+        if: always()
+        run: cp work/source-provenance.json work/audit/source-provenance.json
 
       - name: Validate E2E terminal receipt
         shell: bash

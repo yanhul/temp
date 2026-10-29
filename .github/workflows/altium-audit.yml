@@ -16,19 +16,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Reconstruct archive from ordered base64 parts
+      - name: Reconstruct and verify immutable source
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p work/project work/audit
-          test -n "$(find b64parts -maxdepth 1 -name 'part_*.txt' -print -quit)"
-          cat $(find b64parts -maxdepth 1 -name 'part_*.txt' | sort) | base64 -d > work/project.zip
-          test -s work/project.zip
+          python tools/altium-audit/reconstruct_source.py \
+            --config altium-audit.config.json \
+            --archive work/project.zip \
+            --sha256 work/source.sha256 \
+            --provenance work/source-provenance.json \
+            --commit-sha "$GITHUB_SHA"
           unzip -q work/project.zip -d work/project
-          ARCHIVE=$(python -c 'import json; print(json.load(open("altium-audit.config.json"))["source_archive"])')
-          test -s "$ARCHIVE"
-          sha256sum "$ARCHIVE" | awk '{print $1}' > work/source.sha256
-          cmp -s "$ARCHIVE" work/project.zip
+          cp work/source-provenance.json work/audit/source-provenance.json
 
       - name: Install audit parser
         run: |
