@@ -28,3 +28,21 @@ def test_scoped_tvs_identity_findings_are_explicitly_deferred():
         "G2-SCH-IDENTITY-EVIDENCE-D13",
     }
     assert inventory["errors"] == []
+
+def test_identity_evidence_is_split_into_distinct_root_causes():
+    findings = [
+        {"id": "G2-SCH-IDENTITY-UNRESOLVED-C2", "domain": "schematic", "status": "UNKNOWN",
+         "evidence": "No observed pin-function evidence is available to distinguish the identities."},
+        {"id": "G2-SCH-IDENTITY-UNRESOLVED-D1", "domain": "schematic", "status": "UNKNOWN",
+         "evidence": "Different identities are present, but one or both lack an authoritative pin fingerprint."},
+        {"id": "G2-SCH-IDENTITY-EVIDENCE-D5", "domain": "schematic", "status": "FAIL",
+         "evidence": "Declared and compiled part identities conflict on authoritative electrical/package specifications."},
+        {"id": "G2-SCH-IDENTITY-UNRESOLVED-Q1", "domain": "schematic", "status": "UNKNOWN",
+         "evidence": "Observed pin functions do not uniquely identify either candidate."},
+    ]
+    buckets = e2e_phase.identity_evidence_inventory(findings)
+    assert [f["id"] for f in buckets["parser_evidence_missing"]] == ["G2-SCH-IDENTITY-UNRESOLVED-C2"]
+    assert [f["id"] for f in buckets["reference_profile_missing"]] == ["G2-SCH-IDENTITY-UNRESOLVED-D1"]
+    assert [f["id"] for f in buckets["verified_identity_contradiction"]] == ["G2-SCH-IDENTITY-EVIDENCE-D5"]
+    assert [f["id"] for f in buckets["insufficient_discriminating_evidence"]] == ["G2-SCH-IDENTITY-UNRESOLVED-Q1"]
+
