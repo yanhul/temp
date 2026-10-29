@@ -213,21 +213,18 @@ jobs:
           mkdir -p work-native/kicad work-native/svg work-native/evidence
           go run github.com/rveen/golib/formats/altium/cmd/schconv@latest -kicad -out work-native/kicad 'audit-input-2605/QI9-2605-A01.SchDoc' 2>&1 | tee work-native/evidence/kicad-conversion.log
           go run github.com/rveen/golib/formats/altium/cmd/schconv@latest -svg -out work-native/svg 'audit-input-2605/QI9-2605-A01.SchDoc' 2>&1 | tee work-native/evidence/svg-conversion.log
-      - name: Validate with KiCad CLI and export connectivity netlist
-        continue-on-error: true
+      - name: Install supported KiCad CLI (9.x)
         shell: bash
         run: |
           sudo apt-get update
-          # Ubuntu's archive package can ship a CLI build without the schematic ERC
-          # subcommand. Use the maintained KiCad 9 release PPA so validation commands
-          # match the current schematic format emitted by schconv.
           sudo apt-get install -y software-properties-common
           sudo add-apt-repository -y ppa:kicad/kicad-9.0-releases
           sudo apt-get update
           sudo apt-get install -y kicad
-          kicad-cli version > work-native/evidence/kicad-cli-version.txt
-          kicad-cli sch --help > work-native/evidence/kicad-sch-help.txt
-          grep -q 'erc' work-native/evidence/kicad-sch-help.txt || { echo 'Installed KiCad CLI lacks schematic ERC support' >&2; exit 2; }
+          kicad-cli version | tee work-native/evidence/kicad-cli-version.txt
+      - name: Validate with KiCad CLI and export connectivity netlist
+        shell: bash
+        run: |
           set +e
           kicad-cli sch erc --output work-native/evidence/erc.rpt work-native/kicad/QI9-2605-A01.kicad_sch > work-native/evidence/erc.stdout.txt 2> work-native/evidence/erc.stderr.txt
           erc_rc=$?
@@ -236,8 +233,16 @@ jobs:
           set -e
           printf '%s\\n' "$erc_rc" > work-native/evidence/erc.exit_code
           printf '%s\\n' "$net_rc" > work-native/evidence/netlist.exit_code
-          test -s work-native/evidence/erc.rpt || true
-          test -s work-native/evidence/QI9-2605-A01.net || true
+          if [ "$net_rc" -ne 0 ] || [ ! -s work-native/evidence/QI9-2605-A01.net ]; then
+            echo 'BLOCKED: KiCad could not load/export the converted schematic.' >&2
+            cat work-native/evidence/netlist.stderr.txt >&2
+            exit 1
+          fi
+          if [ "$erc_rc" -ne 0 ] || [ ! -s work-native/evidence/erc.rpt ]; then
+            echo 'BLOCKED: ERC did not complete cleanly; inspect ERC evidence.' >&2
+            cat work-native/evidence/erc.stderr.txt >&2
+            exit 1
+          fi
       - name: Validate KiCad output structure
         shell: bash
         run: |
