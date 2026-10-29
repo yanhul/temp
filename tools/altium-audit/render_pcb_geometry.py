@@ -108,6 +108,28 @@ def main():
             geometry[key]={"count":len(items),"samples":[summarize(x) for x in items[:12]]}
         except Exception as e:
             geometry[key]={"error":repr(e)}
+    # Keepout-layer board boundary evidence: retain every candidate primitive, not only samples.
+    def obj_dict(obj):
+        row=summarize(obj)
+        for key in ("start_x","start_y","end_x","end_y","x1","y1","x2","y2","layer","layer_token","is_keepout","is_board_cutout","outline_vertices","properties","width"):
+            v=val(obj,key)
+            if v is not None: row[key]=repr(v)[:3000]
+        return row
+    candidates=[]
+    for key in ("tracks","arcs","regions","board_regions","shapebased_regions","dimensions"):
+        try: items=list(getattr(pcb,key,[]) or [])
+        except Exception: continue
+        for item in items:
+            attrs={}
+            try: attrs=vars(item)
+            except Exception: pass
+            props=str(attrs.get("properties",""))
+            layer=str(val(item,"layer","layer_token","dimension_layer_token") or "")
+            keepout=bool(val(item,"is_keepout"))
+            if keepout or "KEEPOUT" in (layer+" "+props).upper() or "BOARDREGION" in props.upper() or key=="dimensions":
+                row=obj_dict(item); row["collection"]=key
+                candidates.append(row)
+    geometry["keepout_boundary_candidates"]={"count":len(candidates),"items":candidates}
     (out/"geometry-inventory.json").write_text(json.dumps(geometry,indent=2,default=str))
     meta["counts"]={k:len(val(pcb,k) or []) for k in ("components","pads","tracks","vias","arcs","regions","fills","texts","rules")}
     (out/"render-metadata.json").write_text(json.dumps(meta,indent=2,default=str))
