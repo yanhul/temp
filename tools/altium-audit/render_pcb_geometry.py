@@ -98,13 +98,13 @@ def main():
         svg = keepout_path.read_text(errors="replace")
         for m in re.finditer(r'<line\b[^>]*>', svg, re.I):
             tag = m.group(0)
-            if 'stroke="#FF00FF"' not in tag.upper():
+            if 'STROKE="#FF00FF"' not in tag.upper():
                 continue
             if not re.search(r'data-layer-name="(?:KEEPOUT|KEEP-OUT LAYER)"', tag, re.I):
                 continue
             vals = {}
             for key in ("x1", "y1", "x2", "y2"):
-                mm = re.search(r'\b' + key + r'=["\\']([-+0-9.eE]+)["\\']', tag)
+                mm = re.search(key + r'="([-+0-9.eE]+)"', tag)
                 if mm: vals[key] = float(mm.group(1))
             if len(vals) == 4:
                 boundary["lines"].append(vals)
