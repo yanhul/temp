@@ -38,31 +38,65 @@ def field(obj: Any, *keys: str):
     return None
 
 def as_name(obj: Any):
-    """Resolve the authoritative reference designator from a design object."""
-    # altium-monkey keeps schematic designators as AltiumSchDesignator
-    # parameter records. Some object projections also expose them via children.
-    # Search both before any generic fallback; component.name is only the
-    # library/symbol name (e.g. Cap2), not the reference designator.
-    seen = set()
-    parameters = field(obj, "parameters")
-    children = field(obj, "children")
-    for container_key, container in (("parameters", parameters), ("children", children)):
-        for child in list(container or []):
-            if id(child) in seen:
-                continue
-            seen.add(id(child))
-            kind = type(child).__name__.lower()
-            name = str(field(child, "name") or "").strip().lower()
-            if "designator" in kind or name == "designator":
-                text = field(child, "text", "value")
-                if text is not None and str(text).strip():
-                    return str(text).strip()
+    """Resolve a component reference designator across altium-monkey projections.
 
-    # PCB components normally expose designator/refdes directly.
-    v = field(obj, "designator", "refdes", "reference", "id")
-    if v is not None:
-        return str(v)
-    return None
+    SchDoc designators may be emitted as typed parameter records, dictionaries,
+    or child records depending on the public projection. Never use component.name
+    as a refdes: it is commonly the library symbol name (e.g. Cap2).
+    """
+    def entries(container):
+        if container is None:
+            return []
+        if isinstance(container, dict):
+            # Preserve both the key and value: some projections map parameter
+            # names directly to text while others map names to typed records.
+            return [{"name": k, "value": v, "text": v} for k, v in container.items()]
+        try:
+            return list(container)
+        except TypeError:
+            return [container]
+
+    def candidate(child):
+        if isinstance(child, dict):
+            name = str(child.get("name") or child.get("parameter_name") or child.get("key") or "").strip().lower()
+            kind = str(child.get("type") or child.get("record_type") or child.get("__class__") or "").lower()
+            value = child.get("text")
+            if value is None:
+                value = child.get("value", child.get("parameter_value"))
+            if name == "designator" or "designator" in kind:
+                if value is not None and str(value).strip():
+                    return str(value).strip()
+            return None
+        kind = type(child).__name__.lower()
+        name = str(field(child, "name", "parameter_name", "key") or "").strip().lower()
+        if "designator" in kind or name == "designator":
+            value = field(child, "text", "value", "parameter_value")
+            if value is not None and str(value).strip():
+                return str(value).strip()
+        return None
+
+    seen = set()
+    for container in (field(obj, "parameters"), field(obj, "children")):
+        for child in entries(container):
+            marker = id(child)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            value = candidate(child)
+            if value:
+                return value
+
+    # A few serialized projections retain parameter records only in raw fields.
+    raw = field(obj, "raw_record", "record")
+    if isinstance(raw, dict):
+        for key in ("DESIGNATOR", "Designator", "designator", "refdes", "RefDes"):
+            value = raw.get(key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+
+    # Direct refdes fields are authoritative; generic name/id fields are not.
+    v = field(obj, "designator", "refdes", "reference", "logical_designator", "physical_designator")
+    return str(v).strip() if v is not None and str(v).strip() else None
 
 def add(findings, fid, severity, domain, status, evidence, confidence="VERIFIED", obj=None):
     findings.append({
