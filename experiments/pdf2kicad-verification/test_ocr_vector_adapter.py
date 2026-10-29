@@ -8,10 +8,10 @@ from ocr_vector_adapter import ocr_page
 
 
 TSV = (
-    "level\\tpage_num\\tblock_num\\tpar_num\\tline_num\\tword_num\\t"
-    "left\\ttop\\twidth\\theight\\tconf\\ttext\\n"
-    "5\\t1\\t1\\t1\\t1\\t1\\t72\\t108\\t24\\t12\\t96.5\\tR12\\n"
-    "5\\t1\\t1\\t1\\t1\\t2\\t120\\t108\\t20\\t12\\t88.0\\tGND\\n"
+    "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\t"
+    "left\ttop\twidth\theight\tconf\ttext\n"
+    "5\t1\t1\t1\t1\t1\t72\t108\t24\t12\t96.5\tR12\n"
+    "5\t1\t1\t1\t1\t2\t120\t108\t20\t12\t88.0\tGND\n"
 )
 
 
