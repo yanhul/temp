@@ -139,9 +139,7 @@ def _same_family(c1, c2):
 def extract_page(pdf, page_no=0):
     out = {'texts': [], 'objs': [], 'dots': [], 'rects': [], 'tokens': []}
     page_h = 612.0
-    for i, page in enumerate(extract_pages(pdf, laparams=LAParams())):
-        if i != page_no:
-            continue
+    for page in extract_pages(pdf, page_numbers={page_no}, laparams=LAParams()):
         page_h = page.bbox[3]
         for el in page:
             _walk(el, out)
@@ -193,7 +191,6 @@ def extract_page(pdf, page_no=0):
 
 
 def page_size(pdf, page_no=0):
-    for i, page in enumerate(extract_pages(pdf, laparams=LAParams())):
-        if i == page_no:
-            return page.bbox[2], page.bbox[3]
+    for page in extract_pages(pdf, page_numbers={page_no}, laparams=LAParams()):
+        return page.bbox[2], page.bbox[3]
     return 792.0, 612.0
