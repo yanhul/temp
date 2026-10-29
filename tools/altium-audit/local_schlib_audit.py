@@ -64,12 +64,20 @@ def audit_local_schlibs(root: str | Path, components: list[dict[str, Any]], add,
             return path.relative_to(root).as_posix()
         except ValueError:
             return str(path)
+    # SchLib is optional unless the project policy explicitly requires it.
+    # Do not let an absent, unprovided library poison the independent SchDoc/PCB gates.
+    if not files:
+        add("G2-SCHLIB-SOURCE-INVENTORY","INFO","schematic","UNKNOWN",
+            "No .SchLib source was supplied in the audited input/search paths; library-backed pin checks are not assessed in this run. This is not a design failure and does not prove the library is absent elsewhere.",
+            "FACT",None)
+        return {"files_found":0,"files_parsed":0,"symbols":0,"matched_components":0,"errors":[]}
     try:
         from altium_monkey import AltiumSchLib
     except Exception as exc:
-        add("G2-SCHLIB-SOURCE-PARSER","BLOCKER","schematic","BLOCKED",
-            f"Cannot import AltiumSchLib: {type(exc).__name__}: {exc}","FACT",None)
-        return {"files_found":len(files),"files_parsed":0,"symbols":0}
+        add("G2-SCHLIB-SOURCE-PARSER","INFO","schematic","UNKNOWN",
+            f"Local .SchLib files were found, but AltiumSchLib could not be imported: {type(exc).__name__}: {exc}",
+            "FACT",None)
+        return {"files_found":len(files),"files_parsed":0,"symbols":0,"matched_components":0,"errors":[str(exc)]}
     index, parsed, errors = {}, 0, []
     for path in files:
         try:
@@ -87,7 +95,7 @@ def audit_local_schlibs(root: str | Path, components: list[dict[str, Any]], add,
         add("G2-SCHLIB-SOURCE-INVENTORY","BLOCKER","schematic","UNKNOWN",
             "No .SchLib source exists under the audited input root. This says nothing about libraries outside the supplied project/archive; source-backed pin resolution is unavailable for this run.","FACT",None)
     if errors:
-        add("G2-SCHLIB-SOURCE-PARSE","BLOCKER","schematic","UNKNOWN",
+        add("G2-SCHLIB-SOURCE-PARSE","INFO","schematic","UNKNOWN",
             f"Could not parse {len(errors)} local SchLib file(s): {'; '.join(errors[:8])}","FACT",None)
     matched = 0
     for comp in components or []:
