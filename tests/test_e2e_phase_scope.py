@@ -15,19 +15,19 @@ def test_schematic_phase_ignores_downstream_routing_findings():
     assert inventory["blocking"] == []
 
 
-def test_scoped_tvs_identity_findings_are_explicitly_deferred():
+def test_tvs_identity_contradictions_are_not_exempted_by_footprint_reuse():
     findings = [
         {"id": "G2-SCH-IDENTITY-EVIDENCE-D12", "domain": "schematic", "status": "FAIL", "severity": "BLOCKER"},
         {"id": "G2-SCH-IDENTITY-EVIDENCE-D13", "domain": "schematic", "status": "FAIL", "severity": "BLOCKER"},
         {"id": "G2-SCH-IDENTITY-EVIDENCE-D5", "domain": "schematic", "status": "FAIL", "severity": "BLOCKER"},
     ]
     inventory = e2e_phase.finding_inventory(findings, phase="schematic")
-    assert {item["id"] for item in inventory["deferred_non_gating"]} == {
+    assert inventory["deferred_non_gating"] == []
+    assert {item["id"] for item in inventory["errors"]} == {
         "G2-SCH-IDENTITY-EVIDENCE-D5",
         "G2-SCH-IDENTITY-EVIDENCE-D12",
         "G2-SCH-IDENTITY-EVIDENCE-D13",
     }
-    assert inventory["errors"] == []
 
 def test_identity_evidence_is_split_into_distinct_root_causes():
     findings = [
