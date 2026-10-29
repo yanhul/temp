@@ -49,6 +49,19 @@ def main():
             break
     # Surface rendering requires the library's enum, not the literal string "TOP".
     enum_cls=getattr(altium_monkey,"PCB_SurfaceSide",None)
+    if enum_cls is None:
+        try:
+            import pkgutil, importlib
+            for info in pkgutil.walk_packages(altium_monkey.__path__, altium_monkey.__name__ + "."):
+                try:
+                    mod=importlib.import_module(info.name)
+                    enum_cls=getattr(mod,"PCB_SurfaceSide",None)
+                    if enum_cls is not None:
+                        break
+                except Exception:
+                    continue
+        except Exception:
+            pass
     fn=getattr(pcb,"to_surface_svg",None)
     if enum_cls is not None and callable(fn):
         for side_name in ("TOP","BOTTOM"):
