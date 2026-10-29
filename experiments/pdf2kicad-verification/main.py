@@ -95,21 +95,33 @@ def main():
         # PI is one encoding, not a requirement for every PDF schematic.
         # Collect OCR evidence for non-SmartPDF exports instead of silently skipping.
         ocr_status = "not_attempted"
+        vector_status = "not_attempted"
+        candidate_pages = [
+            row["page_1based"] for row in page_profiles
+            if row["kind"] in (
+                "flattened_vector_text_candidate", "vector_only_candidate",
+                "hybrid_pdf_candidate", "image_scan_candidate"
+            )
+        ]
+        # Run the separate PyMuPDF vector adapter on the same pages so straight
+        # strokes are split at geometric intersections and preserved as candidates.
+        # The resulting graph is geometry-only; no crossing becomes a net by default.
+        if candidate_pages:
+            try:
+                from visio_vector import extract_pdf as extract_vector_pdf
+                vm = extract_vector_pdf(args.pdf, candidate_pages, args.out)
+                vector_status = vm.get("conversion_status", "VECTOR_EVIDENCE_ONLY")
+            except Exception as exc:
+                vector_status = f"unavailable: {type(exc).__name__}: {exc}"
         try:
             from ocr_vector_adapter import extract_pdf
-            candidate_pages = [
-                row["page_1based"] for row in page_profiles
-                if row["kind"] in (
-                    "flattened_vector_text_candidate", "vector_only_candidate",
-                    "hybrid_pdf_candidate", "image_scan_candidate"
-                )
-            ]
             if candidate_pages:
                 manifest = extract_pdf(args.pdf, candidate_pages, args.out)
                 ocr_status = manifest.get("status", "OCR_EVIDENCE_ONLY_NOT_NETLIST")
         except Exception as exc:
             ocr_status = f"unavailable: {type(exc).__name__}: {exc}"
         print(f'  Da luu profile trang: {os.path.join(args.out, "pdf_profile.json")}')
+        print(f'  Vector status: {vector_status}')
         print(f'  OCR status: {ocr_status}')
         sys.exit(
             "BLOCKED_NOT_CONVERTED: khong co trang du PI de dung decoder Smart-PDF cu. "
