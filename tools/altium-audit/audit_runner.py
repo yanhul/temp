@@ -324,323 +324,290 @@ def _snap_point(p, tolerance_mils=1.0):
     return (round(p[0] / tolerance_mils), round(p[1] / tolerance_mils))
 
 def topology_components(pcb, netlist=None):
-    """Build a conservative per-net copper graph from parser-owned primitives.
-    Prefer get_net_primitives(index), because its net-local primitive join is
-    authoritative and avoids relying on global primitive net-index conventions.
+    """Build a conservative per-net copper graph.
+
+    Pads are assigned to nets from the compiled schematic netlist. Track, via,
+    region, and fill objects are then joined only when their own net identity is
+    supported by a direct net name or a pad-calibrated net index. Unlabelled
+    copper is never allowed to connect two nets or prove PASS.
     """
-    nets=list(getattr(pcb,"nets",[]) or [])
-    result={}
-    # If parser net-scoping exposes pad-only shells, reconstruct topology from
-    # compiled netlist pad labels plus the global layer-aware copper geometry.
-    if netlist is not None:
-        pad_labels = pad_net_labels_from_netlist(pcb, netlist)
-        segs=[]
-        for obj in list(getattr(pcb, "tracks", []) or []) + list(getattr(pcb, "arcs", []) or []):
-            ep=segment_endpoints(obj)
-            if ep is not None:
-                segs.append((obj, ep[0], ep[1], str(field(obj, "layer", "layer_id"))))
-        if segs and pad_labels:
-            parent=list(range(len(segs)))
-            def find0(i):
-                while parent[i]!=i:
-                    parent[i]=parent[parent[i]]
-                    i=parent[i]
-                return i
-            def union0(a,b):
-                a,b=find0(a),find0(b)
-                if a!=b: parent[b]=a
-            endpoint_map={}
-            for i,(_,a,b,l) in enumerate(segs):
-                endpoint_map.setdefault((round(a[0]),round(a[1]),l),[]).append(i)
-                endpoint_map.setdefault((round(b[0]),round(b[1]),l),[]).append(i)
-            for ids in endpoint_map.values():
-                for j in ids[1:]: union0(ids[0],j)
-            # Vias bridge routed layers; connect track endpoints touching each via.
-            vias=list(getattr(pcb, "vias", []) or [])
-            for v in vias:
-                vp=xy(v)
-                if vp is None: continue
-                vdia=num(field(v,"diameter_mils","diameter","size_mils","size")) or 0.0
-                vt=max(2.0, vdia/2.0)
-                vhits=[]
-                for i,(_,a,b,l) in enumerate(segs):
-                    if distance(vp,a)<=vt or distance(vp,b)<=vt:
-                        vhits.append(i)
-                for j in vhits[1:]: union0(vhits[0],j)
+    pads = list(getattr(pcb, "pads", []) or [])
+    tracks = list(getattr(pcb, "tracks", []) or [])
+    arcs = list(getattr(pcb, "arcs", []) or [])
+    vias = list(getattr(pcb, "vias", []) or [])
+    regions = list(getattr(pcb, "regions", []) or [])
+    fills = list(getattr(pcb, "fills", []) or [])
+    pad_labels = pad_net_labels_from_netlist(pcb, netlist or {})
+    if not pad_labels:
+        return {}
 
-            # Net-scoped copper fills/regions can bridge otherwise separate track islands.
-            route_idx=build_net_index_map(pcb)
-            def point_in_poly(pt, poly):
-                if len(poly)<3: return False
-                x,y=pt; inside=False; j=len(poly)-1
-                for i in range(len(poly)):
-                    xi,yi=poly[i]; xj,yj=poly[j]
-                    if ((yi>y)!=(yj>y)) and x < (xj-xi)*(y-yi)/(yj-yi+1e-12)+xi: inside=not inside
-                    j=i
-                return inside
-            areas=[]
-            for rg in list(getattr(pcb,"regions",[]) or []):
-                ni=primitive_net_index(rg); n=route_idx.get(ni); verts=[]
-                for v in list(field(rg,"outline_vertices") or []):
-                    q=xy(v)
-                    if q is not None: verts.append(q)
-                if n and len(verts)>=3: areas.append((str(n),layer_token(field(rg,"layer","layer_id")),verts))
-            for fl in list(getattr(pcb,"fills",[]) or []):
-                ni=primitive_net_index(fl); n=route_idx.get(ni)
-                x1=num(field(fl,"pos1_x_mils","pos1_x")); y1=num(field(fl,"pos1_y_mils","pos1_y")); x2=num(field(fl,"pos2_x_mils","pos2_x")); y2=num(field(fl,"pos2_y_mils","pos2_y"))
-                if n is not None and None not in (x1,y1,x2,y2): areas.append((str(n),layer_token(field(fl,"layer","layer_id")),[(x1,y1),(x2,y1),(x2,y2),(x1,y2)]))
-            for n,alayer,poly in areas:
-                hits=[]
-                for i,(_,a,b,l) in enumerate(segs):
-                    if alayer not in ("74","MULTILAYER","MULTI-LAYER") and alayer != layer_token(l): continue
-                    if point_in_poly(a,poly) or point_in_poly(b,poly): hits.append(i)
-                for j in hits[1:]: union0(hits[0],j)
+    # Calibrate parser net indices from pad identities that have already been
+    # reconciled against the compiled netlist. Conflicting indices are unusable.
+    index_labels = {}
+    for pad in pads:
+        name = pad_labels.get(id(pad))
+        idx = primitive_net_index(pad)
+        if name is not None and idx is not None:
+            index_labels.setdefault(int(idx), set()).add(str(name))
+    net_index_map = build_net_index_map(pcb)
+    for idx, labels in index_labels.items():
+        if len(labels) == 1:
+            net_index_map[idx] = next(iter(labels))
+        else:
+            net_index_map.pop(idx, None)
 
-            pads=list(getattr(pcb, "pads", []) or [])
-            for p in pads:
-                if id(p) not in pad_labels: continue
-                pp=xy(p)
-                if pp is None: continue
-                pl=str(field(p,"layer","layer_id"))
-                hits=[]
-                for i,(_,a,b,l) in enumerate(segs):
-                    if (pl in ("74","MULTILAYER","MULTI-LAYER") or pl==l):
-                        dx,dy=b[0]-a[0],b[1]-a[1]
-                        if dx==0 and dy==0:
-                            d=distance(pp,a)
-                        else:
-                            t=max(0.0,min(1.0,((pp[0]-a[0])*dx+(pp[1]-a[1])*dy)/(dx*dx+dy*dy)))
-                            d=distance(pp,(a[0]+t*dx,a[1]+t*dy))
-                        w=num(field(segs[i][0],"width_mils","width")) or 0.0
-                        if d <= max(1.0,w/2.0):
-                            hits.append(i)
-                for j in hits[1:]: union0(hits[0],j)
-            groups={}
-            for i in range(len(segs)): groups.setdefault(find0(i),[]).append(i)
-            named={}
-            for p in pads:
-                n=pad_labels.get(id(p)); pp=xy(p)
-                if not n or pp is None: continue
-                pl=str(field(p,"layer","layer_id"))
-                for i,(_,a,b,l) in enumerate(segs):
-                    if pl not in ("74","MULTILAYER","MULTI-LAYER") and pl!=l: continue
-                    dx,dy=b[0]-a[0],b[1]-a[1]
-                    if dx==0 and dy==0: d=distance(pp,a)
-                    else:
-                        t=max(0.0,min(1.0,((pp[0]-a[0])*dx+(pp[1]-a[1])*dy)/(dx*dx+dy*dy)))
-                        d=distance(pp,(a[0]+t*dx,a[1]+t*dy))
-                    w=num(field(segs[i][0],"width_mils","width")) or 0.0
-                    if d <= max(1.0,w/2.0):
-                        named.setdefault(str(n),[]).append(find0(i))
-            out={}
-            for n,roots in named.items():
-                roots=set(roots)
-                comps=len(roots)
-                pads_n=sum(1 for p in pads if pad_labels.get(id(p))==n)
-                out[n]={"terminal_nodes":pads_n,"graph_components":comps,
-                        "route_segments":sum(len(groups[r]) for r in roots),
-                        "vias":0,"has_copper_area":False}
-            if out:
-                return out
+    known_names = set(pad_labels.values())
 
-    # Prefer parser-authoritative net_index for topology identity, cross-checked against compiled pad labels.
-    explicit_nets={}
-    for p in list(getattr(pcb,"pads",[]) or []):
-        ni=primitive_net_index(p)
-        if ni is not None: explicit_nets.setdefault(int(ni),{"pads":[],"tracks":[],"arcs":[],"vias":[]})["pads"].append(p)
-    for attr in ("tracks","arcs","vias"):
-        for obj in list(getattr(pcb,attr,[]) or []):
-            ni=primitive_net_index(obj)
-            if ni is not None: explicit_nets.setdefault(int(ni),{"pads":[],"tracks":[],"arcs":[],"vias":[]})[attr].append(obj)
-    if explicit_nets:
-        idx_to_name={}
-        pad_labels=pad_net_labels_from_netlist(pcb,netlist or {})
-        for p in list(getattr(pcb,"pads",[]) or []):
-            ni=primitive_net_index(p); n=pad_labels.get(id(p))
-            if ni is not None and n: idx_to_name.setdefault(int(ni),set()).add(str(n))
-        out={}
-        for ni,data in explicit_nets.items():
-            names=idx_to_name.get(ni,set())
-            if len(names)!=1: continue
-            name=next(iter(names)); segs2=[]
-            for obj in data["tracks"]+data["arcs"]:
-                ep=segment_endpoints(obj)
-                if ep is not None: segs2.append((obj,ep[0],ep[1],layer_token(field(obj,"layer","layer_id"))))
-            parent=list(range(len(segs2)))
-            def f2(i):
-                while parent[i]!=i: parent[i]=parent[parent[i]]; i=parent[i]
-                return i
-            def u2(a,b):
-                a,b=f2(a),f2(b)
-                if a!=b: parent[b]=a
-            for i,(_,a,b,l) in enumerate(segs2):
-                for j in range(i):
-                    _,c1,c2,l2=segs2[j]
-                    if l==l2 and (distance(a,c1)<=5 or distance(a,c2)<=5 or distance(b,c1)<=5 or distance(b,c2)<=5): u2(i,j)
-            for v in data["vias"]:
-                vp=xy(v)
-                if vp is None: continue
-                hits=[i for i,(_,a,b,l) in enumerate(segs2) if distance(vp,a)<=3 or distance(vp,b)<=3]
-                for j in hits[1:]: u2(hits[0],j)
-            roots={f2(i) for i in range(len(segs2))}
-            if roots: out[name]={"terminal_nodes":len(data["pads"]),"graph_components":len(roots),"route_segments":len(segs2),"vias":len(data["vias"]),"has_copper_area":False}
-        if out: return out
-
-    def graph_for(name, data):
-        pads=list(data.get("pads",[]) or [])
-        vias=list(data.get("vias",[]) or [])
-        tracks=list(data.get("tracks",[]) or [])
-        arcs=list(data.get("arcs",[]) or [])
-        regions=list(data.get("regions",[]) or [])
-        fills=list(data.get("fills",[]) or [])
-        nodes=[]
-        for p in pads:
-            q=xy(p)
-            if q is not None: nodes.append(("pad",q,p))
-        for v in vias:
-            q=xy(v)
-            if q is not None: nodes.append(("via",q,v))
-        for obj in tracks:
-            ep=segment_endpoints(obj)
-            if ep is not None:
-                nodes.extend((("route",ep[0],obj),("route",ep[1],obj)))
-        for obj in arcs:
-            ep=segment_endpoints(obj)
-            if ep is not None:
-                nodes.extend((("route",ep[0],obj),("route",ep[1],obj)))
-        if len(nodes)<2:
+    def object_net(obj):
+        value = field(obj, "net_name", "netname")
+        if isinstance(value, dict):
+            value = field(value, "name", "uid")
+        if value is not None and str(value) in known_names:
+            return str(value)
+        raw_net = field(obj, "net")
+        if isinstance(raw_net, str) and not raw_net.strip().isdigit():
+            if raw_net in known_names:
+                return raw_net
+        if raw_net is not None and not isinstance(raw_net, (str, int, float)):
+            value = field(raw_net, "name", "net_name", "netname", "uid")
+            if value is not None and str(value) in known_names:
+                return str(value)
+        idx = primitive_net_index(obj)
+        try:
+            return net_index_map.get(int(idx)) if idx is not None else None
+        except Exception:
             return None
-        parent=list(range(len(nodes)))
-        def find(i):
-            while parent[i]!=i:
-                parent[i]=parent[parent[i]]
-                i=parent[i]
-            return i
-        def union(i,j):
-            x,y=find(i),find(j)
-            if x!=y: parent[y]=x
-        # PCB parser coordinates are floating-point mils. One mil is a
-        # conservative join tolerance for coincident endpoints.
-        snapped={}
-        for i,(_,p,_) in enumerate(nodes):
-            snapped.setdefault(_snap_point(p,1.0),[]).append(i)
-        for ids in snapped.values():
-            for j in ids[1:]:
-                union(ids[0],j)
-        # Join pads/vias/route endpoints to track interiors as well as exact
-        # endpoints; this covers legal T-junctions in PCB routing.
-        def point_segment_distance(p,a,b):
-            dx,dy=b[0]-a[0],b[1]-a[1]
-            if dx==0 and dy==0: return distance(p,a)
-            t=((p[0]-a[0])*dx+(p[1]-a[1])*dy)/(dx*dx+dy*dy)
-            t=max(0.0,min(1.0,t))
-            q=(a[0]+t*dx,a[1]+t*dy)
-            return distance(p,q)
-        route_edges=[]
-        for obj in tracks+arcs:
-            ep=segment_endpoints(obj)
-            if ep is None: continue
-            ia=next((i for i,x in enumerate(nodes) if x[0]=="route" and x[1]==ep[0]),None)
-            ib=next((i for i,x in enumerate(nodes) if x[0]=="route" and x[1]==ep[1]),None)
-            if ia is not None and ib is not None: route_edges.append((ia,ib,ep[0],ep[1]))
-        for i,(kind,p,obj) in enumerate(nodes):
-            for ia,ib,a,b in route_edges:
-                if i==ia or i==ib: continue
-                tolerance=1.0
-                if kind=="pad":
-                    w=num(field(obj,"width_mils","width")) or 0.0
-                    h=num(field(obj,"height_mils","height")) or 0.0
-                    tolerance=max(tolerance,math.hypot(w,h)/2.0)
-                elif kind=="via":
-                    dia=num(field(obj,"diameter_mils","diameter")) or 0.0
-                    tolerance=max(tolerance,dia/2.0)
-                if point_segment_distance(p,a,b)<=tolerance:
-                    union(i,ia); union(i,ib)
-        return {
-            "terminal_nodes":len([x for x in nodes if x[0]=="pad"]),
-            "graph_components":len({find(i) for i in range(len(nodes))}),
-            "route_segments":len(tracks)+len(arcs),
-            "vias":len(vias),
-            "has_copper_area":bool(regions or fills or data.get("polygons")),
-        }
 
-    api=getattr(pcb,"get_net_primitives",None)
-    if callable(api):
-        for idx,n in enumerate(nets):
-            name=field(n,"name","net_name","netname","uid")
-            if name is None:
+    def point_in_poly(pt, poly):
+        if len(poly) < 3:
+            return False
+        x, y = pt
+        inside = False
+        j = len(poly) - 1
+        for i in range(len(poly)):
+            xi, yi = poly[i]
+            xj, yj = poly[j]
+            if ((yi > y) != (yj > y)) and x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi:
+                inside = not inside
+            j = i
+        return inside
+
+    def orient(a, b, c):
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    def segments_intersect(a, b, c, d):
+        o1, o2, o3, o4 = orient(a, b, c), orient(a, b, d), orient(c, d, a), orient(c, d, b)
+        eps = 1e-8
+        if ((o1 > eps and o2 < -eps) or (o1 < -eps and o2 > eps)) and ((o3 > eps and o4 < -eps) or (o3 < -eps and o4 > eps)):
+            return True
+        def on_segment(p, q, r):
+            return (min(p[0], r[0]) - eps <= q[0] <= max(p[0], r[0]) + eps
+                    and min(p[1], r[1]) - eps <= q[1] <= max(p[1], r[1]) + eps)
+        return ((abs(o1) <= eps and on_segment(a, c, b))
+                or (abs(o2) <= eps and on_segment(a, d, b))
+                or (abs(o3) <= eps and on_segment(c, a, d))
+                or (abs(o4) <= eps and on_segment(c, b, d)))
+
+    def segment_hits_poly(a, b, poly):
+        if point_in_poly(a, poly) or point_in_poly(b, poly):
+            return True
+        return any(segments_intersect(a, b, poly[i - 1], poly[i]) for i in range(len(poly)))
+
+    def layer_of(obj):
+        return layer_token(field(obj, "layer", "layer_id"))
+
+    def layers_touch(a, b):
+        multi = {"74", "MULTI-LAYER", "MULTILAYER"}
+        if not a or not b:
+            return False
+        return a == b or a in multi or b in multi
+
+    net_names = sorted(set(str(v) for v in pad_labels.values()))
+    result = {}
+
+    for net in net_names:
+        net_pads = [p for p in pads if pad_labels.get(id(p)) == net and xy(p) is not None]
+        if len(net_pads) < 2:
+            continue
+
+        nodes = []
+        for pad in net_pads:
+            nodes.append({"kind": "pad", "obj": pad, "point": xy(pad), "layer": layer_of(pad), "net": net})
+        for obj in tracks + arcs:
+            endpoints = segment_endpoints(obj)
+            if endpoints is None or object_net(obj) != net:
                 continue
-            try:
-                data=api(idx)
-            except Exception:
-                data=None
-            if isinstance(data,dict):
-                info=graph_for(str(name),data)
-                if info is not None:
-                    result[str(name)]=info
-        # A net-scoped object can exist while exposing only pads. Do not treat
-        # pad-only shells as routing evidence; fall back to global PCB primitives.
-        if result and any(
-            int(v.get("route_segments",0) or 0) > 0
-            or int(v.get("vias",0) or 0) > 0
-            or bool(v.get("has_copper_area"))
-            for v in result.values()
-        ):
-            return result
+            nodes.append({"kind": "segment", "obj": obj, "a": endpoints[0], "b": endpoints[1],
+                          "layer": layer_of(obj), "net": net})
+        for obj in vias:
+            point = xy(obj)
+            if point is not None and object_net(obj) == net:
+                nodes.append({"kind": "via", "obj": obj, "point": point, "layer": layer_of(obj), "net": net})
 
-    # Fallback for parser versions where get_net_primitives() returns pad-only
-    # shells: reconstruct named routing evidence from global PCB primitives.
-    net_by_idx=build_net_index_map(pcb)
-    buckets={}
-    def bucket(name):
-        if name is None: return None
-        return buckets.setdefault(str(name), {"pads":[],"vias":[],"segments":[]})
-    for pad in list(getattr(pcb,"pads",[]) or []):
-        ni=primitive_net_index(pad)
-        try: name=net_by_idx.get(int(ni))
-        except Exception: name=None
-        p=xy(pad)
-        if name is not None and p is not None: bucket(name)["pads"].append(p)
-    for via in list(getattr(pcb,"vias",[]) or []):
-        ni=primitive_net_index(via)
-        try: name=net_by_idx.get(int(ni))
-        except Exception: name=None
-        p=xy(via)
-        if name is not None and p is not None: bucket(name)["vias"].append(p)
-    for track in list(getattr(pcb,"tracks",[]) or []):
-        name=net_name(track,net_by_idx)
-        ep=segment_endpoints(track)
-        if name is not None and ep is not None: bucket(name)["segments"].append(ep)
-    copper_area_nets=set()
-    for attr in ("regions","fills"):
-        for area in list(getattr(pcb,attr,[]) or []):
-            n=net_name(area,net_by_idx)
-            if n is not None: copper_area_nets.add(str(n))
-    for name,d in buckets.items():
-        nodes=[("pad",p) for p in d["pads"]]+[("via",p) for p in d["vias"]]
-        for a,b in d["segments"]: nodes.extend((("route",a),("route",b)))
-        if len(nodes)<2: continue
-        parent=list(range(len(nodes)))
+        area_indices = []
+        for obj in regions:
+            area_net = object_net(obj)
+            vertices = []
+            for vertex in list(field(obj, "outline_vertices", "vertices", "outline") or []):
+                point = xy(vertex)
+                if point is not None:
+                    vertices.append(point)
+            layer = layer_of(obj)
+            if len(vertices) >= 3 and layer and area_net == net:
+                area_indices.append(len(nodes))
+                nodes.append({"kind": "area", "obj": obj, "poly": vertices, "layer": layer, "net": net})
+        for obj in fills:
+            area_net = object_net(obj)
+            x1 = num(field(obj, "pos1_x_mils", "pos1_x"))
+            y1 = num(field(obj, "pos1_y_mils", "pos1_y"))
+            x2 = num(field(obj, "pos2_x_mils", "pos2_x"))
+            y2 = num(field(obj, "pos2_y_mils", "pos2_y"))
+            layer = layer_of(obj)
+            if area_net == net and layer and None not in (x1, y1, x2, y2):
+                area_indices.append(len(nodes))
+                nodes.append({"kind": "area", "obj": obj,
+                              "poly": [(x1, y1), (x2, y1), (x2, y2), (x1, y2)],
+                              "layer": layer, "net": net})
+
+        parent = list(range(len(nodes)))
         def find(i):
-            while parent[i]!=i:
-                parent[i]=parent[parent[i]]
-                i=parent[i]
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
             return i
-        def union(i,j):
-            x,y=find(i),find(j)
-            if x!=y: parent[y]=x
-        snapped={}
-        for i,(_,p) in enumerate(nodes):
-            snapped.setdefault(_snap_point(p,1.0),[]).append(i)
-        for ids in snapped.values():
-            for j in ids[1:]: union(ids[0],j)
-        result[name]={
-            "terminal_nodes":len(d["pads"]),
-            "graph_components":len({find(i) for i in range(len(nodes))}),
-            "route_segments":len(d["segments"]),
-            "vias":len(d["vias"]),
-            "has_copper_area":name in copper_area_nets,
+        def union(i, j):
+            a, b = find(i), find(j)
+            if a != b:
+                parent[b] = a
+
+        pad_indices = [i for i, node in enumerate(nodes) if node["kind"] == "pad"]
+        segment_indices = [i for i, node in enumerate(nodes) if node["kind"] == "segment"]
+        via_indices = [i for i, node in enumerate(nodes) if node["kind"] == "via"]
+
+        # Segment continuity is net-local and layer-local. Endpoint-to-segment
+        # checks include T-junctions without joining coincident foreign-net copper.
+        for pos, i in enumerate(segment_indices):
+            left = nodes[i]
+            for j in segment_indices[:pos]:
+                right = nodes[j]
+                if left["layer"] != right["layer"]:
+                    continue
+                if any(distance(p, q) <= 1.0 for p in (left["a"], left["b"]) for q in (right["a"], right["b"])):
+                    union(i, j)
+                    continue
+                if any(
+                    point_segment_distance(p, right["a"], right["b"]) <= 1.0
+                    for p in (left["a"], left["b"])
+                ) or any(
+                    point_segment_distance(p, left["a"], left["b"]) <= 1.0
+                    for p in (right["a"], right["b"])
+                ):
+                    union(i, j)
+
+        # Pads join only to same-net copper on a compatible layer.
+        for pi in pad_indices:
+            pad = nodes[pi]
+            width = num(field(pad["obj"], "width_mils", "width")) or 0.0
+            height = num(field(pad["obj"], "height_mils", "height")) or 0.0
+            tolerance = max(1.0, math.hypot(width, height) / 2.0)
+            for si in segment_indices:
+                seg = nodes[si]
+                if layers_touch(pad["layer"], seg["layer"]) and point_segment_distance(
+                    pad["point"], seg["a"], seg["b"]
+                ) <= max(tolerance, (num(field(seg["obj"], "width_mils", "width")) or 0.0) / 2.0):
+                    union(pi, si)
+
+        # A via bridges layers only within its own net.
+        for vi in via_indices:
+            via = nodes[vi]
+            diameter = num(field(via["obj"], "diameter_mils", "diameter", "size_mils", "size")) or 0.0
+            tolerance = max(2.0, diameter / 2.0)
+            for si in segment_indices:
+                seg = nodes[si]
+                if point_segment_distance(via["point"], seg["a"], seg["b"]) <= tolerance:
+                    union(vi, si)
+
+        # A net-scoped copper area is a graph node. It connects pads, tracks,
+        # and vias only when the geometry intersects the filled polygon and
+        # the copper layer is compatible. This avoids treating arbitrary regions
+        # or foreign-net tracks as proof of continuity.
+        for ai in area_indices:
+            area = nodes[ai]
+            poly = area["poly"]
+            for ni, node in enumerate(nodes):
+                if ni == ai or node["kind"] == "area":
+                    continue
+                if not layers_touch(area["layer"], node["layer"]) and node["kind"] != "via":
+                    continue
+                if node["kind"] == "pad":
+                    touches = point_in_poly(node["point"], poly)
+                elif node["kind"] == "segment":
+                    touches = segment_hits_poly(node["a"], node["b"], poly)
+                elif node["kind"] == "via":
+                    touches = point_in_poly(node["point"], poly)
+                else:
+                    touches = False
+                if touches:
+                    union(ai, ni)
+        # Overlapping same-net areas on a compatible layer share copper.
+        for pos, ai in enumerate(area_indices):
+            a = nodes[ai]
+            for bi in area_indices[:pos]:
+                b = nodes[bi]
+                if not layers_touch(a["layer"], b["layer"]):
+                    continue
+                if any(point_in_poly(p, b["poly"]) for p in a["poly"]) or any(
+                    point_in_poly(p, a["poly"]) for p in b["poly"]
+                ) or any(segments_intersect(a["poly"][i - 1], a["poly"][i],
+                                            b["poly"][j - 1], b["poly"][j])
+                         for i in range(len(a["poly"])) for j in range(len(b["poly"]))):
+                    union(ai, bi)
+
+        pad_roots = {find(i) for i in pad_indices}
+        # If a net-labelled copper area or track/via was omitted from the
+        # net-scoped collections, don't turn a parser evidence gap into FAIL.
+        topology_incomplete = False
+        known_nodes = [node for node in nodes if node["kind"] in {"pad", "segment", "via", "area"}]
+        known_geometry = [node for node in known_nodes if node["kind"] != "area"]
+        for obj in tracks + arcs:
+            if segment_endpoints(obj) is None or object_net(obj) is not None:
+                continue
+            a, b = segment_endpoints(obj)
+            if any(point_segment_distance(a, n["a"], n["b"]) <= 1.0
+                   or point_segment_distance(b, n["a"], n["b"]) <= 1.0
+                   for n in known_geometry if n["kind"] == "segment"):
+                topology_incomplete = True
+                break
+        if not topology_incomplete:
+            for obj in regions + fills:
+                if object_net(obj) is not None:
+                    continue
+                poly = []
+                for vertex in list(field(obj, "outline_vertices", "vertices", "outline") or []):
+                    point = xy(vertex)
+                    if point is not None:
+                        poly.append(point)
+                if not poly:
+                    x1 = num(field(obj, "pos1_x_mils", "pos1_x"))
+                    y1 = num(field(obj, "pos1_y_mils", "pos1_y"))
+                    x2 = num(field(obj, "pos2_x_mils", "pos2_x"))
+                    y2 = num(field(obj, "pos2_y_mils", "pos2_y"))
+                    if None not in (x1, y1, x2, y2):
+                        poly = [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
+                if len(poly) >= 3 and any(point_in_poly(n["point"], poly) for n in nodes if n["kind"] == "pad"):
+                    topology_incomplete = True
+                    break
+
+        segment_roots = {find(i) for i in segment_indices}
+        result[net] = {
+            "terminal_nodes": len(net_pads),
+            "graph_components": len(pad_roots),
+            "route_segments": sum(1 for i in segment_indices if find(i) in pad_roots),
+            "vias": sum(1 for i in via_indices if find(i) in pad_roots),
+            "has_copper_area": bool(area_indices),
+            "topology_incomplete": topology_incomplete,
         }
+
     return result
 
 def sha256(path: pathlib.Path) -> str:
