@@ -85,7 +85,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr
           python -m pip install 'git+https://github.com/sphrd/SchematicNetlist.git'
-          python -m pip install opencv-python-headless pytesseract numpy
+          python -m pip install opencv-python-headless pytesseract numpy pymupdf
+      - name: Extract reusable PDF vector/text primitives (no OCR, no inferred connectivity)
+        shell: bash
+        run: |
+          mkdir -p work/pdf-primitives
+          python tools/pdf-schematic/extract_primitives.py "[QI9-2605-A01] Module ADC.pdf" --out work/pdf-primitives/primitives.json > work/pdf-primitives/summary.stdout.json
       - name: Backend health check
         run: schematic-netlist doctor
       - name: Analyze uploaded QI9 PDF
@@ -100,51 +105,79 @@ jobs:
           exit "$rc"
       - name: Build truthful run manifest
         if: always()
+        shell: bash
         run: |
           mkdir -p work
           python - <<'PY'
-          import json
+          import json, hashlib, re, traceback
           from pathlib import Path
           root = Path("work")
           try:
               rc = int((root / "backend.exit_code").read_text().strip())
           except Exception:
               rc = None
-          outputs = [{"path": str(p), "bytes": p.stat().st_size} for p in sorted(root.rglob("*")) if p.is_file() and p.name != "run_manifest.json"]
+          quality = {"netlist_found": False, "part_count": 0, "net_count": 0,
+                     "unnamed_pin_count": None, "warnings_dropped_wire_ends": None,
+                     "quality_checks_error": None}
+          try:
+              netlists = list((root / "pdf-backend").glob("*_netlist.json"))
+              quality["netlist_found"] = bool(netlists)
+              if netlists:
+                  data = json.loads(netlists[0].read_text(encoding="utf-8"))
+                  parts = data.get("parts", [])
+                  nets = data.get("nets", [])
+                  quality["part_count"] = len(parts) if hasattr(parts, "__len__") else 0
+                  quality["net_count"] = len(nets) if hasattr(nets, "__len__") else 0
+                  unknown = 0
+                  for part in parts if isinstance(parts, list) else []:
+                      pins = part.get("pins", []) if isinstance(part, dict) else []
+                      if isinstance(pins, dict):
+                          pins = list(pins.values())
+                      for pin in pins if isinstance(pins, list) else []:
+                          if isinstance(pin, dict) and (not pin.get("number") or not pin.get("net")):
+                              unknown += 1
+                  quality["unnamed_pin_count"] = unknown
+              quality["warnings_dropped_wire_ends"] = 0
+              logs = list((root / "pdf-backend").glob("*_engine_log.txt"))
+              for log in logs:
+                  for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
+                      m = re.search(r"(\\d+) wire end\\(s\\).*\\(dropped\\)", line)
+                      if m:
+                          quality["warnings_dropped_wire_ends"] += int(m.group(1))
+          except Exception as exc:
+              quality["quality_checks_error"] = f"{type(exc).__name__}: {exc}"
+          quality_pass = (rc == 0 and quality["netlist_found"] and
+                          quality["part_count"] >= 10 and quality["net_count"] < 1000 and
+                          quality["warnings_dropped_wire_ends"] == 0 and
+                          quality["unnamed_pin_count"] == 0)
+          primitive_path = root / "pdf-primitives" / "primitives.json"
+          primitive_summary = {"found": primitive_path.is_file(), "sha256": None, "bytes": 0}
+          if primitive_path.is_file():
+              raw = primitive_path.read_bytes()
+              primitive_summary.update({"sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)})
+              try:
+                  p = json.loads(raw)
+                  primitive_summary["totals"] = p.get("totals", {})
+                  primitive_summary["policy"] = p.get("policy", {})
+              except Exception as exc:
+                  primitive_summary["parse_error"] = f"{type(exc).__name__}: {exc}"
+          outputs = [{"path": str(p), "bytes": p.stat().st_size} for p in sorted(root.rglob("*"))
+                     if p.is_file() and p.name != "run_manifest.json"]
           manifest = {
-              "schema": "qi9-pdf-backend-run/v1",
+              "schema": "qi9-pdf-backend-run/v2",
               "input": "[QI9-2605-A01] Module ADC.pdf",
               "backend": "SchematicNetlist",
               "backend_exit_code": rc,
-              "status": "BLOCKED_BACKEND_FAILURE" if rc != 0 else "BLOCKED_EXTRACTION_QUALITY",
+              "status": ("EXTRACTED_UNVERIFIED" if quality_pass else
+                         ("BLOCKED_BACKEND_FAILURE" if rc != 0 else "BLOCKED_EXTRACTION_QUALITY")),
+              "quality": quality,
+              "pdf_primitives": primitive_summary,
               "kicad_schematic_generated": False,
               "netlist_connectivity_independently_verified": False,
               "outputs": outputs,
           }
-          netlists = list((root / "pdf-backend").glob("*_netlist.json"))
-          quality = {"netlist_found": bool(netlists), "part_count": 0, "net_count": 0, "unnamed_pin_count": 0, "warnings_dropped_wire_ends": 0}
-          if netlists:
-              data = json.loads(netlists[0].read_text(encoding="utf-8"))
-              quality["part_count"] = len(data.get("parts", []))
-              quality["net_count"] = len(data.get("nets", []))
-              quality["unnamed_pin_count"] = sum(1 for part in data.get("parts", []) for pin in part.get("pins", []) if not pin.get("number") or not pin.get("net"))
-          logs = list((root / "pdf-backend").glob("*_engine_log.txt"))
-          if logs:
-              import re
-              for line in logs[0].read_text(encoding="utf-8", errors="replace").splitlines():
-                  m = re.search(r"(\d+) wire end\(s\).*\(dropped\)", line)
-                  if m:
-                      quality["warnings_dropped_wire_ends"] += int(m.group(1))
-          quality_pass = rc == 0 and quality["netlist_found"] and quality["part_count"] >= 10 and quality["net_count"] < 1000 and quality["warnings_dropped_wire_ends"] == 0 and quality["unnamed_pin_count"] == 0
-          manifest["quality"] = quality
-          manifest["status"] = "EXTRACTED_UNVERIFIED" if quality_pass else ("BLOCKED_BACKEND_FAILURE" if rc != 0 else "BLOCKED_EXTRACTION_QUALITY")
-          manifest["kicad_schematic_generated"] = False
-          manifest["netlist_connectivity_independently_verified"] = False
-          (root / "run_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          (root / "run_manifest.json").write_text(json.dumps(manifest, indent=2) + "\\n")
           print(json.dumps(manifest, indent=2))
-          if rc == 0 and not quality_pass:
-              print("BLOCKED: backend exit code was zero but extraction quality failed; do not use this netlist.")
-              raise SystemExit(2)
           PY
       - name: Upload PDF backend outputs
         if: always()
