@@ -1,0 +1,73 @@
+name: qi9-2605-pdf-backend-one-pass
+
+on:
+  push:
+    paths:
+      - '[QI9-2605-A01] Module ADC.pdf'
+      - '.github/workflows/qi9-2605-pdf-backend-one-pass.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pdf-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install specialist PDF schematic backend
+        run: python -m pip install 'git+https://github.com/sphrd/SchematicNetlist.git'
+      - name: Backend health check
+        run: schematic-netlist doctor
+      - name: Analyze the uploaded QI9 PDF
+        id: analyze
+        shell: bash
+        run: |
+          set +e
+          schematic-netlist analyze "[QI9-2605-A01] Module ADC.pdf" -o work/pdf-backend --no-excel --no-spice --no-cache > work/backend.stdout.txt 2> work/backend.stderr.txt
+          rc=$?
+          set -e
+          printf '%s\n' "$rc" > work/backend.exit_code
+          exit "$rc"
+      - name: Build truthful run manifest
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p work
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          root = Path("work")
+          outputs = []
+          for p in sorted(root.rglob("*")):
+              if p.is_file() and p.name != "run_manifest.json":
+                  outputs.append({"path": str(p), "bytes": p.stat().st_size})
+          try:
+              rc = int((root / "backend.exit_code").read_text().strip())
+          except Exception:
+              rc = None
+          manifest = {
+              "schema": "qi9-pdf-backend-run/v1",
+              "input": "[QI9-2605-A01] Module ADC.pdf",
+              "backend": "SchematicNetlist",
+              "backend_exit_code": rc,
+              "status": "EXTRACTED_UNVERIFIED" if rc == 0 else "BLOCKED_BACKEND_FAILURE",
+              "kicad_schematic_generated": False,
+              "netlist_connectivity_independently_verified": False,
+              "outputs": outputs,
+          }
+          (root / "run_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          print(json.dumps(manifest, indent=2))
+          PY
+      - name: Upload backend outputs and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qi9-2605-pdf-backend-one-pass
+          path: work/
+          if-no-files-found: warn
+          retention-days: 90
