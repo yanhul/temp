@@ -35,6 +35,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r tools/altium-audit/requirements.txt
 
+      - name: Render QI9-2605-A01 source PCB for visual geometry audit
+        run: python tools/altium-audit/render_pcb_geometry.py audit-input-2605/QI9-2605-A01.PcbDoc --out work/pcb-render
+
+      - name: Upload source PCB render
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: qi9-2605-board-render
+          path: work/pcb-render/
+          if-no-files-found: error
+
       - name: Verify project-independent audit engine
         run: python tests/test_altium_audit_project_independence.py
 
