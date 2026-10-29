@@ -164,6 +164,14 @@ def main():
             if kind["kind"] not in ("pad","via"): continue
             tol=tolerances[i]
             for ia,ib,a,b in route_edges:
+                # A surface-mount pad only touches copper on its own layer.
+                # A via is the explicit layer transition; multilayer pads may
+                # also contact more than one copper layer.
+                if kind["kind"]=="pad" and not multilayer(kind):
+                    pad_layer=layer_key(kind.get("layer"))
+                    route_layer=layer_key(meta[ia].get("layer"))
+                    if pad_layer != route_layer:
+                        continue
                 if point_segment_distance(p,a,b)<=tol:
                     union(i,ia); union(i,ib)
 
