@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"tools"/"altium-audit"))
 import local_schlib_audit as audit
+import audit_runner
 
 def test_absent_local_schlib_is_unknown_not_pass(tmp_path):
     findings=[]
