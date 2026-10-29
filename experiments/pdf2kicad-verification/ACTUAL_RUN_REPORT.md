@@ -71,3 +71,11 @@ Endpoint multiplicity is a geometric candidate only. It is not proof of an elect
 ## Acceptance rule
 
 Do not promote to PASS merely because the PDF was read, OCR ran, a KiCad file parses, or a netlist was emitted. PASS requires independently checked pin-to-net topology. Until then the correct result is `BLOCKED_NO_VERIFIED_NETLIST`.
+
+
+## Follow-up verification — 2026-10-29
+
+- Inspected extractable title text on all 16 pages of the supplied PDF. Pages 2–4 identify themselves as Part list 1–3; page 14 says `Layout Note`; page 15 says `3D View`; page 16 says `Label`. Pages 5–13 are the nine schematic sheets.
+- Fixed the page-profile classifier so `Layout Note` is explicitly classified as `board_layout_candidate`, alongside BOM, 3D/render, physical-label, and document-index pages. This prevents the layout drawing from being sent through schematic OCR/topology fallback merely because it contains many vector objects.
+- Added regression coverage using the actual extracted page-title phrases. GitHub Actions run [#68](https://github.com/yanhul/temp/actions/runs/40843020754), commit `e4b2c8886447c41598c7ce0f7f64fafda665285f`: compile PASS; **25/25 unit tests PASS**; required-module checks PASS.
+- Scope boundary unchanged: these checks verify page routing and evidence preservation, not recovered electrical semantics. The supplied PDF has vector/OCR evidence, but no independently verified symbol-pin map, junction/crossing decisions, golden netlist comparison, or KiCad ERC evidence. Therefore full schematic conversion remains **BLOCKED**, and no fabricated `.kicad_sch`/netlist is claimed.
