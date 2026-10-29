@@ -5,6 +5,7 @@ from pdfx import extract_page, page_size
 from padsx import decode_pads
 from netsx import build_netlist
 from gen import gen_page
+from pdf_profile import profile_page
 
 RE_SHEET_HINT = 12
 
@@ -33,6 +34,7 @@ def main():
         want = {int(p) - 1 for p in args.pages.split(',') if p.strip().isdigit()}
 
     pages = []
+    page_profiles = []
     for i in range(npages):
         if want and i not in want:
             continue
@@ -42,13 +44,49 @@ def main():
         pg['page_h'] = h
         pg['page_w'] = w
         pg['n_pad_tok'] = n_pad_tok
+        profile = profile_page(pg)
+        profile_row = profile.as_dict()
+        profile_row.update({"page_1based": i + 1, "pi_token_count": n_pad_tok})
+        page_profiles.append(profile_row)
         if n_pad_tok >= RE_SHEET_HINT and len(pg['objs']) > 20:
             pages.append((i, pg))
-            print(f'  trang {i+1}: SCHEMATIC ({n_pad_tok} PI, {len(pg["objs"])} object)')
+            print(f'  trang {i+1}: SMART-PDF candidate ({n_pad_tok} PI, {len(pg["objs"])} object)')
         else:
-            print(f'  trang {i+1}: bo qua ({n_pad_tok} PI, {len(pg["objs"])} object)')
+            print(f'  trang {i+1}: {profile.kind} ({n_pad_tok} PI, {len(pg["objs"])} object)')
+    # Keep a profile for every page, including pages the legacy PI decoder cannot read.
+    with open(os.path.join(args.out, 'pdf_profile.json'), 'w', encoding='utf-8') as f:
+        json.dump({
+            "schema": "pdf2kicad.profile-manifest/1",
+            "source": os.path.basename(args.pdf),
+            "page_count": npages,
+            "pages": page_profiles,
+            "connectivity_status": "NOT_INFERRED_BY_PROFILE",
+        }, f, indent=2, ensure_ascii=False)
     if not pages:
-        sys.exit('khong tim thay trang schematic nao (thu --pages 1)')
+        # PI is one encoding, not a requirement for every PDF schematic.
+        # Collect OCR evidence for non-SmartPDF exports instead of silently skipping.
+        ocr_status = "not_attempted"
+        try:
+            from ocr_vector_adapter import extract_pdf
+            candidate_pages = [
+                row["page_1based"] for row in page_profiles
+                if row["kind"] in (
+                    "flattened_vector_text_candidate", "vector_only_candidate",
+                    "hybrid_pdf_candidate", "image_scan_candidate"
+                )
+            ]
+            if candidate_pages:
+                manifest = extract_pdf(args.pdf, candidate_pages, args.out)
+                ocr_status = manifest.get("status", "OCR_EVIDENCE_ONLY_NOT_NETLIST")
+        except Exception as exc:
+            ocr_status = f"unavailable: {type(exc).__name__}: {exc}"
+        print(f'  Da luu profile trang: {os.path.join(args.out, "pdf_profile.json")}')
+        print(f'  OCR status: {ocr_status}')
+        sys.exit(
+            "BLOCKED_NOT_CONVERTED: khong co trang du PI de dung decoder Smart-PDF cu. "
+            "Da phan loai tung trang va thu thap OCR evidence neu kha dung; "
+            "khong tao KiCad/netlist gia khi chua xac dinh pin va connectivity."
+        )
 
     all_pads = {}
     all_nets = []
