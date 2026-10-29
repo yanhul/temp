@@ -43,6 +43,30 @@ class GeometricTopologyTests(unittest.TestCase):
         self.assertEqual(result["intersection_candidate_count"], 0)
         self.assertEqual(result["electrical_connectivity"], "NOT_INFERRED")
 
+    def test_near_but_not_at_endpoint_is_not_misclassified_as_endpoint(self):
+        result = build_geometric_topology([
+            {"a": [0, 0], "b": [100, 0]},
+            {"a": [1, -2], "b": [1, 2]},
+        ])
+        node = result["intersection_candidates"][0]
+        self.assertIn("interior_crossing", node["geometry_kinds"])
+        self.assertNotIn("endpoint_on_segment", node["geometry_kinds"])
+
+    def test_sweep_prunes_parallel_lines_with_disjoint_y_bounds(self):
+        lines = [{"a": [0, i * 3], "b": [100, i * 3]} for i in range(100)]
+        result = build_geometric_topology(lines)
+        self.assertEqual(result["candidate_pair_count"], 0)
+        self.assertEqual(result["intersection_candidate_count"], 0)
+        self.assertEqual(result["split_edge_count"], 100)
+
+    def test_non_finite_coordinates_are_rejected(self):
+        result = build_geometric_topology([
+            {"a": [0, 0], "b": [1, 0]},
+            {"a": [float("nan"), 0], "b": [2, 2]},
+        ])
+        self.assertEqual(result["input_line_count"], 1)
+        self.assertEqual(result["split_edge_count"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
