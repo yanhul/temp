@@ -94,7 +94,7 @@ def build_geometric_topology(lines, tolerance=EPS):
         unique = {}
         for p in cuts[i]:
             t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length2
-            unique[(round(max(0.0, min(1.0, t)), 8)] = (p[0], p[1])
+            unique[round(max(0.0, min(1.0, t)), 8)] = (p[0], p[1])
         ordered = sorted(unique.items())
         for (_, p), (_, q) in zip(ordered, ordered[1:]):
             if math.dist(p, q) <= tolerance:
