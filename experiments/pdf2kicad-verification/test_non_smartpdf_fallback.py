@@ -30,7 +30,7 @@ class NonSmartPdfFallbackTests(unittest.TestCase):
                 cwd=ROOT, capture_output=True, text=True, timeout=120,
             )
             self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-            self.assertIn("BLOCKED_NOT_CONVERTED", proc.stdout + proc.stderr)
+            self.assertIn("BLOCKED_NO_VERIFIED_NETLIST", proc.stdout + proc.stderr)
             profile_path = out / "pdf_profile.json"
             vector_path = out / "pdf_vector_evidence.json"
             self.assertTrue(profile_path.is_file(), proc.stdout + proc.stderr)
