@@ -41,3 +41,33 @@ def test_pin_conflict_fails_and_suffix_is_not_fuzzy_matched(tmp_path,monkeypatch
     audit.audit_local_schlibs(tmp_path,[{"reference":"D1","library_id":"PartA","pins":[{"pin":"1","pin_name":"CATHODE"}]},{"reference":"D2","library_id":"PartA_C45354919","pins":[]}],lambda *a:findings.append(a))
     assert any(f[0]=="G2-SCHLIB-PINMAP-D1" and f[3]=="FAIL" for f in findings)
     assert any(f[0]=="G2-SCHLIB-SYMBOL-MISSING-D2" and f[3]=="UNKNOWN" for f in findings)
+
+def test_library_search_root_outside_project_is_discovered(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    library_root = tmp_path / "local-libraries"
+    project.mkdir()
+    library_root.mkdir()
+    (library_root / "Shared.SchLib").write_bytes(b"library")
+    class Pin:
+        designator = "1"
+        name = "A"
+    class Symbol:
+        name = "PartA"
+        original_name = "PartA"
+        pins = [Pin()]
+    class Library:
+        symbols = [Symbol()]
+        def __init__(self, path):
+            assert Path(path).name == "Shared.SchLib"
+    import altium_monkey
+    monkeypatch.setattr(altium_monkey, "AltiumSchLib", Library, raising=False)
+    findings = []
+    result = audit.audit_local_schlibs(
+        project,
+        [{"reference": "D1", "library_id": "PartA", "pins": [{"pin": "1", "pin_name": "A"}]}],
+        lambda *a: findings.append(a),
+        library_roots=[library_root],
+    )
+    assert result["files_found"] == 1
+    assert any(f[0] == "G2-SCHLIB-PINMAP-D1" and f[3] == "VERIFIED" for f in findings)
+    assert str(library_root) in next(f[4] for f in findings if f[0] == "G2-SCHLIB-PINMAP-D1")

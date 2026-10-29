@@ -807,6 +807,8 @@ def main():
     ap.add_argument("--archive", type=pathlib.Path)
     ap.add_argument("--source-sha256", type=str)
     ap.add_argument("--config", type=pathlib.Path, help="optional project-local config; never required by the engine")
+    ap.add_argument("--library-root", action="append", default=[], type=pathlib.Path,
+                    help="additional directory containing local .SchLib files; repeatable")
     args = ap.parse_args()
     root, out = args.root, args.out
     project_config = {}
@@ -993,7 +995,9 @@ def main():
     # Cross-check the canonical compiled pin map against local schematic-library source.
     try:
         from local_schlib_audit import audit_local_schlibs
-        audit_local_schlibs(root, evidence_records, _semantic_add)
+        configured_library_roots = project_config.get("library_search_paths", [])
+        audit_local_schlibs(root, evidence_records, _semantic_add,
+                            library_roots=[*configured_library_roots, *args.library_root])
     except Exception as exc:
         add(findings, "G2-SCHLIB-SOURCE-AUDIT", "BLOCKER", "schematic", "BLOCKED",
             f"Local SchLib audit failed closed: {type(exc).__name__}: {exc}", "FACT", None)

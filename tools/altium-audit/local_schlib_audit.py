@@ -1,6 +1,6 @@
 """Source-backed audit of local Altium schematic libraries (.SchLib)."""
 from __future__ import annotations
-import hashlib, re
+import hashlib, os, re
 from pathlib import Path
 from typing import Any
 
@@ -31,11 +31,39 @@ def _pin_map(symbol: Any) -> dict[str, dict[str, str]]:
                                     "electrical_type": str(electrical or "").strip()}
     return out
 
-def audit_local_schlibs(root: str | Path, components: list[dict[str, Any]], add) -> dict[str, Any]:
-    """Exact-name SchLib pin comparison; no fuzzy or footprint-derived identity."""
-    root = Path(root)
-    files = sorted((p for p in root.rglob("*") if p.is_file() and p.suffix.casefold()==".schlib"),
-                   key=lambda p: str(p).casefold())
+def audit_local_schlibs(root: str | Path, components: list[dict[str, Any]], add,
+                        library_roots: list[str | Path] | None = None) -> dict[str, Any]:
+    """Find source libraries in project, configured paths and explicit local library roots."""
+    root = Path(root).resolve()
+    roots = [root]
+    configured = list(library_roots or [])
+    configured.extend(p for p in os.environ.get("ALTIUM_LIBRARY_PATHS", "").split(os.pathsep) if p)
+    for item in configured:
+        p = Path(item).expanduser()
+        if not p.is_absolute():
+            # Resolve a relative path from the project root first, then repository working directory.
+            candidates = [root / p, Path.cwd() / p]
+            p = next((c for c in candidates if c.exists()), candidates[0])
+        try:
+            p = p.resolve()
+        except OSError:
+            continue
+        if p.exists() and p not in roots:
+            roots.append(p)
+    files_by_path = {}
+    for base in roots:
+        if not base.exists() or not base.is_dir():
+            continue
+        for path in base.rglob("*"):
+            if path.is_file() and path.suffix.casefold() == ".schlib":
+                files_by_path[str(path.resolve()).casefold()] = path.resolve()
+    files = sorted(files_by_path.values(), key=lambda p: str(p).casefold())
+
+    def source_label(path: Path) -> str:
+        try:
+            return path.relative_to(root).as_posix()
+        except ValueError:
+            return str(path)
     try:
         from altium_monkey import AltiumSchLib
     except Exception as exc:
@@ -50,11 +78,11 @@ def audit_local_schlibs(root: str | Path, components: list[dict[str, Any]], add)
             for sym in lib.symbols:
                 names = {_norm(_field(sym,k)) for k in ("name","original_name","library_reference","lib_reference")}
                 entry = {"name":str(_field(sym,"name") or ""),
-                         "path":str(path.relative_to(root)), "sha256":digest, "pins":_pin_map(sym)}
+                         "path":source_label(path), "sha256":digest, "pins":_pin_map(sym)}
                 for name in names:
                     if name: index.setdefault(name,[]).append(entry)
         except Exception as exc:
-            errors.append(f"{path.relative_to(root)}: {type(exc).__name__}: {exc}")
+            errors.append(f"{source_label(path)}: {type(exc).__name__}: {exc}")
     if not files:
         add("G2-SCHLIB-SOURCE-INVENTORY","BLOCKER","schematic","UNKNOWN",
             "No .SchLib source exists under the audited input root. This says nothing about libraries outside the supplied project/archive; source-backed pin resolution is unavailable for this run.","FACT",None)
