@@ -120,13 +120,35 @@ def main():
                 ocr_status = manifest.get("status", "OCR_EVIDENCE_ONLY_NOT_NETLIST")
         except Exception as exc:
             ocr_status = f"unavailable: {type(exc).__name__}: {exc}"
+        # Try the dedicated vector-drawing backend for non-SmartPDF exports.
+        # Its output remains unverified until pin-to-net topology is independently checked.
+        try:
+            from schematic_netlist_backend import run_backend
+            backend = run_backend(args.pdf, args.out, args.pages)
+            backend_status = backend.get("status", "UNKNOWN")
+        except Exception as exc:
+            backend_status = f"unavailable: {type(exc).__name__}: {exc}"
+        with open(os.path.join(args.out, "report.txt"), "w", encoding="utf-8") as f:
+            f.write("\\n".join([
+                f"{base} — strict conversion report",
+                "=" * 60, "",
+                f"PDF pages: {npages}",
+                f"SmartPDF decoder: no eligible PI pages",
+                f"Vector evidence: {vector_status}",
+                f"OCR evidence: {ocr_status}",
+                f"SchematicNetlist backend: {backend_status}", "",
+                "STATUS: BLOCKED_NO_VERIFIED_NETLIST",
+                "A successful external extraction is not proof of correct electrical topology.",
+                "Do not use as manufacturing input until pin-to-net mapping is reviewed and KiCad ERC/topology comparison passes.",
+            ]))
         print(f'  Da luu profile trang: {os.path.join(args.out, "pdf_profile.json")}')
         print(f'  Vector status: {vector_status}')
         print(f'  OCR status: {ocr_status}')
+        print(f'  SchematicNetlist backend: {backend_status}')
         sys.exit(
-            "BLOCKED_NOT_CONVERTED: khong co trang du PI de dung decoder Smart-PDF cu. "
-            "Da phan loai tung trang va thu thap OCR evidence neu kha dung; "
-            "khong tao KiCad/netlist gia khi chua xac dinh pin va connectivity."
+            "BLOCKED_NO_VERIFIED_NETLIST: legacy Smart-PDF decoder is incompatible with this PDF. "
+            "Fallback vector backend was attempted if installed; output is not promoted to PASS "
+            "without independently verified pin-to-net topology and KiCad checks."
         )
 
     all_pads = {}
