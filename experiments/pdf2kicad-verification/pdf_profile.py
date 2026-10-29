@@ -19,7 +19,7 @@ class PageProfile:
 
     def as_dict(self):
         d = asdict(self)
-        d["reasons"] = list(self["reasons"]) if isinstance(self, dict) else list(d["reasons"])
+        d["reasons"] = list(d["reasons"])
         return d
 
 
