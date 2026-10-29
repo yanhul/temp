@@ -1,0 +1,28 @@
+name: PCB geometry render 2605
+on:
+  push:
+    branches:
+      - audit/pcb-render-geometry-2605
+    paths:
+      - 'tools/altium-audit/render_pcb_geometry.py'
+      - '.github/workflows/pcb-geometry-render-2605.yml'
+      - 'audit-input-2605/QI9-2605-A01.PcbDoc'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r tools/altium-audit/requirements.txt cairosvg
+      - name: Render original PcbDoc geometry
+        run: python tools/altium-audit/render_pcb_geometry.py audit-input-2605/QI9-2605-A01.PcbDoc --out render/pcb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qi9-2605-board-render
+          path: render/pcb/
+          if-no-files-found: error
