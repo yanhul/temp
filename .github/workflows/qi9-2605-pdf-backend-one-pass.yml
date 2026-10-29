@@ -57,7 +57,7 @@ jobs:
           for ch in data:
               if quoted:
                   if escaped: escaped = False
-                  elif ch == "\\\\": escaped = True
+                  elif ch == "\\": escaped = True
                   elif ch == '"': quoted = False
                   continue
               if ch == '"': quoted = True
@@ -67,7 +67,7 @@ jobs:
                   if depth < 0: raise SystemExit("BLOCKED: unbalanced closing parenthesis")
           if quoted or depth != 0:
               raise SystemExit(f"BLOCKED: unbalanced KiCad S-expression (depth={depth}, quoted={quoted})")
-          counts = {k: len(re.findall(r"\\(" + k + r"(?=\\s|\\))", data)) for k in ["symbol", "wire", "label", "global_label", "junction", "no_connect", "sheet"]}
+          counts = {k: len(re.findall(r"\(" + k + r"(?=\s|\))", data)) for k in ["symbol", "wire", "label", "global_label", "junction", "no_connect", "sheet"]}
           manifest = {
             "schema": "qi9-native-schdoc-to-kicad/v1",
             "source": "audit-input-2605/QI9-2605-A01.SchDoc",
@@ -81,7 +81,7 @@ jobs:
             "connectivity_equivalence_verified": False,
             "status": "CONVERTED_UNVERIFIED"
           }
-          Path("work/evidence/conversion_manifest.json").write_text(json.dumps(manifest, indent=2) + "\\n")
+          Path("work/evidence/conversion_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
           print(json.dumps(manifest, indent=2))
           if counts["symbol"] == 0 or counts["wire"] == 0:
               raise SystemExit("BLOCKED: schematic lacks symbols or wires; inspect converter output.")
