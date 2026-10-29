@@ -98,18 +98,21 @@ def as_name(obj: Any):
     v = field(obj, "designator", "refdes", "reference", "logical_designator", "physical_designator")
     return str(v).strip() if v is not None and str(v).strip() else None
 
-def required_schematic_unknowns(findings, block_unknown=True):
-    """Return required schematic UNKNOWNs under the project's fail-closed policy.
+def required_schematic_unknowns(findings, block_unknown=True, require_schlib=False):
+    """Return required schematic UNKNOWNs; source-library checks are opt-in.
 
-    UNKNOWN is not a verified defect, so it blocks rather than fails the gate.
-    Explicitly deferred findings must be removed by the caller before invoking
-    this helper; identity evidence gaps are never silently promoted to PASS.
+    UNKNOWN is not a verified defect, so required checks block rather than fail
+    the gate. A missing optional SchLib is an evidence limitation only; project
+    policy may explicitly make it required with require_schlib_source=true.
+    Identity evidence gaps from the actual SchDoc remain fail-closed.
     """
     if not block_unknown:
         return []
     return [
         f for f in findings
-        if f.get("domain") == "schematic" and f.get("status") == "UNKNOWN"
+        if f.get("domain") == "schematic"
+        and f.get("status") == "UNKNOWN"
+        and not (str(f.get("id", "")).startswith("G2-SCHLIB-") and not require_schlib)
     ]
 
 
@@ -1519,6 +1522,7 @@ def main():
     required_unknowns = required_schematic_unknowns(
         gate_findings,
         block_unknown=bool(identity_policy.get("block_on_unsupported_required_check", True)),
+        require_schlib=bool(identity_policy.get("require_schlib_source", False)),
     )
 
     def gate_for(prefix):

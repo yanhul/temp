@@ -79,3 +79,11 @@ def test_absent_schlib_is_informational_not_a_design_blocker(tmp_path):
     assert item[1] == "INFO"
     assert item[3] == "UNKNOWN"
     assert result["files_found"] == 0
+
+def test_optional_schlib_unknown_does_not_block_required_schematic_checks():
+    finding = {"id": "G2-SCHLIB-SOURCE-INVENTORY", "domain": "schematic", "status": "UNKNOWN", "severity": "INFO"}
+    assert audit.audit_local_schlibs  # module loaded
+    assert audit_runner.required_schematic_unknowns([finding]) == []
+    assert audit_runner.required_schematic_unknowns([finding], require_schlib=True) == [finding]
+    identity = {"id": "G2-SCH-IDENTITY-UNRESOLVED-C2", "domain": "schematic", "status": "UNKNOWN", "severity": "INFO"}
+    assert audit_runner.required_schematic_unknowns([identity]) == [identity]
