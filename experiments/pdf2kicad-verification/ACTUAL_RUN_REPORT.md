@@ -79,3 +79,11 @@ Do not promote to PASS merely because the PDF was read, OCR ran, a KiCad file pa
 - Fixed the page-profile classifier so `Layout Note` is explicitly classified as `board_layout_candidate`, alongside BOM, 3D/render, physical-label, and document-index pages. This prevents the layout drawing from being sent through schematic OCR/topology fallback merely because it contains many vector objects.
 - Added regression coverage using the actual extracted page-title phrases. GitHub Actions run [#68](https://github.com/yanhul/temp/actions/runs/40843020754), commit `e4b2c8886447c41598c7ce0f7f64fafda665285f`: compile PASS; **25/25 unit tests PASS**; required-module checks PASS.
 - Scope boundary unchanged: these checks verify page routing and evidence preservation, not recovered electrical semantics. The supplied PDF has vector/OCR evidence, but no independently verified symbol-pin map, junction/crossing decisions, golden netlist comparison, or KiCad ERC evidence. Therefore full schematic conversion remains **BLOCKED**, and no fabricated `.kicad_sch`/netlist is claimed.
+
+
+## Follow-up — dedicated vector backend fallback
+
+- Added `schematic_netlist_backend.py` to invoke the optional `SchematicNetlist` CLI for vector PDFs that do not contain the legacy Smart-PDF PI tokens.
+- The adapter preserves stdout/stderr and an `external_backend_manifest.json`; it deliberately labels successful extraction `EXTRACTED_UNVERIFIED`, never electrical PASS.
+- Integrated this adapter into `main.py`'s non-SmartPDF fallback and added unit tests for unavailable backend, successful-but-unverified extraction, and backend failure.
+- Runtime limitation for this environment: `schematic-netlist` is not installed and outbound package-network access is unavailable, so the adapter cannot be executed against the supplied PDF here. No backend-generated netlist or KiCad schematic is claimed. Final status remains `BLOCKED_NO_VERIFIED_NETLIST` until the backend is installed and its pin-to-net output is checked against the source.
