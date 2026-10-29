@@ -47,6 +47,20 @@ class ProfileTests(unittest.TestCase):
                          objs=[{"pts": [(0, 0), (1, 1)]}] * 50)
         self.assertEqual(profile.kind, "render_or_mechanical_candidate")
 
+    def test_actual_document_page_titles(self):
+        cases = [
+            (["Part list 1"], "bom_or_parts_list_candidate"),
+            (["Layout Note - Unit: mm"], "board_layout_candidate"),
+            (["3D View Note - Unit: mm"], "render_or_mechanical_candidate"),
+            (["Label Note - Unit: mm"], "label_or_mechanical_candidate"),
+            (["Drawing Structure List Revision History List"], "document_index_candidate"),
+        ]
+        for texts, expected in cases:
+            with self.subTest(texts=texts):
+                profile = self.p(texts=[(value, 0, 0, True) for value in texts],
+                                 objs=[{"pts": [(0, 0), (1, 1)]}] * 50)
+                self.assertEqual(profile.kind, expected)
+
     def test_label_page_not_electrical_label(self):
         profile = self.p(texts=[("Label", 0, 0, True)],
                          objs=[{"pts": [(0, 0), (1, 1)]}] * 50)
