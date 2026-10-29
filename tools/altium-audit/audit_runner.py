@@ -660,89 +660,103 @@ def reconstruct(parts, out):
     return parts
 
 def write_schematic_evidence(out, components, netlist, project_id=None, compiled_graph=None):
-    """Emit canonical parser-owned schematic identity, full pin inventory, and net evidence."""
+    """Emit canonical parser-owned schematic identity, full pin inventory, and net evidence.
+
+    Consume altium-monkey's public Design/Netlist projections without assuming
+    parameters are dictionaries: current typed SchDoc records and serialized
+    JSON projections can expose parameters as typed records, dicts, or lists.
+    """
     def f(obj, *keys):
-        if isinstance(obj, dict):
-            for k in keys:
-                if obj.get(k) is not None:
-                    return obj[k]
-        for k in keys:
-            try:
-                v = getattr(obj, k)
-                if v is not None:
-                    return v
-            except Exception:
-                pass
-        return None
+        return field(obj, *keys)
 
     def txt(v):
         return None if v is None else (str(v).strip() or None)
 
+    def items(container):
+        if container is None:
+            return []
+        if isinstance(container, dict):
+            return [{"name": k, "value": v, "text": v} for k, v in container.items()]
+        try:
+            return list(container)
+        except TypeError:
+            return [container]
+
     def props(obj):
-        raw = f(obj, "parameters")
-        return {str(k).strip().lower(): txt(v) for k, v in raw.items() if v is not None} if isinstance(raw, dict) else {}
+        out = {}
+        raw = f(obj, "parameters", "properties")
+        if isinstance(raw, dict):
+            for k, v in raw.items():
+                if isinstance(v, dict):
+                    v = f(v, "text", "value", "parameter_value")
+                if v is not None:
+                    out[str(k).strip().lower()] = txt(v)
+        for child in items(raw) + items(f(obj, "children")):
+            name = txt(f(child, "name", "parameter_name", "key", "key_name"))
+            value = txt(f(child, "text", "value", "parameter_value"))
+            if name and value:
+                out[name.lower()] = value
+        return out
 
     def ref(obj):
-        direct = txt(f(obj, "designator", "refdes", "reference", "logical_designator", "physical_designator"))
+        # Use the same refdes resolver as the parse-contract validator.
+        # Generic component.name is deliberately excluded: it is often a symbol name.
+        direct = as_name(obj)
         if direct:
-            return direct
-        for container in (f(obj, "parameters"), f(obj, "children")):
-            if isinstance(container, dict):
-                for k, v in container.items():
-                    if str(k).strip().lower() == "designator" and txt(v):
-                        return txt(v)
-            else:
-                for child in list(container or []):
-                    name = txt(f(child, "name", "parameter_name", "key", "key_name"))
-                    if name and name.lower() == "designator":
-                        value = txt(f(child, "text", "value", "parameter_value"))
-                        if value:
-                            return value
+            return txt(direct)
+        raw = f(obj, "raw_record", "record")
+        if isinstance(raw, dict):
+            for key in ("DESIGNATOR", "Designator", "designator", "REFDES", "RefDes"):
+                if txt(raw.get(key)):
+                    return txt(raw[key])
         return None
 
     def rec(obj):
         p = props(obj)
+        pin_count = f(obj, "pin_count", "total_pin_count")
+        if pin_count is None:
+            classification = f(obj, "classification")
+            pin_count = f(classification, "pin_count") if classification is not None else None
         return {
             "reference": ref(obj),
-            "declared_value": txt(f(obj, "value", "component_value", "display_value")) or p.get("value"),
+            "declared_value": txt(f(obj, "value", "component_value", "display_value", "comment")) or p.get("value") or p.get("comment"),
             "compiled_value": p.get("value"),
-            "library_id": txt(f(obj, "library_reference", "library_ref", "lib_reference", "library_name", "symbol_name")),
+            "library_id": txt(f(obj, "library_reference", "library_ref", "lib_reference", "library_name", "symbol_name", "design_item_id")),
             "footprint": txt(f(obj, "footprint", "footprint_name")) or p.get("footprint"),
             "mpn": next((p.get(k) for k in (
                 "manufacturer part number", "manufacturer_part_number",
                 "manufacturerpartnumber", "mpn", "partnumber", "part_number"
             ) if p.get(k)), None),
             "description": txt(f(obj, "description", "desc")) or p.get("description"),
-            "pin_count": f(obj, "pin_count"),
+            "pin_count": pin_count,
             "properties": p,
         }
 
     records = [rec(x) for x in components or [] if ref(x)]
     by_ref = {str(x["reference"]): x for x in records}
 
-    # Netlist is the authoritative connected-pin/net relation.
+    # The library's compiled Netlist b0 is authoritative for connected pins.
     connected = {}
-    for n in (netlist or {}).get("nets", []) or []:
-        nn = txt(f(n, "name", "uid"))
+    for n in (f(netlist, "nets") or []):
+        nn = txt(f(n, "name", "uid", "canonical_name"))
         for t in f(n, "terminals") or []:
-            rr = txt(f(t, "designator", "refdes", "reference"))
-            pp = txt(f(t, "pin", "pin_designator", "number"))
+            rr = txt(f(t, "physical_designator", "designator", "refdes", "reference", "component_designator"))
+            pp = txt(f(t, "pin_designator", "pin", "number", "pin_number", "physical_pin_designator"))
             if rr and pp:
                 connected[(rr, pp)] = {
                     "pin": pp,
-                    "pin_name": txt(f(t, "pin_name", "name")),
-                    "electrical_type": txt(f(t, "pin_type", "electrical_type")),
+                    "pin_name": txt(f(t, "pin_name", "name", "display_name")),
+                    "electrical_type": txt(f(t, "pin_type", "electrical_type", "electrical_kind")),
                     "connected_net": nn,
                 }
 
-    # The compiled graph carries the complete terminal inventory, including
-    # pins that have no net. Do not mistake "not connected to a net" for
-    # "pin does not exist".
+    # Prefer the compiled graph's complete physical terminal inventory, which
+    # includes unconnected pins and repeated/hierarchical occurrences.
     occurrence_to_ref = {}
     if isinstance(compiled_graph, dict):
         for occ in compiled_graph.get("component_occurrences", []) or []:
-            rr = txt(f(occ, "source_designator", "physical_designator", "display_designator"))
-            oid = txt(f(occ, "id"))
+            rr = txt(f(occ, "source_designator", "physical_designator", "display_designator", "designator"))
+            oid = txt(f(occ, "id", "occurrence_id"))
             if rr and oid:
                 occurrence_to_ref[oid] = rr
 
@@ -752,26 +766,26 @@ def write_schematic_evidence(out, components, netlist, project_id=None, compiled
         for term in compiled_graph.get("terminal_occurrences", []) or []:
             if not isinstance(term, dict):
                 continue
-            rr = occurrence_to_ref.get(txt(term.get("component_occurrence_ref")))
-            pp = txt(term.get("pin_designator"))
+            occurrence_id = txt(f(term, "component_occurrence_ref", "component_occurrence_id", "component_ref"))
+            rr = occurrence_to_ref.get(occurrence_id)
+            pp = txt(f(term, "pin_designator", "physical_pin_designator", "pin_number", "pin"))
             if not rr or not pp:
                 continue
             key = (rr, pp)
             t = {
                 "pin": pp,
-                "pin_name": txt(term.get("name")),
-                "electrical_type": None,
+                "pin_name": txt(f(term, "name", "pin_name", "display_name")),
+                "electrical_type": txt(f(term, "electrical_type", "pin_type", "electrical_kind")),
                 "connected_net": None,
-                "resolution_diagnostics": list(term.get("resolution_diagnostics") or []),
+                "resolution_diagnostics": list(f(term, "resolution_diagnostics") or []),
             }
             t.update(connected.get(key, {}))
             inventory.setdefault(rr, {})[pp] = t
             if t["resolution_diagnostics"]:
                 inventory_diag.setdefault(rr, {})[pp] = t["resolution_diagnostics"]
 
-    # If the parser graph is unavailable, fall back to connected terminals only.
-    # The parse contract will then fail closed rather than silently treating a
-    # partial connected-terminal view as a complete pin inventory.
+    # If graph inventory is absent, connected pins alone are not considered a
+    # complete inventory; the parse contract below remains fail-closed.
     if not inventory:
         for (rr, pp), t in connected.items():
             inventory.setdefault(rr, {})[pp] = dict(t)
