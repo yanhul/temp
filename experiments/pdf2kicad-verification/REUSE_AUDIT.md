@@ -20,6 +20,8 @@ Input: `[QI9-2605-A01] Module ADC(1).pdf`.
 ## Local test evidence
 
 - `test_pdf_profile.py`: **6 passed** (run locally on 2026-10-29).
+- `python -m py_compile` across the 12 local Python modules: **exit 0** when using a separate bytecode cache directory (the mounted archive's existing `__pycache__` was not writable; that was an environment permission issue, not a syntax error).
+- Real invocation `main.py '[QI9-2605-A01] Module ADC(1).pdf' -o /mnt/data/pdf2kicad_actual_test --pages 5`: **exit 1**, 8.38 seconds; reports `flattened_vector_text_candidate` (`PI=0, text=19, vector=11323, images=0`) and safely stops with `khong co trang nao du dieu kien Smart-PDF decoder`. This is the expected fail-closed behavior, not a successful conversion.
 - The profile pass was then run against pages 5–13 using the existing `pdfx.extract_page` extractor. All nine pages classify as `flattened_vector_text_candidate`, confidence `medium`, with 0 PI tokens. This is an intake classification only; it is not proof of correct symbol/pin/net reconstruction.
 - Extraction profiling of pages 5–13 took about 58.85 seconds on this runtime. This is evidence of avoidable overhead in the current page extraction path, not a benchmark for either upstream project.
 - The upstream projects have been source-inspected through GitHub, but **neither upstream package has been installed and executed against this exact PDF in the local runtime**. Therefore there is no upstream end-to-end PASS yet.
