@@ -48,10 +48,21 @@ def main() -> int:
         if run.returncode:
             print(f"BLOCKED: pdftocairo page {pno} failed: {run.stderr[-2000:]}", file=sys.stderr)
             return 2
-        candidates = sorted(a.out.glob(f"page{pno}*.svg"))
+        # Poppler versions differ: SVG may be named prefix.svg or exactly prefix.
+        candidates = [p for p in a.out.glob(f"page{pno}*")
+                      if p.is_file() and p.name != f"page{pno}.geometry.json"]
+        candidates = [p for p in candidates
+                      if p.name == f"page{pno}" or p.name == f"page{pno}.svg"
+                      or p.name.startswith(f"page{pno}-")]
         if not candidates:
-            print(f"BLOCKED: no SVG emitted for page {pno}", file=sys.stderr); return 2
-        svg = candidates[-1]
+            print(f"BLOCKED: no SVG emitted for page {pno}; expected prefix {prefix}", file=sys.stderr)
+            return 2
+        emitted = sorted(candidates, key=lambda p: (p.suffix == ".svg", p.name))[-1]
+        svg = a.out / f"page{pno}.svg"
+        if emitted != svg:
+            if svg.exists():
+                svg.unlink()
+            emitted.replace(svg)
         try:
             root = ET.parse(svg).getroot()
         except Exception as exc:
