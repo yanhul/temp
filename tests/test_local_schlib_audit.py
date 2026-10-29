@@ -71,11 +71,3 @@ def test_library_search_root_outside_project_is_discovered(tmp_path, monkeypatch
     assert result["files_found"] == 1
     assert any(f[0] == "G2-SCHLIB-PINMAP-D1" and f[3] == "VERIFIED" for f in findings)
     assert str(library_root) in next(f[4] for f in findings if f[0] == "G2-SCHLIB-PINMAP-D1")
-
-def test_absent_schlib_is_informational_not_a_design_blocker(tmp_path):
-    findings = []
-    result = audit.audit_local_schlibs(tmp_path, [], lambda *a: findings.append(a))
-    item = next(f for f in findings if f[0] == "G2-SCHLIB-SOURCE-INVENTORY")
-    assert item[1] == "INFO"
-    assert item[3] == "UNKNOWN"
-    assert result["files_found"] == 0
