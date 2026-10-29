@@ -98,6 +98,7 @@ def resolve_declared_vs_compiled(
     compiled_library: str | None,
     observed_pins: dict[str, dict[str, Any]] | None,
     declared_profile_override: str | None = None,
+    compiled_part_identity: str | None = None,
 ) -> dict[str, Any]:
     """Return CONSISTENT, CONTRADICTION, or UNKNOWN.
 
@@ -119,7 +120,11 @@ def resolve_declared_vs_compiled(
         }
 
     declared_spec = AUTHORITATIVE_PART_SPECS.get(effective_declared)
-    compiled_spec = AUTHORITATIVE_PART_SPECS.get(compiled)
+    # A compiled library/symbol identifier is not automatically the physical
+    # part fitted by the user. Compare electrical/package specifications only
+    # when a separate, explicitly sourced physical-part identity is supplied.
+    physical_compiled = profile_key(compiled_part_identity) if compiled_part_identity else ""
+    compiled_spec = AUTHORITATIVE_PART_SPECS.get(physical_compiled)
     if declared_spec and compiled_spec:
         conflicts = {
             key: {"declared": declared_spec.get(key), "compiled": compiled_spec.get(key)}
