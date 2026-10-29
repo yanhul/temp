@@ -1,0 +1,36 @@
+name: PDF2KiCad branch syntax check
+on:
+  push:
+    branches:
+      - feat/pdf2kicad-verification-integration
+    paths:
+      - 'experiments/pdf2kicad-verification/**'
+      - '.github/workflows/pdf2kicad-syntax.yml'
+  pull_request:
+    paths:
+      - 'experiments/pdf2kicad-verification/**'
+      - '.github/workflows/pdf2kicad-syntax.yml'
+  workflow_dispatch:
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/pdf2kicad-verification-integration
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile all Python modules
+        run: python -m py_compile experiments/pdf2kicad-verification/*.py
+      - name: Check expected modules exist
+        run: |
+          test -f experiments/pdf2kicad-verification/pdfx.py
+          test -f experiments/pdf2kicad-verification/padsx.py
+          test -f experiments/pdf2kicad-verification/netsx.py
+          test -f experiments/pdf2kicad-verification/main.py
+          test -f experiments/pdf2kicad-verification/gen.py
+          test -f experiments/pdf2kicad-verification/kcx.py
+          test -f experiments/pdf2kicad-verification/validate_output.py
+          test -f experiments/pdf2kicad-verification/dump_debug.py
+          test -f experiments/pdf2kicad-verification/verify_netlist.py
