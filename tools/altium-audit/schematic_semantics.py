@@ -384,9 +384,18 @@ def run(components,netlist,add,identity_overrides=None,skip_hcpl=False):
                     "Authoritative NC pin(s) are connected: %s." % identity["connected_nc_pins"],
                     "VERIFIED",ref)
             elif identity["state"]=="UNKNOWN":
-                add("G2-SCH-IDENTITY-UNRESOLVED-"+ref,"INFO","schematic","UNKNOWN",
-                    "Declared value %r and compiled symbol %r lack sufficient authoritative evidence to verify physical-part identity: %s"
-                    %(i["value"],i.get("library"),identity["reason"]),"FACT",ref)
+                # Generic symbols whose labels match the declared value (e.g.
+                # Res1/Cap) are not physical MPN claims. Emit an identity
+                # blocker only when there is a meaningful mismatch, generated
+                # supplier suffix, or conflicting MPN metadata to investigate.
+                library_id = str(i.get("library") or "")
+                generated_suffix = bool(re.search(r"[_-]c[0-9a-f]{8,}$", library_id, re.IGNORECASE))
+                mpn_conflict = bool(i.get("mpn") and _norm(i.get("mpn")) != _norm(i.get("value")))
+                identity_differs = _norm(i.get("value")) != _norm(library_id)
+                if identity_differs or generated_suffix or mpn_conflict:
+                    add("G2-SCH-IDENTITY-UNRESOLVED-"+ref,"INFO","schematic","UNKNOWN",
+                        "Declared value %r and compiled symbol %r lack sufficient authoritative evidence to verify physical-part identity: %s"
+                        %(i["value"],library_id,identity["reason"]),"FACT",ref)
 
         # Emit a per-instance isolation path receipt. This is diagnostic evidence only:
         # it never downgrades an authoritative identity/NC blocker and never repairs wiring.
