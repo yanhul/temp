@@ -1449,10 +1449,15 @@ def main():
                     "UNKNOWN", "FACT",
                     " Net-scoped region/fill exists; plane connectivity is not proven."
                 )
+            elif info.get("topology_incomplete"):
+                status, confidence, suffix = (
+                    "UNKNOWN", "FACT",
+                    " Parser could not assign all potentially bridging copper geometry to a net; disconnection is not proven."
+                )
             else:
                 status, confidence, suffix = (
                     "FAIL", "VERIFIED",
-                    " No net-scoped region/fill was exposed to bridge the disconnected graph."
+                    " Complete net-scoped copper geometry contains disconnected components."
                 )
             add(findings,f"G7-TOPOLOGY-{n}","HIGH","routing",status,
                 f"Independent copper graph: {info['terminal_nodes']} pads, {info['route_segments']} tracks, "
