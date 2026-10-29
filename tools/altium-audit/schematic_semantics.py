@@ -367,11 +367,11 @@ def run(components,netlist,add,identity_overrides=None,skip_hcpl=False):
             raise RuntimeError("authoritative part_identity resolver unavailable for HCPL-0600/HCPL-3120; refusing schematic PASS")
         if resolve_declared_vs_compiled is not None and i.get("value") and i.get("library"):
             override = identity_overrides.get(str(ref)) or identity_overrides.get(str(i.get("value"))) or identity_overrides.get(_norm(i.get("value")))
-            # Prefer the explicit MPN as the physical identity source. The
-            # library ID describes the compiled symbol and may be generic or
-            # stale; canonical pin evidence still checks the symbol mapping
-            # against the authoritative physical-part profile.
-            identity=resolve_declared_vs_compiled(i["value"],i.get("mpn") or i["library"],pins,override)
+            # The library ID is the compiled symbol identity. MPN/value
+            # properties may be stale component metadata and are not proof of
+            # the user's selected physical part; physical-part specification
+            # conflicts require a separate authoritative identity source.
+            identity=resolve_declared_vs_compiled(i["value"],i.get("library"),pins,override)
             if override:
                 add("G2-SCH-IDENTITY-OVERRIDE-"+ref,"INFO","schematic","VERIFIED",
                     "Explicit project identity override: declared %r is audited against canonical profile %r; original declared value remains in evidence." % (i.get("value"),override),
