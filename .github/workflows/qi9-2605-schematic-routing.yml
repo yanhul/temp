@@ -84,7 +84,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr
-          python -m pip install 'git+https://github.com/sphrd/SchematicNetlist.git#egg=schematic-netlist[image]'
+          python -m pip install 'git+https://github.com/sphrd/SchematicNetlist.git'
+          python -m pip install opencv-python-headless pytesseract numpy
       - name: Backend health check
         run: schematic-netlist doctor
       - name: Analyze uploaded QI9 PDF
