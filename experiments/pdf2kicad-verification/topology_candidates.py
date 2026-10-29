@@ -46,7 +46,7 @@ def _intersection(a, b, c, d, tol=EPS):
     return None, "disjoint"
 
 
-def build_geometric_topology(lines, tolerance=EPS):
+def build_geometric_topology(lines, tolerance=EPS, max_candidate_pairs=250000):
     """Split vector lines at geometric intersections; never emits electrical nets.
 
     Input lines: [{"a":[x,y], "b":[x,y], ...}, ...].
@@ -72,6 +72,7 @@ def build_geometric_topology(lines, tolerance=EPS):
     ordered_indices = sorted(range(len(normalized)), key=lambda i: normalized[i]["bbox"][0])
     active = []
     candidate_pair_count = 0
+    topology_truncated = False
     for i in ordered_indices:
         current = normalized[i]
         xmin, ymin, xmax, ymax = current["bbox"]
@@ -81,6 +82,9 @@ def build_geometric_topology(lines, tolerance=EPS):
             _, oymin, _, oymax = other["bbox"]
             if oymax < ymin - tolerance or ymax < oymin - tolerance:
                 continue
+            if candidate_pair_count >= max_candidate_pairs:
+                topology_truncated = True
+                break
             candidate_pair_count += 1
             p, kind = _intersection(other["a"], other["b"], current["a"], current["b"], tolerance)
             if p is None:
@@ -92,6 +96,8 @@ def build_geometric_topology(lines, tolerance=EPS):
                 "geometry_kind": kind,
                 "electrical_status": "UNKNOWN_NO_JUNCTION_AUTHORITY",
             })
+        if topology_truncated:
+            break
         active.append(i)
 
     edges = []
@@ -129,9 +135,12 @@ def build_geometric_topology(lines, tolerance=EPS):
         "schema": "pdf2kicad.geometric-topology-candidates/1",
         "input_line_count": len(normalized),
         "candidate_pair_count": candidate_pair_count,
+        "candidate_pair_limit": max_candidate_pairs,
+        "topology_truncated": topology_truncated,
         "split_edge_count": len(edges),
         "intersection_candidate_count": len(nodes),
         "edges": edges, "intersection_candidates": nodes,
         "electrical_connectivity": "NOT_INFERRED",
-        "warning": "Geometric crossings/endpoints are not electrical junction proof.",
+        "warning": ("Candidate-pair budget reached; topology is partial. " if topology_truncated else "") +
+                   "Geometric crossings/endpoints are not electrical junction proof.",
     }
