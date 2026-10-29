@@ -3,6 +3,7 @@
 from __future__ import annotations
 import argparse, inspect, json
 from pathlib import Path
+import altium_monkey
 from altium_monkey import AltiumPcbDoc
 
 def main():
@@ -46,6 +47,22 @@ def main():
                 meta.setdefault("errors",[]).append({"method":name,"kwargs":kwargs,"error":repr(e)})
         if name=="to_layer_svgs" and meta["rendered"]:
             break
+    # Surface rendering requires the library's enum, not the literal string "TOP".
+    enum_cls=getattr(altium_monkey,"PCB_SurfaceSide",None)
+    fn=getattr(pcb,"to_surface_svg",None)
+    if enum_cls is not None and callable(fn):
+        for side_name in ("TOP","BOTTOM"):
+            side=getattr(enum_cls,side_name,None)
+            if side is None:
+                continue
+            try:
+                raw=fn(side)
+                if isinstance(raw,str) and "<svg" in raw[:2000]:
+                    target=out/("surface_"+side_name.lower()+".svg")
+                    target.write_text(raw)
+                    meta["rendered"][target.name]={"bytes":target.stat().st_size,"via":"to_surface_svg","side":side_name}
+            except Exception as e:
+                meta.setdefault("errors",[]).append({"method":"to_surface_svg","side":side_name,"error":repr(e)})
     # Save introspection and board outline evidence even if rendering API differs.
     board=getattr(pcb,"board",None)
     outline=getattr(board,"outline",None) if board is not None else None
