@@ -22,7 +22,8 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install parser dependencies
-        run: python -m pip install --upgrade pip pymupdf pdfminer.six pypdf kiutils schematic-netlist
+        run: python -m pip install --upgrade pip pymupdf pdfminer.six pypdf kiutils
+          python -m pip install 'git+https://github.com/sphrd/SchematicNetlist.git'
       - name: Smoke-test SchematicNetlist CLI
         run: |
           schematic-netlist --help
