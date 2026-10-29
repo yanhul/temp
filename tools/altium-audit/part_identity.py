@@ -139,11 +139,19 @@ def resolve_declared_vs_compiled(
     compiled_profile = AUTHORITATIVE_PIN_PROFILES.get(compiled)
 
     if not declared_profile or not compiled_profile:
-        if declared == compiled:
-            return {"state": "CONSISTENT", "reason": "Declared and compiled identities match.", "evidence": []}
+        # Matching strings are only a label match. They do not prove that the
+        # compiled symbol's pin functions match the declared physical part.
+        # A sourced part specification can establish part identity, but pin
+        # mapping remains a separate verification requirement.
+        if declared == compiled and declared_spec and compiled_spec and declared_spec.get("source") and compiled_spec.get("source"):
+            return {
+                "state": "CONSISTENT",
+                "reason": "Declared and compiled identities match the same sourced authoritative part specification; pin mapping remains a separate check.",
+                "evidence": [{"attribute": "part_spec_source", "declared": declared_spec["source"], "compiled": compiled_spec["source"]}],
+            }
         return {
             "state": "UNKNOWN",
-            "reason": "Different identities are present, but one or both lack an authoritative pin fingerprint.",
+            "reason": "A label match or library suffix is not a pin fingerprint; one or both identities lack an authoritative pin-function profile.",
             "evidence": [],
         }
 
