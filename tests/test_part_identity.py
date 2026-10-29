@@ -19,6 +19,11 @@ def test_hcpl0600_vs_hcpl3120_is_contradiction_when_pin_fingerprint_matches_comp
     assert result["state"] == "CONTRADICTION"
 
 
+def test_generated_altium_library_suffix_does_not_create_false_unknown_identity():
+    result = resolve_declared_vs_compiled("CH9121T", "ch9121t_c45354919", {})
+    assert result["state"] == "CONSISTENT"
+
+
 def test_same_identity_is_consistent():
     result = resolve_declared_vs_compiled("HCPL-0600", "HCPL-0600", {})
     assert result["state"] == "CONSISTENT"
