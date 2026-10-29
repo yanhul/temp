@@ -1,9 +1,14 @@
-name: qi9-2605-pdf-backend-one-pass
+name: qi9-2605-native-schematic-to-kicad
 
 on:
   push:
     paths:
+      - 'audit-input-2605/QI9-2605-A01.SchDoc'
       - '[QI9-2605-A01] Module ADC.pdf'
+      - '.github/workflows/qi9-2605-pdf-backend-one-pass.yml'
+  pull_request:
+    paths:
+      - 'audit-input-2605/QI9-2605-A01.SchDoc'
       - '.github/workflows/qi9-2605-pdf-backend-one-pass.yml'
   workflow_dispatch:
 
@@ -11,63 +16,81 @@ permissions:
   contents: read
 
 jobs:
-  pdf-backend:
+  native-schdoc-to-kicad:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
         with:
-          python-version: '3.11'
-      - name: Install specialist PDF schematic backend
-        run: python -m pip install 'git+https://github.com/sphrd/SchematicNetlist.git'
-      - name: Backend health check
-        run: schematic-netlist doctor
-      - name: Analyze the uploaded QI9 PDF
-        id: analyze
+          go-version: '1.24.x'
+          cache: false
+      - name: Confirm authoritative 2605 source exists
         shell: bash
         run: |
-          set +e
-          schematic-netlist analyze "[QI9-2605-A01] Module ADC.pdf" -o work/pdf-backend --no-excel --no-spice --no-cache > work/backend.stdout.txt 2> work/backend.stderr.txt
-          rc=$?
-          set -e
-          printf '%s\n' "$rc" > work/backend.exit_code
-          exit "$rc"
-      - name: Build truthful run manifest
-        if: always()
+          test -s 'audit-input-2605/QI9-2605-A01.SchDoc'
+          sha256sum 'audit-input-2605/QI9-2605-A01.SchDoc'
+      - name: Convert native Altium SchDoc with existing Go converter
         shell: bash
         run: |
-          mkdir -p work
+          mkdir -p work/kicad work/svg work/evidence
+          go run github.com/rveen/golib/formats/altium/cmd/schconv@latest -kicad -out work/kicad 'audit-input-2605/QI9-2605-A01.SchDoc' 2>&1 | tee work/evidence/kicad-conversion.log
+      - name: Render source schematic to SVG for visual audit
+        shell: bash
+        run: |
+          go run github.com/rveen/golib/formats/altium/cmd/schconv@latest -svg -out work/svg 'audit-input-2605/QI9-2605-A01.SchDoc' 2>&1 | tee work/evidence/svg-conversion.log
+      - name: Validate generated schematic structure and record counts
+        shell: bash
+        run: |
           python - <<'PY'
-          import json, os, subprocess
           from pathlib import Path
-          root = Path("work")
-          outputs = []
-          for p in sorted(root.rglob("*")):
-              if p.is_file() and p.name != "run_manifest.json":
-                  outputs.append({"path": str(p), "bytes": p.stat().st_size})
-          try:
-              rc = int((root / "backend.exit_code").read_text().strip())
-          except Exception:
-              rc = None
+          import json, re, hashlib
+          out = Path("work/kicad")
+          files = sorted(out.glob("*.kicad_sch"))
+          if len(files) != 1 or files[0].stat().st_size < 1000:
+              raise SystemExit(f"BLOCKED: expected one nontrivial .kicad_sch; found {[(p.name,p.stat().st_size) for p in files]}")
+          p = files[0]
+          data = p.read_text(encoding="utf-8", errors="replace")
+          # Basic syntax sanity only; not a substitute for KiCad ERC/connectivity verification.
+          depth = 0
+          quoted = escaped = False
+          for ch in data:
+              if quoted:
+                  if escaped: escaped = False
+                  elif ch == "\\\\": escaped = True
+                  elif ch == '"': quoted = False
+                  continue
+              if ch == '"': quoted = True
+              elif ch == '(': depth += 1
+              elif ch == ')':
+                  depth -= 1
+                  if depth < 0: raise SystemExit("BLOCKED: unbalanced closing parenthesis")
+          if quoted or depth != 0:
+              raise SystemExit(f"BLOCKED: unbalanced KiCad S-expression (depth={depth}, quoted={quoted})")
+          counts = {k: len(re.findall(r"\\(" + k + r"(?=\\s|\\))", data)) for k in ["symbol", "wire", "label", "global_label", "junction", "no_connect", "sheet"]}
           manifest = {
-              "schema": "qi9-pdf-backend-run/v1",
-              "input": "[QI9-2605-A01] Module ADC.pdf",
-              "backend": "SchematicNetlist",
-              "backend_exit_code": rc,
-              "status": "EXTRACTED_UNVERIFIED" if rc == 0 else "BLOCKED_BACKEND_FAILURE",
-              "kicad_schematic_generated": False,
-              "netlist_connectivity_independently_verified": False,
-              "outputs": outputs,
+            "schema": "qi9-native-schdoc-to-kicad/v1",
+            "source": "audit-input-2605/QI9-2605-A01.SchDoc",
+            "source_sha256": hashlib.sha256(Path("audit-input-2605/QI9-2605-A01.SchDoc").read_bytes()).hexdigest(),
+            "output": str(p),
+            "output_bytes": p.stat().st_size,
+            "output_sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
+            "counts": counts,
+            "sexpr_balanced": True,
+            "kicad_cli_erc_run": False,
+            "connectivity_equivalence_verified": False,
+            "status": "CONVERTED_UNVERIFIED"
           }
-          (root / "run_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          Path("work/evidence/conversion_manifest.json").write_text(json.dumps(manifest, indent=2) + "\\n")
           print(json.dumps(manifest, indent=2))
+          if counts["symbol"] == 0 or counts["wire"] == 0:
+              raise SystemExit("BLOCKED: schematic lacks symbols or wires; inspect converter output.")
           PY
-      - name: Upload backend outputs and logs
+      - name: Upload KiCad schematic and conversion evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: qi9-2605-pdf-backend-one-pass
+          name: qi9-2605-native-kicad-schematic
           path: work/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 90
