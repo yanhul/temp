@@ -46,7 +46,7 @@ def _non_schematic_page(text):
         return ("render_or_mechanical_candidate", "high",
                 "Page title explicitly identifies a 3D/rendered view",
                 "Preserve as visual/mechanical evidence; exclude from netlist extraction.")
-    if re.search(r"\b(pcb layout|board layout|layout drawing|layout note)\b", normalized):
+    if re.search(r"\\b(pcb layout|board layout|layout drawing|layout note|layout)\\b", normalized):
         return ("board_layout_candidate", "high",
                 "Page title explicitly identifies a board/layout drawing",
                 "Preserve as board-layout evidence; exclude from schematic netlist extraction.")
