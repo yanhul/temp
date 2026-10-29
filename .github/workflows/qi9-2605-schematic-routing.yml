@@ -91,6 +91,11 @@ jobs:
         run: |
           mkdir -p work/pdf-primitives
           python tools/pdf-schematic/extract_primitives.py "[QI9-2605-A01] Module ADC.pdf" --out work/pdf-primitives/primitives.json > work/pdf-primitives/summary.stdout.json
+      - name: Extract OCR and vector evidence for every PDF page
+        shell: bash
+        run: |
+          python -m pip install pillow
+          python tools/pdf-schematic/extract_page_evidence.py "[QI9-2605-A01] Module ADC.pdf" --out work/page-evidence --dpi 216 --min-confidence 20
       - name: Backend health check
         run: schematic-netlist doctor
       - name: Analyze uploaded QI9 PDF
