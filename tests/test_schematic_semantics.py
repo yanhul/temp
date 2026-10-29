@@ -192,7 +192,7 @@ def test_hcpl_bypass_accepts_common_100nf_value_spellings():
 
 
 
-def test_known_smaj_voltage_rating_mismatch_is_blocker_in_semantic_gate():
+def test_compiled_library_and_mpn_metadata_do_not_prove_physical_tvs_identity():
     component = {
         "designator": "D12",
         "value": "SMAJ15CA",
@@ -201,14 +201,14 @@ def test_known_smaj_voltage_rating_mismatch_is_blocker_in_semantic_gate():
         "pin_count": 2,
     }
     findings = run_checker(component, [])
-    finding = next(x for x in findings if x[0] == "G2-SCH-IDENTITY-EVIDENCE-D12")
-    assert finding[1] == "BLOCKER"
+    finding = next(x for x in findings if x[0] == "G2-SCH-IDENTITY-UNRESOLVED-D12")
+    assert finding[1] == "INFO"
     assert finding[2] == "schematic"
-    assert finding[3] == "FAIL"
-    assert "reverse_standoff_v" in finding[4]
+    assert finding[3] == "UNKNOWN"
+    assert "pin fingerprint" in finding[4]
 
 
-def test_authoritative_mpn_overrides_stale_library_identity_for_physical_part_check():
+def test_mpn_metadata_does_not_override_compiled_symbol_identity_or_prove_physical_part():
     evidence = {
         "schema": "altium-schematic-evidence.v1",
         "status": "VERIFIED",
@@ -225,7 +225,7 @@ def test_authoritative_mpn_overrides_stale_library_identity_for_physical_part_ch
     }
     findings = []
     ss.run(evidence, None, lambda *args: findings.append(args))
-    identity = [item for item in findings if item[0] == "G2-SCH-IDENTITY-EVIDENCE-D12"]
+    identity = [item for item in findings if item[0] == "G2-SCH-IDENTITY-UNRESOLVED-D12"]
     assert identity
-    assert identity[0][3] == "FAIL"
-    assert "directionality" in identity[0][4]
+    assert identity[0][3] == "UNKNOWN"
+    assert "pin fingerprint" in identity[0][4]
