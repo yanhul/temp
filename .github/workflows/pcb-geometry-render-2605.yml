@@ -26,3 +26,5 @@ jobs:
           name: qi9-2605-board-render
           path: render/pcb/
           if-no-files-found: error
+
+# Fresh rerun requested after raw-geometry capture patch.
