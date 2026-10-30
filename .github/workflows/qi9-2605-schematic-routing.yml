@@ -79,8 +79,9 @@ jobs:
           p = root / "phase_receipt.json"
           manifest = {
               "schema": "qi9-schematic-phase-evidence-manifest/v1",
-              "repository": os.environ.get("GITHUB_REPOSITORY"),
-              "commit_sha": os.environ.get("GITHUB_SHA"),
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "commit_sha": os.environ["GITHUB_SHA"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
               "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
               "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
               "files": {"phase_receipt.json": {
@@ -123,17 +124,30 @@ jobs:
           from pathlib import Path
           root = Path("work-2605/schematic-evidence-roundtrip")
           manifest = json.loads((root / "evidence-manifest.json").read_text(encoding="utf-8"))
-          if manifest.get("commit_sha") != os.environ.get("GITHUB_SHA"):
-              raise SystemExit("BLOCKED: schematic artifact commit lineage mismatch")
-          if manifest.get("workflow_run_id") != int(os.environ["GITHUB_RUN_ID"]):
-              raise SystemExit("BLOCKED: schematic artifact run lineage mismatch")
+          expected_lineage = {
+              "schema": "qi9-schematic-phase-evidence-manifest/v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "commit_sha": os.environ["GITHUB_SHA"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+          }
+          for key, value in expected_lineage.items():
+              if manifest.get(key) != value:
+                  raise SystemExit(f"BLOCKED: schematic artifact lineage/schema mismatch: {key}")
+          required = {"phase_receipt.json"}
+          if set(manifest.get("files", {})) != required:
+              raise SystemExit("BLOCKED: schematic evidence manifest file set mismatch")
+          actual_files = {p.name for p in root.iterdir() if p.is_file()} - {"evidence-manifest.json"}
+          if actual_files != required:
+              raise SystemExit("BLOCKED: unexpected or missing schematic artifact files")
           for name, expected in manifest["files"].items():
               p = root / name
               if not p.is_file() or p.stat().st_size != expected["bytes"]:
                   raise SystemExit(f"BLOCKED: schematic evidence missing/size mismatch: {name}")
               if hashlib.sha256(p.read_bytes()).hexdigest() != expected["sha256"]:
                   raise SystemExit(f"BLOCKED: schematic evidence hash mismatch: {name}")
-          print("SCHEMATIC_ARTIFACT_UPLOAD_AND_ROUNDTRIP_SHA256_VERIFIED")
+          print("SCHEMATIC_ARTIFACT_UPLOAD_AND_ROUNDTRIP_SHA256_LINEAGE_VERIFIED")
           PY
 
 
@@ -257,12 +271,23 @@ jobs:
           from pathlib import Path
           root = Path("work/evidence-roundtrip")
           manifest = json.loads((root / "evidence-manifest.json").read_text(encoding="utf-8"))
-          if manifest.get("repository") != os.environ.get("GITHUB_REPOSITORY"):
-              raise SystemExit("BLOCKED: artifact repository lineage mismatch")
-          if manifest.get("commit_sha") != os.environ.get("GITHUB_SHA"):
-              raise SystemExit("BLOCKED: artifact commit lineage mismatch")
-          if manifest.get("workflow_run_id") != int(os.environ["GITHUB_RUN_ID"]):
-              raise SystemExit("BLOCKED: artifact run lineage mismatch")
+          expected_lineage = {
+              "schema": "qi9-pdf-ir-evidence-manifest/v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "commit_sha": os.environ["GITHUB_SHA"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+          }
+          for key, value in expected_lineage.items():
+              if manifest.get(key) != value:
+                  raise SystemExit(f"BLOCKED: PDF IR artifact lineage/schema mismatch: {key}")
+          required = {"run-summary.json", "normalized_schematic_ir.json", "connectivity_candidates.json"}
+          if set(manifest.get("files", {})) != required:
+              raise SystemExit("BLOCKED: evidence manifest file set is not the approved minimal set")
+          actual_files = {p.name for p in root.iterdir() if p.is_file()} - {"evidence-manifest.json"}
+          if actual_files != required:
+              raise SystemExit("BLOCKED: unexpected or missing PDF IR artifact files")
           for name, expected in manifest.get("files", {}).items():
               p = root / name
               if not p.is_file():
