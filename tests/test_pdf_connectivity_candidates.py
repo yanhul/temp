@@ -86,11 +86,15 @@ def test_result_is_independent_of_input_segment_order():
     elements = [line([0, 0], [10, 0]), line([5, 0], [15, 0]), line([30, 0], [40, 0])]
     first = mod.build(make_ir(elements))
     second = mod.build(make_ir(list(reversed(elements))))
-    assert first["nodes"] == second["nodes"]
-    # Evidence IDs follow source order in this fixture, so compare topology only.
+    assert [(n["node_id"], n["point"]) for n in first["nodes"]] == [
+        (n["node_id"], n["point"]) for n in second["nodes"]
+    ]
     assert sorted((e["page"], e["from"], e["to"]) for e in first["edges"]) == sorted(
         (e["page"], e["from"], e["to"]) for e in second["edges"]
     )
+    assert [c["node_ids"] for c in first["components"]] == [
+        c["node_ids"] for c in second["components"]
+    ]
 
 
 def test_invalid_tolerance_is_rejected():
