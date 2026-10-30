@@ -141,6 +141,7 @@ jobs:
               f"- Run: `{manifest['workflow_run_id']}` (attempt `{manifest['workflow_run_attempt']}`)",
               "- Conversion: **CONVERTED_UNVERIFIED**",
               "- Electrical connectivity: **NOT VERIFIED**",
+              "- Artifact archival is not claimed unless upload and round-trip verification succeed.",
               "",
               "Files and SHA-256:"
           ]
@@ -157,17 +158,6 @@ jobs:
           path: work/evidence/
           if-no-files-found: error
           retention-days: 3
-      - name: Report native KiCad evidence storage success
-        if: steps.upload_native_kicad_evidence.outcome == 'success'
-        shell: bash
-        run: |
-          echo "### Native KiCad evidence storage: UPLOADED" >> "$GITHUB_STEP_SUMMARY"
-      - name: Report native KiCad evidence storage blocked
-        if: steps.upload_native_kicad_evidence.outcome != 'success'
-        shell: bash
-        run: |
-          echo "### Native KiCad evidence storage: BLOCKED" >> "$GITHUB_STEP_SUMMARY"
-          echo "Required native KiCad artifact upload failed; conversion output is not considered archived." >> "$GITHUB_STEP_SUMMARY"
       - name: Download and verify native KiCad conversion evidence
         uses: actions/download-artifact@v4
         with:
