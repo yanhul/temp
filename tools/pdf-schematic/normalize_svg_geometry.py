@@ -9,7 +9,6 @@ retained as an explicit issue rather than silently discarded.
 from __future__ import annotations
 import math, re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, asdict
 from pathlib import Path
 
 _NUM = re.compile(r"[-+]?(?:\d*\.)?\d+(?:[eE][-+]?\d+)?")
@@ -81,7 +80,8 @@ def _index(root):
 
 def normalize_svg(path):
     root=ET.parse(path).getroot(); ids=_index(root); records=[]; issues=[]
-    supported={"path","line","polyline","polygon","rect","circle","ellipse"}
+    supported={"path","line","polyline","polygon","rect","circle","ellipse","text","tspan"}
+    containers={"svg","g","defs","symbol","clipPath","mask","pattern","marker","title","desc","metadata","style"}
     def visit(el,parent,stack,depth=0,from_use=False):
         if depth>32: issues.append({"kind":"use_depth_limit"}); return
         tag=local(el.tag); m=mmul(parent,parse_transform(el.get("transform","")))
@@ -104,16 +104,26 @@ def normalize_svg(path):
                     pts=[point(m,vals[i],vals[i+1]) for i in range(0,len(vals)-1,2)]
                     base["points"]=pts
                     if tag=="polygon" and len(pts)>2: base["points"].append(pts[0])
-                else:
-                    base["attributes"]={k:el.get(k) for k in ("x","y","width","height","cx","cy","r","rx","ry")}
-                    base["geometry_transform_resolved"]=True
+                elif tag in ("rect","circle","ellipse"):
+                    a={k:float(el.get(k,"0")) for k in ("x","y","width","height","cx","cy","r","rx","ry")}
+                    if tag=="rect":
+                        x,y,w,h=a["x"],a["y"],a["width"],a["height"]
+                        base["geometry"]={"kind":"transformed_polygon","points":[point(m,x,y),point(m,x+w,y),point(m,x+w,y+h),point(m,x,y+h)]}
+                    else:
+                        cx,cy=a["cx"],a["cy"]; rx=a["r"] if tag=="circle" else a["rx"]; ry=a["r"] if tag=="circle" else a["ry"]
+                        base["geometry"]={"kind":"transformed_ellipse","center":point(m,cx,cy),"axis_x":[m[0]*rx,m[1]*rx],"axis_y":[m[2]*ry,m[3]*ry]}
+                elif tag in ("text","tspan"):
+                    x=float(el.get("x","0")); y=float(el.get("y","0"))
+                    base["text"]={"value":"".join(el.itertext()),"anchor":point(m,x,y)}
                 records.append(base)
             except Exception as exc: issues.append({"kind":"geometry_parse_error","tag":tag,"id":el.get("id"),"error":str(exc)})
+        elif tag not in containers and tag not in {"use"}:
+            issues.append({"kind":"unsupported_svg_element","tag":tag,"id":el.get("id")})
         for child in list(el): visit(child,m,stack,depth,from_use)
     visit(root,(1,0,0,1,0,0),set())
     return {"schema":"pdf-schematic-normalized-geometry/v1","source":str(path),
             "element_count":len(records),"issue_count":len(issues),"elements":records,"issues":issues,
-            "policy":{"connectivity_inferred":False,"unsupported_geometry_is_not_silently_dropped":True}}
+            "policy":{"connectivity_inferred":False,"unsupported_geometry_is_not_silently_dropped":True,"supported_primitives":sorted(supported),"viewbox_to_viewport_mapping_applied":False}}
 
 if __name__=="__main__":
     import argparse,json
