@@ -71,7 +71,7 @@ jobs:
           name: qi9-2605-schematic-gate
           path: work-2605/schematic
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 7
 
 
   pdf-backend-one-pass:
@@ -92,6 +92,18 @@ jobs:
         shell: bash
         run: |
           python tools/pdf-schematic/export_svg_evidence.py "[QI9-2605-A01] Module ADC.pdf" --out work/svg-evidence
+      - name: Test and normalize SVG geometry evidence
+        shell: bash
+        run: |
+          python -m pip install pytest
+          python -m pytest -q tests/test_pdf_svg_geometry.py
+          mkdir -p work/normalized-svg
+          for svg in work/svg-evidence/page*.svg; do
+            [ -f "$svg" ] || continue
+            name="$(basename "$svg" .svg)"
+            python tools/pdf-schematic/normalize_svg_geometry.py "$svg" --out "work/normalized-svg/$name.json"
+          done
+          test "$(find work/normalized-svg -name '*.json' | wc -l)" -eq 16
       - name: Extract reusable PDF vector/text primitives (no OCR, no inferred connectivity)
         shell: bash
         run: |
