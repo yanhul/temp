@@ -6,6 +6,7 @@ on:
     paths:
       - 'audit-input-2605/**'
       - 'tools/altium-audit/**'
+      - 'tools/pdf-schematic/**'
       - 'altium-audit-2605.config.json'
       - '.github/workflows/qi9-2605-schematic-routing.yml'
   pull_request:
