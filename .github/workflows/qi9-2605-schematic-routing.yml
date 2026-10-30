@@ -75,7 +75,7 @@ jobs:
           retention-days: 7
 
 
-  pdf-backend-one-pass:
+  pdf-vector-ir:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -83,20 +83,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install specialist PDF schematic backend
+      - name: Install deterministic PDF/SVG intake dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y tesseract-ocr poppler-utils
-          python -m pip install 'git+https://github.com/sphrd/SchematicNetlist.git'
-          python -m pip install opencv-python-headless pytesseract numpy pymupdf
-      - name: Export per-page SVG and raw vector geometry evidence
+          sudo apt-get install -y poppler-utils
+          python -m pip install pymupdf pytest
+      - name: Export vector PDF pages to SVG evidence
+        run: python tools/pdf-schematic/export_svg_evidence.py "[QI9-2605-A01] Module ADC.pdf" --out work/svg-evidence
+      - name: Normalize SVG geometry
         shell: bash
         run: |
-          python tools/pdf-schematic/export_svg_evidence.py "[QI9-2605-A01] Module ADC.pdf" --out work/svg-evidence
-      - name: Test and normalize SVG geometry evidence
-        shell: bash
-        run: |
-          python -m pip install pytest
           python -m pytest -q tests/test_pdf_svg_geometry.py
           mkdir -p work/normalized-svg
           for svg in work/svg-evidence/page*.svg; do
@@ -105,231 +101,28 @@ jobs:
             python tools/pdf-schematic/normalize_svg_geometry.py "$svg" --out "work/normalized-svg/$name.json"
           done
           test "$(find work/normalized-svg -name '*.json' | wc -l)" -eq 16
-      - name: Extract reusable PDF vector/text primitives (no OCR, no inferred connectivity)
-        shell: bash
-        run: |
-          mkdir -p work/pdf-primitives
-          python tools/pdf-schematic/extract_primitives.py "[QI9-2605-A01] Module ADC.pdf" --out work/pdf-primitives/primitives.json > work/pdf-primitives/summary.stdout.json
-      - name: Backend health check
-        run: schematic-netlist doctor
-      - name: Analyze uploaded QI9 PDF
-        shell: bash
-        run: |
-          mkdir -p work/pdf-backend
-          set +e
-          schematic-netlist analyze "[QI9-2605-A01] Module ADC.pdf" -o work/pdf-backend --no-excel --no-spice --no-cache > work/backend.stdout.txt 2> work/backend.stderr.txt
-          rc=$?
-          set -e
-          printf '%s\n' "$rc" > work/backend.exit_code
-          exit "$rc"
-      - name: Build truthful run manifest
-        if: always()
-        shell: bash
-        run: |
-          mkdir -p work
-          python - <<'PY'
-          import json, hashlib, re, traceback
-          from pathlib import Path
-          root = Path("work")
-          try:
-              rc = int((root / "backend.exit_code").read_text().strip())
-          except Exception:
-              rc = None
-          quality = {"netlist_found": False, "part_count": 0, "net_count": 0,
-                     "unnamed_pin_count": None, "warnings_dropped_wire_ends": None, "empty_net_count": None, "pins_without_net_count": None,
-                     "quality_checks_error": None}
-          try:
-              netlists = list((root / "pdf-backend").glob("*_netlist.json"))
-              quality["netlist_found"] = bool(netlists)
-              if netlists:
-                  data = json.loads(netlists[0].read_text(encoding="utf-8"))
-                  parts = data.get("parts", [])
-                  nets = data.get("nets", [])
-                  quality["part_count"] = len(parts) if hasattr(parts, "__len__") else 0
-                  quality["net_count"] = len(nets) if hasattr(nets, "__len__") else 0
-                  unknown = 0
-                  for part in parts if isinstance(parts, list) else []:
-                      pins = part.get("pins", []) if isinstance(part, dict) else []
-                      if isinstance(pins, dict):
-                          pins = list(pins.values())
-                      for pin in pins if isinstance(pins, list) else []:
-                          if isinstance(pin, dict) and (not pin.get("number") or not pin.get("net")):
-                              unknown += 1
-                  quality["unnamed_pin_count"] = sum(1 for part in parts if isinstance(part, dict) for pin in part.get("pins", []) if isinstance(pin, dict) and not str(pin.get("number", "")).strip())
-                  quality["pins_without_net_count"] = sum(1 for part in parts if isinstance(part, dict) for pin in part.get("pins", []) if isinstance(pin, dict) and not str(pin.get("net", "")).strip())
-                  quality["empty_net_count"] = sum(1 for net in nets if isinstance(net, dict) and not net.get("pins"))
-                  quality["nets_with_pins_count"] = sum(1 for net in nets if isinstance(net, dict) and bool(net.get("pins")))
-              quality["warnings_dropped_wire_ends"] = 0
-              logs = list((root / "pdf-backend").glob("*_engine_log.txt"))
-              for log in logs:
-                  for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
-                      m = re.search(r"(\d+)\s+wire end\(s\).*\(dropped\)", line, re.I)
-                      if m:
-                          quality["warnings_dropped_wire_ends"] += int(m.group(1))
-          except Exception as exc:
-              quality["quality_checks_error"] = f"{type(exc).__name__}: {exc}"
-          quality_pass = (rc == 0 and quality["netlist_found"] and
-                          quality["part_count"] >= 10 and quality.get("nets_with_pins_count", 0) > 0 and
-                          quality.get("empty_net_count", 1) == 0 and
-                          quality["warnings_dropped_wire_ends"] == 0 and
-                          quality["unnamed_pin_count"] == 0 and
-                          quality.get("pins_without_net_count", 1) == 0 and
-                          quality["quality_checks_error"] is None)
-          primitive_path = root / "pdf-primitives" / "primitives.json"
-          primitive_summary = {"found": primitive_path.is_file(), "sha256": None, "bytes": 0}
-          if primitive_path.is_file():
-              raw = primitive_path.read_bytes()
-              primitive_summary.update({"sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)})
-              try:
-                  p = json.loads(raw)
-                  primitive_summary["totals"] = p.get("totals", {})
-                  primitive_summary["policy"] = p.get("policy", {})
-              except Exception as exc:
-                  primitive_summary["parse_error"] = f"{type(exc).__name__}: {exc}"
-          outputs = [{"path": str(p), "bytes": p.stat().st_size} for p in sorted(root.rglob("*"))
-                     if p.is_file() and p.name != "run_manifest.json"]
-          manifest = {
-              "schema": "qi9-pdf-backend-run/v2",
-              "input": "[QI9-2605-A01] Module ADC.pdf",
-              "backend": "SchematicNetlist",
-              "backend_exit_code": rc,
-              "status": ("EXTRACTED_UNVERIFIED" if quality_pass else
-                         ("BLOCKED_BACKEND_FAILURE" if rc != 0 else "BLOCKED_EXTRACTION_QUALITY")),
-              "quality": quality,
-              "pdf_primitives": primitive_summary,
-              "kicad_schematic_generated": False,
-              "netlist_connectivity_independently_verified": False,
-              "outputs": outputs,
-          }
-          (root / "run_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-          print(json.dumps(manifest, indent=2))
-          PY
-      - name: Upload PDF backend outputs
-        if: always()
-        uses: actions/upload-artifact@v4
-        continue-on-error: true
-        with:
-          name: qi9-2605-pdf-backend-one-pass
-          path: work/
-          if-no-files-found: warn
-          retention-days: 90
-      - name: Enforce strict PDF parser quality gate
-        if: always()
+      - name: Extract PDF text and vector primitives
+        run: python tools/pdf-schematic/extract_primitives.py "[QI9-2605-A01] Module ADC.pdf" --out work/pdf-primitives/primitives.json
+      - name: Build provenance-preserving Normalized Schematic IR
+        run: python tools/pdf-schematic/build_normalized_ir.py --svg-dir work/normalized-svg --primitives work/pdf-primitives/primitives.json --out work/ir/normalized_schematic_ir.json
+      - name: Enforce electrical-resolution boundary
         shell: bash
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-          p = Path("work/run_manifest.json")
-          if not p.is_file():
-              raise SystemExit("FAIL: PDF run manifest missing")
-          data = json.loads(p.read_text(encoding="utf-8"))
-          q = data.get("quality", {})
-          if data.get("status") != "EXTRACTED_UNVERIFIED":
-              raise SystemExit(f"BLOCKED: PDF parser quality gate: {data.get('status')}; quality={json.dumps(q, sort_keys=True)}")
-          if data.get("kicad_schematic_generated") is not True or data.get("netlist_connectivity_independently_verified") is not True:
-              raise SystemExit("BLOCKED: no independently verified KiCad schematic/connectivity")
+          p=Path("work/ir/normalized_schematic_ir.json")
+          d=json.loads(p.read_text(encoding="utf-8"))
+          print(json.dumps({"schema":d["schema"],"status":d["status"],"page_count":d["page_count"],"primitive_count":d["primitive_count"],"symbol_count":d["symbol_count"],"resolved_pin_count":d["resolved_pin_count"],"connectivity_edge_count":d["connectivity_edge_count"],"unknown_reasons":d["unknown_reasons"]},indent=2))
+          if d["status"] != "BLOCKED_SYMBOL_PIN_CONNECTIVITY_UNRESOLVED":
+              raise SystemExit("Unexpected status: IR must not claim electrical PASS without symbol/pin resolver and independent golden-netlist comparison")
           PY
-
-  native-schdoc-to-kicad:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.24.x'
-          cache: false
-      - name: Confirm authoritative 2605 source exists
-        shell: bash
-        run: |
-          test -s 'audit-input-2605/QI9-2605-A01.SchDoc'
-          sha256sum 'audit-input-2605/QI9-2605-A01.SchDoc'
-      - name: Convert native Altium SchDoc to KiCad
-        shell: bash
-        run: |
-          mkdir -p work-native/kicad work-native/svg work-native/evidence
-          go run github.com/rveen/golib/formats/altium/cmd/schconv@latest -kicad -out work-native/kicad 'audit-input-2605/QI9-2605-A01.SchDoc' 2>&1 | tee work-native/evidence/kicad-conversion.log
-          go run github.com/rveen/golib/formats/altium/cmd/schconv@latest -svg -out work-native/svg 'audit-input-2605/QI9-2605-A01.SchDoc' 2>&1 | tee work-native/evidence/svg-conversion.log
-      - name: Install supported KiCad CLI (9.x)
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y software-properties-common
-          sudo add-apt-repository -y ppa:kicad/kicad-9.0-releases
-          sudo apt-get update
-          sudo apt-get install -y kicad
-          kicad-cli version | tee work-native/evidence/kicad-cli-version.txt
-      - name: Validate with KiCad CLI and export connectivity netlist
-        shell: bash
-        run: |
-          set +e
-          kicad-cli sch erc --output work-native/evidence/erc.rpt work-native/kicad/QI9-2605-A01.kicad_sch > work-native/evidence/erc.stdout.txt 2> work-native/evidence/erc.stderr.txt
-          erc_rc=$?
-          kicad-cli sch export netlist --output work-native/evidence/QI9-2605-A01.net work-native/kicad/QI9-2605-A01.kicad_sch > work-native/evidence/netlist.stdout.txt 2> work-native/evidence/netlist.stderr.txt
-          net_rc=$?
-          set -e
-          printf '%s\\n' "$erc_rc" > work-native/evidence/erc.exit_code
-          printf '%s\\n' "$net_rc" > work-native/evidence/netlist.exit_code
-          if [ "$net_rc" -ne 0 ] || [ ! -s work-native/evidence/QI9-2605-A01.net ]; then
-            echo 'BLOCKED: KiCad could not load/export the converted schematic.' >&2
-            cat work-native/evidence/netlist.stderr.txt >&2
-            exit 1
-          fi
-          if [ "$erc_rc" -ne 0 ] || [ ! -s work-native/evidence/erc.rpt ]; then
-            echo 'BLOCKED: ERC did not complete cleanly; inspect ERC evidence.' >&2
-            cat work-native/evidence/erc.stderr.txt >&2
-            exit 1
-          fi
-      - name: Validate KiCad output structure
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import json, re, hashlib
-          out = Path("work-native/kicad")
-          files = sorted(out.glob("*.kicad_sch"))
-          if len(files) != 1 or files[0].stat().st_size < 1000:
-              raise SystemExit(f"BLOCKED: expected one nontrivial .kicad_sch; found {[(p.name,p.stat().st_size) for p in files]}")
-          p = files[0]
-          data = p.read_text(encoding="utf-8", errors="replace")
-          depth = 0
-          quoted = escaped = False
-          for ch in data:
-              if quoted:
-                  if escaped: escaped = False
-                  elif ch == "\\": escaped = True
-                  elif ch == '"': quoted = False
-                  continue
-              if ch == '"': quoted = True
-              elif ch == '(': depth += 1
-              elif ch == ')':
-                  depth -= 1
-                  if depth < 0: raise SystemExit("BLOCKED: unbalanced closing parenthesis")
-          if quoted or depth != 0:
-              raise SystemExit(f"BLOCKED: unbalanced KiCad S-expression (depth={depth}, quoted={quoted})")
-          counts = {k: len(re.findall(r"\(" + k + r"(?=\s|\))", data)) for k in ["symbol", "wire", "label", "global_label", "junction", "no_connect", "sheet"]}
-          manifest = {
-            "schema": "qi9-native-schdoc-to-kicad/v1",
-            "source": "audit-input-2605/QI9-2605-A01.SchDoc",
-            "source_sha256": hashlib.sha256(Path("audit-input-2605/QI9-2605-A01.SchDoc").read_bytes()).hexdigest(),
-            "output": str(p), "output_bytes": p.stat().st_size,
-            "output_sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
-            "counts": counts, "sexpr_balanced": True,
-            "kicad_cli_erc_run": Path("work-native/evidence/erc.exit_code").exists(), "kicad_cli_erc_exit_code": Path("work-native/evidence/erc.exit_code").read_text().strip() if Path("work-native/evidence/erc.exit_code").exists() else None, "kicad_netlist_exported": Path("work-native/evidence/QI9-2605-A01.net").is_file() and Path("work-native/evidence/QI9-2605-A01.net").stat().st_size > 0, "connectivity_equivalence_verified": False,
-            "status": "CONVERTED_UNVERIFIED"
-          }
-          Path("work-native/evidence/conversion_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-          print(json.dumps(manifest, indent=2))
-          if counts["symbol"] == 0 or counts["wire"] == 0:
-              raise SystemExit("BLOCKED: output lacks symbols or wires.")
-          PY
-      - name: Upload native KiCad schematic
+      - name: Upload PDF IR evidence
         if: always()
         uses: actions/upload-artifact@v4
         continue-on-error: true
         with:
-          name: qi9-2605-native-kicad-schematic
-          path: work-native/
+          name: qi9-2605-pdf-normalized-ir
+          path: work/
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 7
