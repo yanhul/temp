@@ -38,7 +38,7 @@ def parse_transform(value):
         elif n=="skewx" and len(v)==1: t=(1,0,math.tan(math.radians(v[0])),1,0,0)
         elif n=="skewy" and len(v)==1: t=(1,math.tan(math.radians(v[0])),0,1,0,0)
         else: continue
-        m=mmul(t,m)
+        m=mmul(m,t)
     return m
 
 def point(m,x,y):
