@@ -60,53 +60,82 @@ def _point_at(a, b, t):
     return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
 
 
-def _collinear(a, b, c, d, tolerance):
+def _line_key(segment):
+    """Stable grouping key for collinear segments (not a visual snap tolerance)."""
+    a, b = segment["a"], segment["b"]
     length = math.dist(a, b)
-    return (abs(_cross(a, b, c)) / length <= tolerance and
-            abs(_cross(a, b, d)) / length <= tolerance)
+    ux, uy = (b[0] - a[0]) / length, (b[1] - a[1]) / length
+    if ux < 0 or (abs(ux) < 1e-12 and uy < 0):
+        ux, uy = -ux, -uy
+    angle = math.atan2(uy, ux)
+    offset = -uy * a[0] + ux * a[1]
+    # SVG coordinate transforms are deterministic; these bins absorb only
+    # floating point serialization noise, not the graph endpoint tolerance.
+    return (segment["page"], round(angle, 7), round(offset, 5)), (ux, uy)
 
 
 def _split_collinear_overlaps(segments, tolerance):
-    """Split overlapping collinear source segments at shared interval limits."""
-    cuts = {s["id"]: [(0.0, s["a"]), (1.0, s["b"])] for s in segments}
-    overlaps = []
-    for i, sa in enumerate(segments):
-        a, b = sa["a"], sa["b"]
-        for sb in segments[i + 1:]:
-            if sa["page"] != sb["page"] or not _collinear(a, b, sb["a"], sb["b"], tolerance):
+    """Split overlaps using an interval sweep, avoiding all-pairs O(n²) scans."""
+    groups = defaultdict(list)
+    for segment in segments:
+        key, direction = _line_key(segment)
+        ux, uy = direction
+        start = ux * segment["a"][0] + uy * segment["a"][1]
+        end = ux * segment["b"][0] + uy * segment["b"][1]
+        lo, hi = sorted((start, end))
+        groups[key].append((lo, hi, segment, direction))
+
+    cuts = {segment["id"]: [(0.0, segment["a"]), (1.0, segment["b"])]
+            for segment in segments}
+    overlap_pairs = []
+    eps = 1e-9
+
+    def add_cut(segment, scalar, direction):
+        a, b = segment["a"], segment["b"]
+        ux, uy = direction
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        denom = ux * dx + uy * dy
+        t = (scalar - (ux * a[0] + uy * a[1])) / denom
+        if eps < t < 1.0 - eps:
+            cuts[segment["id"]].append((t, _point_at(a, b, t)))
+
+    for entries in groups.values():
+        entries.sort(key=lambda item: (item[0], item[1], item[2]["id"]))
+        active = None
+        for lo, hi, segment, direction in entries:
+            if active is None or lo >= active[1] - eps:
+                active = (lo, hi, segment, direction)
                 continue
-            ta = sorted((_project_parameter(sb["a"], a, b), _project_parameter(sb["b"], a, b)))
-            lo, hi = max(0.0, ta[0]), min(1.0, ta[1])
-            overlap_length = max(0.0, hi - lo) * math.dist(a, b)
-            if overlap_length <= 1e-9:
-                continue
-            # Add the exact projected overlap boundaries to A.
-            for t in (lo, hi):
-                cuts[sa["id"]].append((t, _point_at(a, b, t)))
-            # And the reciprocal boundaries to B.
-            c, d = sb["a"], sb["b"]
-            tb = sorted((_project_parameter(a, c, d), _project_parameter(b, c, d)))
-            blo, bhi = max(0.0, tb[0]), min(1.0, tb[1])
-            for t in (blo, bhi):
-                cuts[sb["id"]].append((t, _point_at(c, d, t)))
-            overlaps.append([sa["id"], sb["id"]])
+            active_lo, active_hi, active_segment, active_direction = active
+            overlap_lo, overlap_hi = lo, min(hi, active_hi)
+            # A spanning-tree link is sufficient: each interval joins the
+            # current connected interval component without enumerating every
+            # pair of overlapping segments.
+            add_cut(active_segment, overlap_lo, active_direction)
+            add_cut(active_segment, overlap_hi, active_direction)
+            add_cut(segment, overlap_lo, direction)
+            add_cut(segment, overlap_hi, direction)
+            overlap_pairs.append([active_segment["id"], segment["id"]])
+            if hi > active_hi:
+                active = (lo, hi, segment, direction)
 
     pieces = []
-    for seg in segments:
-        ordered = sorted(cuts[seg["id"]], key=lambda item: item[0])
+    for segment in segments:
+        ordered = sorted(cuts[segment["id"]], key=lambda item: item[0])
         compact = []
         for t, point in ordered:
-            if not compact or abs(t - compact[-1][0]) > 1e-10:
+            if not compact or abs(t - compact[-1][0]) > eps:
                 compact.append((t, point))
         for index, ((_, a), (_, b)) in enumerate(zip(compact, compact[1:])):
             if math.dist(a, b) > 1e-8:
                 pieces.append({
-                    "id": f"{seg['id']}:p{index}", "source_segment_id": seg["id"],
-                    "page": seg["page"], "a": list(a), "b": list(b),
-                    "evidence_id": seg["evidence_id"],
+                    "id": f"{segment['id']}:p{index}",
+                    "source_segment_id": segment["id"],
+                    "page": segment["page"],
+                    "a": list(a), "b": list(b),
+                    "evidence_id": segment["evidence_id"],
                 })
-    return pieces, overlaps
-
+    return pieces, sorted(overlap_pairs)
 
 def _canonicalize_endpoints(pieces, tolerance):
     """Cluster endpoints with a spatial hash; return canonical nodes and edges."""
