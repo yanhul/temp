@@ -270,6 +270,18 @@ jobs:
           path: work/evidence/
           if-no-files-found: error
           retention-days: 3
+      - name: Report PDF IR evidence storage outcome
+        if: always()
+        env:
+          UPLOAD_OUTCOME: ${{ steps.upload_pdf_ir.outcome }}
+        shell: bash
+        run: |
+          if [ "$UPLOAD_OUTCOME" = "success" ]; then
+            echo "### PDF IR evidence storage: UPLOADED" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### PDF IR evidence storage: BLOCKED" >> "$GITHUB_STEP_SUMMARY"
+            echo "Required PDF IR artifact upload failed; manifest and log are not substitutes for the artifact." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Download and verify uploaded PDF IR evidence
         uses: actions/download-artifact@v4
         with:
