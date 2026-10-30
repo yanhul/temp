@@ -26,13 +26,10 @@ def mmul(a, b):
 def parse_transform(value):
     """Parse an SVG transform list into one affine matrix."""
     result = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
-    number = r"[-+]?(?:[0-9]+([.][0-9]*)?|[.][0-9]+)(?:[eE][-+]?[0-9]+)?"
-    for item in re.finditer(r"([A-Za-z]+)[ \\t]*[(]([^)]*)[)]", value or ""):
+    token = r"[-+]?(?:[0-9]+(?:[.][0-9]*)?|[.][0-9]+)(?:[eE][-+]?[0-9]+)?"
+    for item in re.finditer(r"([A-Za-z]+) *[(]([^)]*)[)]", value or ""):
         name = item.group(1).lower()
-        values = [float(v) for v in re.findall(number, item.group(2))]
-        # The capturing group above is intentionally avoided below: extract
-        # complete numeric tokens so decimals and exponents remain intact.
-        values = [float(v) for v in re.findall(r"[-+]?(?:[0-9]+(?:[.][0-9]*)?|[.][0-9]+)(?:[eE][-+]?[0-9]+)?", item.group(2))]
+        values = [float(v) for v in re.findall(token, item.group(2))]
         if name == "matrix" and len(values) == 6:
             transform = tuple(values)
         elif name == "translate" and len(values) in (1, 2):
