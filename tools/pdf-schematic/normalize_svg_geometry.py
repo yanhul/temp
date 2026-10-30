@@ -38,7 +38,7 @@ def parse_transform(value):
         elif n=="skewx" and len(v)==1: t=(1,0,math.tan(math.radians(v[0])),1,0,0)
         elif n=="skewy" and len(v)==1: t=(1,math.tan(math.radians(v[0])),0,1,0,0)
         else: continue
-        m=mmul(m,t)
+        m=mmul(t,m)
     return m
 
 def point(m,x,y):
@@ -84,7 +84,10 @@ def normalize_svg(path):
     containers={"svg","g","defs","symbol","clipPath","mask","pattern","marker","title","desc","metadata","style"}
     def visit(el,parent,stack,depth=0,from_use=False):
         if depth>32: issues.append({"kind":"use_depth_limit"}); return
-        tag=local(el.tag); m=mmul(parent,parse_transform(el.get("transform","")))
+        tag=local(el.tag)
+        if tag in {"defs","symbol","clipPath","mask","pattern","marker"} and not from_use:
+            return
+        m=mmul(parent,parse_transform(el.get("transform","")))
         if tag=="use":
             href=el.get("href") or el.get("{http://www.w3.org/1999/xlink}href") or ""
             target=ids.get(href.lstrip("#"))
