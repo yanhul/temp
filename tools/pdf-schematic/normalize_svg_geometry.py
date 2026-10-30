@@ -24,37 +24,28 @@ def mmul(a, b):
             a[0]*b[4]+a[2]*b[5]+a[4], a[1]*b[4]+a[3]*b[5])
 
 def parse_transform(value):
-    """Parse an SVG transform list into one affine matrix.
-
-    Matrix convention: (a,b,c,d,e,f), mapping x'=a*x+c*y+e,
-    y'=b*x+d*y+f. SVG transform-list items are post-multiplied.
-    """
-    identity = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
-    result = identity
-    number = r"[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?"
-    items = re.finditer(r"([A-Za-z]+)\\s*\\(([^)]*)\\)", value or "")
-    for item in items:
+    """Parse an SVG transform list into one affine matrix."""
+    result = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+    number = r"[-+]?(?:[0-9]+([.][0-9]*)?|[.][0-9]+)(?:[eE][-+]?[0-9]+)?"
+    for item in re.finditer(r"([A-Za-z]+)[ \\t]*[(]([^)]*)[)]", value or ""):
         name = item.group(1).lower()
         values = [float(v) for v in re.findall(number, item.group(2))]
+        # The capturing group above is intentionally avoided below: extract
+        # complete numeric tokens so decimals and exponents remain intact.
+        values = [float(v) for v in re.findall(r"[-+]?(?:[0-9]+(?:[.][0-9]*)?|[.][0-9]+)(?:[eE][-+]?[0-9]+)?", item.group(2))]
         if name == "matrix" and len(values) == 6:
-            a, b, c, d, e, f = values
-            transform = (a, b, c, d, e, f)
+            transform = tuple(values)
         elif name == "translate" and len(values) in (1, 2):
-            tx = values[0]
-            ty = values[1] if len(values) == 2 else 0.0
-            transform = (1.0, 0.0, 0.0, 1.0, tx, ty)
+            transform = (1.0, 0.0, 0.0, 1.0, values[0], values[1] if len(values) == 2 else 0.0)
         elif name == "scale" and len(values) in (1, 2):
-            sx = values[0]
-            sy = values[1] if len(values) == 2 else sx
-            transform = (sx, 0.0, 0.0, sy, 0.0, 0.0)
+            transform = (values[0], 0.0, 0.0, values[1] if len(values) == 2 else values[0], 0.0, 0.0)
         elif name == "rotate" and len(values) in (1, 3):
             angle = math.radians(values[0])
             cosine, sine = math.cos(angle), math.sin(angle)
             rotation = (cosine, sine, -sine, cosine, 0.0, 0.0)
             if len(values) == 3:
                 cx, cy = values[1], values[2]
-                transform = mmul((1, 0, 0, 1, cx, cy),
-                                 mmul(rotation, (1, 0, 0, 1, -cx, -cy)))
+                transform = mmul((1, 0, 0, 1, cx, cy), mmul(rotation, (1, 0, 0, 1, -cx, -cy)))
             else:
                 transform = rotation
         elif name == "skewx" and len(values) == 1:
