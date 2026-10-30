@@ -104,6 +104,15 @@ jobs:
           outputs = sorted(root.glob("*.kicad_sch"))
           if len(outputs) != 1:
               raise SystemExit("BLOCKED: expected exactly one converted .kicad_sch")
+          conversion = json.loads((root / "conversion_manifest.json").read_text(encoding="utf-8"))
+          output_bytes = outputs[0].read_bytes()
+          if conversion.get("output_bytes") != len(output_bytes):
+              raise SystemExit("BLOCKED: conversion manifest output size does not match .kicad_sch")
+          if conversion.get("output_sha256") != hashlib.sha256(output_bytes).hexdigest():
+              raise SystemExit("BLOCKED: conversion manifest output hash does not match .kicad_sch")
+          source = Path(conversion.get("source", ""))
+          if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest() != conversion.get("source_sha256"):
+              raise SystemExit("BLOCKED: conversion manifest source hash does not match checked-out SchDoc")
           allowed = {"conversion_manifest.json", outputs[0].name}
           if {p.name for p in root.iterdir() if p.is_file()} != allowed:
               raise SystemExit("BLOCKED: unexpected native conversion evidence files")
@@ -186,5 +195,12 @@ jobs:
                   raise SystemExit(f"BLOCKED: native KiCad evidence missing/size mismatch: {name}")
               if hashlib.sha256(p.read_bytes()).hexdigest() != expected["sha256"]:
                   raise SystemExit(f"BLOCKED: native KiCad evidence hash mismatch: {name}")
+          conversion = json.loads((root / "conversion_manifest.json").read_text(encoding="utf-8"))
+          schematic_name = next(n for n in files if n.endswith(".kicad_sch"))
+          schematic_bytes = (root / schematic_name).read_bytes()
+          if conversion.get("output_bytes") != len(schematic_bytes) or conversion.get("output_sha256") != hashlib.sha256(schematic_bytes).hexdigest():
+              raise SystemExit("BLOCKED: round-tripped .kicad_sch does not match conversion manifest")
+          if manifest.get("verification_status") != "CONVERTED_UNVERIFIED" or manifest.get("electrical_connectivity_verified") is not False:
+              raise SystemExit("BLOCKED: native conversion status overclaims electrical verification")
           print("NATIVE_KICAD_ARTIFACT_UPLOAD_ROUNDTRIP_LINEAGE_SHA256_VERIFIED")
           PY
