@@ -15,6 +15,7 @@ on:
       - 'tools/altium-audit/**'
       - 'altium-audit-2605.config.json'
       - 'altium-audit-2605.placement-authority.json'
+      - 'tools/pdf-schematic/**'
       - 'tests/**'
       - '.github/workflows/qi9-2605-schematic-routing.yml'
   workflow_dispatch:
@@ -96,11 +97,6 @@ jobs:
         run: |
           mkdir -p work/pdf-primitives
           python tools/pdf-schematic/extract_primitives.py "[QI9-2605-A01] Module ADC.pdf" --out work/pdf-primitives/primitives.json > work/pdf-primitives/summary.stdout.json
-      - name: Extract OCR and vector evidence for every PDF page
-        shell: bash
-        run: |
-          python -m pip install pillow
-          python tools/pdf-schematic/extract_page_evidence.py "[QI9-2605-A01] Module ADC.pdf" --out work/page-evidence --dpi 216 --min-confidence 20
       - name: Backend health check
         run: schematic-netlist doctor
       - name: Analyze uploaded QI9 PDF
@@ -127,7 +123,7 @@ jobs:
           except Exception:
               rc = None
           quality = {"netlist_found": False, "part_count": 0, "net_count": 0,
-                     "unnamed_pin_count": None, "warnings_dropped_wire_ends": None,
+                     "unnamed_pin_count": None, "warnings_dropped_wire_ends": None, "empty_net_count": None, "pins_without_net_count": None,
                      "quality_checks_error": None}
           try:
               netlists = list((root / "pdf-backend").glob("*_netlist.json"))
@@ -146,20 +142,26 @@ jobs:
                       for pin in pins if isinstance(pins, list) else []:
                           if isinstance(pin, dict) and (not pin.get("number") or not pin.get("net")):
                               unknown += 1
-                  quality["unnamed_pin_count"] = unknown
+                  quality["unnamed_pin_count"] = sum(1 for part in parts if isinstance(part, dict) for pin in part.get("pins", []) if isinstance(pin, dict) and not str(pin.get("number", "")).strip())
+                  quality["pins_without_net_count"] = sum(1 for part in parts if isinstance(part, dict) for pin in part.get("pins", []) if isinstance(pin, dict) and not str(pin.get("net", "")).strip())
+                  quality["empty_net_count"] = sum(1 for net in nets if isinstance(net, dict) and not net.get("pins"))
+                  quality["nets_with_pins_count"] = sum(1 for net in nets if isinstance(net, dict) and bool(net.get("pins")))
               quality["warnings_dropped_wire_ends"] = 0
               logs = list((root / "pdf-backend").glob("*_engine_log.txt"))
               for log in logs:
                   for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
-                      m = re.search(r"(\\d+) wire end\\(s\\).*\\(dropped\\)", line)
+                      m = re.search(r"(\d+)\s+wire end\(s\).*\(dropped\)", line, re.I)
                       if m:
                           quality["warnings_dropped_wire_ends"] += int(m.group(1))
           except Exception as exc:
               quality["quality_checks_error"] = f"{type(exc).__name__}: {exc}"
           quality_pass = (rc == 0 and quality["netlist_found"] and
-                          quality["part_count"] >= 10 and quality["net_count"] < 1000 and
+                          quality["part_count"] >= 10 and quality.get("nets_with_pins_count", 0) > 0 and
+                          quality.get("empty_net_count", 1) == 0 and
                           quality["warnings_dropped_wire_ends"] == 0 and
-                          quality["unnamed_pin_count"] == 0)
+                          quality["unnamed_pin_count"] == 0 and
+                          quality.get("pins_without_net_count", 1) == 0 and
+                          quality["quality_checks_error"] is None)
           primitive_path = root / "pdf-primitives" / "primitives.json"
           primitive_summary = {"found": primitive_path.is_file(), "sha256": None, "bytes": 0}
           if primitive_path.is_file():
@@ -186,7 +188,7 @@ jobs:
               "netlist_connectivity_independently_verified": False,
               "outputs": outputs,
           }
-          (root / "run_manifest.json").write_text(json.dumps(manifest, indent=2) + "\\n")
+          (root / "run_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
           print(json.dumps(manifest, indent=2))
           PY
       - name: Upload PDF backend outputs
@@ -197,6 +199,23 @@ jobs:
           path: work/
           if-no-files-found: warn
           retention-days: 90
+      - name: Enforce strict PDF parser quality gate
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("work/run_manifest.json")
+          if not p.is_file():
+              raise SystemExit("FAIL: PDF run manifest missing")
+          data = json.loads(p.read_text(encoding="utf-8"))
+          q = data.get("quality", {})
+          if data.get("status") != "EXTRACTED_UNVERIFIED":
+              raise SystemExit(f"BLOCKED: PDF parser quality gate: {data.get('status')}; quality={json.dumps(q, sort_keys=True)}")
+          if data.get("kicad_schematic_generated") is not True or data.get("netlist_connectivity_independently_verified") is not True:
+              raise SystemExit("BLOCKED: no independently verified KiCad schematic/connectivity")
+          PY
 
   native-schdoc-to-kicad:
     runs-on: ubuntu-latest
