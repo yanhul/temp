@@ -33,12 +33,14 @@ jobs:
       - name: Convert native Altium SchDoc with existing Go converter
         shell: bash
         run: |
-          mkdir -p work/kicad work/svg work/evidence
-          go run github.com/rveen/golib/formats/altium/cmd/schconv@latest -kicad -out work/kicad 'audit-input-2605/QI9-2605-A01.SchDoc' 2>&1 | tee work/evidence/kicad-conversion.log
+          set -euo pipefail
+          mkdir -p work/kicad work/svg work/evidence work/logs
+          go run github.com/rveen/golib/formats/altium/cmd/schconv@latest -kicad -out work/kicad 'audit-input-2605/QI9-2605-A01.SchDoc' 2>&1 | tee work/logs/kicad-conversion.log
       - name: Render source schematic to SVG for visual audit
         shell: bash
         run: |
-          go run github.com/rveen/golib/formats/altium/cmd/schconv@latest -svg -out work/svg 'audit-input-2605/QI9-2605-A01.SchDoc' 2>&1 | tee work/evidence/svg-conversion.log
+          set -euo pipefail
+          go run github.com/rveen/golib/formats/altium/cmd/schconv@latest -svg -out work/svg 'audit-input-2605/QI9-2605-A01.SchDoc' 2>&1 | tee work/logs/svg-conversion.log
       - name: Validate generated schematic structure and record counts
         shell: bash
         run: |
