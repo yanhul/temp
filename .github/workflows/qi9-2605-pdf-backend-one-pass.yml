@@ -155,7 +155,7 @@ jobs:
           test "${#outputs[@]}" -eq 1
           cp "${outputs[0]}" work/evidence/
           python - <<'PY'
-          import hashlib, json, os
+          import hashlib, json, os, shutil
           from pathlib import Path
           root = Path("work/evidence")
           outputs = sorted(root.glob("*.kicad_sch"))
