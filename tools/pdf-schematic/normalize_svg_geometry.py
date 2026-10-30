@@ -42,7 +42,7 @@ def parse_transform(value):
     return m
 
 def point(m,x,y):
-    return (m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5])
+    return [m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5]]
 
 def path_segments(d):
     tok=_CMD.findall(d or "")
