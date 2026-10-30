@@ -157,13 +157,13 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Download and verify native KiCad conversion evidence
-        if: always()
+        if: success()()
         uses: actions/download-artifact@v4
         with:
           name: qi9-2605-native-kicad-schematic
           path: work/evidence-roundtrip
       - name: Verify native KiCad artifact lineage and hashes
-        if: always()
+        if: success()()
         shell: bash
         run: |
           set -euo pipefail
