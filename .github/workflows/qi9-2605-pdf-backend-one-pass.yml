@@ -108,27 +108,61 @@ jobs:
           mkdir -p work/native-netlist
           mapfile -t schematics < <(find work/kicad -maxdepth 1 -type f -name '*.kicad_sch' -size +999c | sort)
           test "${#schematics[@]}" -eq 1
-          if ! command -v kicad-cli >/dev/null 2>&1; then
-            printf '%s\n' '{"schema":"qi9-converted-netlist-resolution-status/v1","status":"BLOCKED_KICAD_CLI_NOT_INSTALLED","symbol_count":0,"resolved_pin_membership_count":0,"net_count":0,"explicit_junction_object_count":0,"electrical_resolution_authority":false,"reason":"kicad-cli is unavailable on this runner; no converted netlist was exported"}' > work/native-netlist/netlist-resolution-status.json
-            exit 0
+          if command -v kicad-cli >/dev/null 2>&1; then
+            kicad-cli sch export netlist --format kicadxml -o work/native-netlist/netlist.xml "${schematics[0]}"
+            python tools/pdf-schematic/import_converted_kicad_netlist.py --netlist work/native-netlist/netlist.xml --source-schdoc audit-input-2605/QI9-2605-A01.SchDoc --converted-kicad-sch "${schematics[0]}" --out work/native-netlist/converted-netlist-ir.json
           fi
-          kicad-cli sch export netlist --format kicadxml -o work/native-netlist/netlist.xml "${schematics[0]}"
-          python tools/pdf-schematic/import_converted_kicad_netlist.py             --netlist work/native-netlist/netlist.xml             --source-schdoc audit-input-2605/QI9-2605-A01.SchDoc             --converted-kicad-sch "${schematics[0]}"             --out work/native-netlist/converted-netlist-ir.json
           python - <<'PY'
-          import json
+          import hashlib, importlib.util, json
           from pathlib import Path
-          ir = json.loads(Path("work/native-netlist/converted-netlist-ir.json").read_text(encoding="utf-8"))
-          status = {
-              "schema": "qi9-converted-netlist-resolution-status/v1",
-              "status": ir["status"],
-              **ir["counts"],
-              "electrical_resolution_authority": False,
-              "native_altium_equivalence_verified": False,
-              "unknown_reasons": ir["unknown_reasons"]
-          }
+          schematic = Path("work/kicad") / "QI9-2605-A01.kicad_sch"
+          ir_path = Path("work/native-netlist/converted-netlist-ir.json")
+          if ir_path.is_file():
+              ir = json.loads(ir_path.read_text(encoding="utf-8"))
+              status = {
+                  "schema": "qi9-converted-netlist-resolution-status/v1",
+                  "status": ir["status"],
+                  **ir["counts"],
+                  "junction_evidence": ir["junction_evidence"],
+                  "electrical_resolution_authority": False,
+                  "native_altium_equivalence_verified": False,
+                  "unknown_reasons": ir["unknown_reasons"]
+              }
+          else:
+              spec = importlib.util.spec_from_file_location(
+                  "converted_netlist", "tools/pdf-schematic/import_converted_kicad_netlist.py"
+              )
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              junctions = module.extract_explicit_junctions(schematic)
+              status = {
+                  "schema": "qi9-converted-netlist-resolution-status/v1",
+                  "status": "BLOCKED_KICAD_CLI_NOT_INSTALLED",
+                  "symbol_count": 0,
+                  "resolved_pin_membership_count": 0,
+                  "net_count": 0,
+                  "explicit_junction_object_count": len(junctions),
+                  "junction_evidence": junctions,
+                  "electrical_resolution_authority": False,
+                  "native_altium_equivalence_verified": False,
+                  "unknown_reasons": [
+                      "KICAD_CLI_NOT_INSTALLED_NETLIST_NOT_EXPORTED",
+                      "CONVERTED_SYMBOL_PIN_NET_MEMBERSHIP_NOT_RESOLVED",
+                      "NATIVE_ALTIUM_EQUIVALENCE_NOT_VERIFIED"
+                  ]
+              }
+          status["converted_kicad_sch_sha256"] = hashlib.sha256(schematic.read_bytes()).hexdigest()
           Path("work/native-netlist/netlist-resolution-status.json").write_text(
               json.dumps(status, indent=2) + "\n", encoding="utf-8"
           )
+          print(json.dumps({
+              "status": status["status"],
+              "symbol_count": status["symbol_count"],
+              "resolved_pin_membership_count": status["resolved_pin_membership_count"],
+              "net_count": status["net_count"],
+              "explicit_junction_object_count": status["explicit_junction_object_count"],
+              "native_altium_equivalence_verified": status["native_altium_equivalence_verified"]
+          }, indent=2))
           PY
       - name: Assemble compact native KiCad conversion evidence
         if: always()
