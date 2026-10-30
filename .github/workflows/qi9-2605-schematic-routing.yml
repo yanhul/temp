@@ -93,7 +93,7 @@ jobs:
       - name: Normalize SVG geometry
         shell: bash
         run: |
-          python -m pytest -q tests/test_pdf_svg_geometry.py
+          python -m pytest -q tests/test_pdf_svg_geometry.py tests/test_pdf_normalized_ir.py
           mkdir -p work/normalized-svg
           for svg in work/svg-evidence/page*.svg; do
             [ -f "$svg" ] || continue
