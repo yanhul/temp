@@ -44,3 +44,14 @@ def test_unknown_svg_primitive_is_reported(tmp_path):
     svg.write_text('<svg xmlns="http://www.w3.org/2000/svg"><foreignObject id="x"/></svg>')
     out=mod.normalize_svg(svg)
     assert out["issues"][0]["kind"] == "unsupported_svg_element"
+
+def test_embedded_image_is_preserved_as_non_decoded_evidence(tmp_path):
+    svg=tmp_path/"image.svg"
+    svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><g transform="translate(5 7)"><image x="1" y="2" width="3" height="4" xlink:href="data:image/png;base64,AAAA"/></g></svg>')
+    out=mod.normalize_svg(svg)
+    assert out["issue_count"] == 0
+    image=out["elements"][0]
+    assert image["tag"] == "image"
+    assert image["geometry"]["points"] == [[6.0,9.0],[9.0,9.0],[9.0,13.0],[6.0,13.0]]
+    assert image["image"]["reference_kind"] == "data_uri"
+    assert image["image"]["payload_decoded"] is False
