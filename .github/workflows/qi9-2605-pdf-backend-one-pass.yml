@@ -91,6 +91,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: qi9-2605-native-kicad-schematic
-          path: work/
-          if-no-files-found: error
-          retention-days: 90
+          path: work/evidence/
+          if-no-files-found: warn
+          retention-days: 1
