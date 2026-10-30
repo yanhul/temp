@@ -24,22 +24,47 @@ def mmul(a, b):
             a[0]*b[4]+a[2]*b[5]+a[4], a[1]*b[4]+a[3]*b[5])
 
 def parse_transform(value):
-    m=(1.,0.,0.,1.,0.,0.)
-    for name,args in re.findall(r"([A-Za-z]+)\s*\(([^)]*)\)", value or ""):
-        v=[float(x) for x in _NUM.findall(args)]
-        n=name.lower()
-        if n=="matrix" and len(v)==6: t=tuple(v)
-        elif n=="translate" and len(v) in (1,2): t=(1,0,0,1,v[0],v[1] if len(v)>1 else 0)
-        elif n=="scale" and len(v) in (1,2): t=(v[0],0,0,v[1] if len(v)>1 else v[0],0,0)
-        elif n=="rotate" and len(v) in (1,3):
-            a=math.radians(v[0]); c,s=math.cos(a),math.sin(a); t=(c,s,-s,c,0,0)
-            if len(v)==3:
-                x,y=v[1:]; t=mmul((1,0,0,1,x,y),mmul(t,(1,0,0,1,-x,-y)))
-        elif n=="skewx" and len(v)==1: t=(1,0,math.tan(math.radians(v[0])),1,0,0)
-        elif n=="skewy" and len(v)==1: t=(1,math.tan(math.radians(v[0])),0,1,0,0)
-        else: continue
-        m=mmul(m,t)
-    return m
+    """Parse an SVG transform list into one affine matrix.
+
+    Matrix convention: (a,b,c,d,e,f), mapping x'=a*x+c*y+e,
+    y'=b*x+d*y+f. SVG transform-list items are post-multiplied.
+    """
+    identity = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+    result = identity
+    number = r"[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?"
+    items = re.finditer(r"([A-Za-z]+)\\s*\\(([^)]*)\\)", value or "")
+    for item in items:
+        name = item.group(1).lower()
+        values = [float(v) for v in re.findall(number, item.group(2))]
+        if name == "matrix" and len(values) == 6:
+            a, b, c, d, e, f = values
+            transform = (a, b, c, d, e, f)
+        elif name == "translate" and len(values) in (1, 2):
+            tx = values[0]
+            ty = values[1] if len(values) == 2 else 0.0
+            transform = (1.0, 0.0, 0.0, 1.0, tx, ty)
+        elif name == "scale" and len(values) in (1, 2):
+            sx = values[0]
+            sy = values[1] if len(values) == 2 else sx
+            transform = (sx, 0.0, 0.0, sy, 0.0, 0.0)
+        elif name == "rotate" and len(values) in (1, 3):
+            angle = math.radians(values[0])
+            cosine, sine = math.cos(angle), math.sin(angle)
+            rotation = (cosine, sine, -sine, cosine, 0.0, 0.0)
+            if len(values) == 3:
+                cx, cy = values[1], values[2]
+                transform = mmul((1, 0, 0, 1, cx, cy),
+                                 mmul(rotation, (1, 0, 0, 1, -cx, -cy)))
+            else:
+                transform = rotation
+        elif name == "skewx" and len(values) == 1:
+            transform = (1.0, 0.0, math.tan(math.radians(values[0])), 1.0, 0.0, 0.0)
+        elif name == "skewy" and len(values) == 1:
+            transform = (1.0, math.tan(math.radians(values[0])), 0.0, 1.0, 0.0, 0.0)
+        else:
+            continue
+        result = mmul(result, transform)
+    return result
 
 def point(m,x,y):
     return [m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5]]
