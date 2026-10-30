@@ -101,6 +101,7 @@ jobs:
           )
           PY
       - name: Upload required schematic phase evidence
+        id: upload_schematic_evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -108,6 +109,18 @@ jobs:
           path: work-2605/schematic-evidence/
           if-no-files-found: error
           retention-days: 3
+      - name: Report schematic evidence storage outcome
+        if: always()
+        env:
+          UPLOAD_OUTCOME: ${{ steps.upload_schematic_evidence.outcome }}
+        shell: bash
+        run: |
+          if [ "$UPLOAD_OUTCOME" = "success" ]; then
+            echo "### Evidence storage: UPLOADED" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Evidence storage: BLOCKED" >> "$GITHUB_STEP_SUMMARY"
+            echo "Required artifact upload failed; the receipt is not considered archived." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Download and verify schematic evidence artifact
         if: success()
         uses: actions/download-artifact@v4
