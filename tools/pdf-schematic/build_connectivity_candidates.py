@@ -1,37 +1,37 @@
 #!/usr/bin/env python3
-"""Conservative vector-wire topology extraction.
+"""Conservative, provenance-preserving vector wire topology candidates.
 
-Only explicit L segments are candidates. End-to-end contacts and collinear
-overlaps are connected. Interior T contacts and geometric crossings are NOT
-connected without an explicit junction authority (not yet implemented).
-This stage never assigns symbol pins or net names.
+Only explicit line geometry is considered. Endpoints within tolerance and
+collinear overlaps are joined geometrically. Non-collinear T contacts and
+crossings remain disconnected unless a separate authority proves a junction.
+This module never assigns symbols, pins, labels, or electrical net names.
 """
 from __future__ import annotations
+
 import argparse
 import hashlib
 import json
 import math
+from collections import defaultdict
 from pathlib import Path
 
 
 def _line_segments(element, evidence_id, page):
     tag = element.get("tag")
     result = []
+
     def add(a, b, ordinal):
         if not (isinstance(a, list) and isinstance(b, list) and len(a) == 2 and len(b) == 2):
             return
-        if all(math.isfinite(float(v)) for v in (*a, *b)) and math.dist(a, b) > 1e-8:
-            result.append({"id": f"{evidence_id}:s{ordinal}", "page": page,
-                           "a": [float(a[0]), float(a[1])],
-                           "b": [float(b[0]), float(b[1])],
-                           "evidence_id": evidence_id})
-    if tag == "path":
-        for i, segment in enumerate(element.get("segments", [])):
-            if segment.get("type") == "L":
-                pts = segment.get("points", [])
-                if len(pts) == 2:
-                    add(pts[0], pts[1], i)
-    elif tag == "line":
+        values = tuple(float(v) for v in (*a, *b))
+        if all(math.isfinite(v) for v in values) and math.dist(values[:2], values[2:]) > 1e-8:
+            result.append({
+                "id": f"{evidence_id}:s{ordinal}", "page": page,
+                "a": [values[0], values[1]], "b": [values[2], values[3]],
+                "evidence_id": evidence_id,
+            })
+
+    if tag in ("path", "line"):
         for i, segment in enumerate(element.get("segments", [])):
             if segment.get("type") == "L" and len(segment.get("points", [])) == 2:
                 add(*segment["points"], i)
@@ -46,105 +46,188 @@ def _line_segments(element, evidence_id, page):
     return result
 
 
-def _key(p, tolerance):
-    return (round(p[0] / tolerance), round(p[1] / tolerance))
-
-
 def _cross(a, b, c):
-    return (b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0])
+    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
 
 
-def _on_segment(p, a, b, eps):
-    if abs(_cross(a, b, p)) > eps:
-        return False
-    return (min(a[0], b[0])-eps <= p[0] <= max(a[0], b[0])+eps and
-            min(a[1], b[1])-eps <= p[1] <= max(a[1], b[1])+eps)
+def _project_parameter(p, a, b):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length2 = dx * dx + dy * dy
+    return ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length2
 
 
-def build(ir, tolerance=0.05):
-    if tolerance <= 0:
-        raise ValueError("tolerance must be positive")
-    segments = []
-    for page in ir.get("pages", []):
-        for evidence in page.get("evidence", []):
-            if evidence.get("origin") != "normalized_svg":
+def _point_at(a, b, t):
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+
+
+def _collinear(a, b, c, d, tolerance):
+    length = math.dist(a, b)
+    return (abs(_cross(a, b, c)) / length <= tolerance and
+            abs(_cross(a, b, d)) / length <= tolerance)
+
+
+def _split_collinear_overlaps(segments, tolerance):
+    """Split overlapping collinear source segments at shared interval limits."""
+    cuts = {s["id"]: [(0.0, s["a"]), (1.0, s["b"])] for s in segments}
+    overlaps = []
+    for i, sa in enumerate(segments):
+        a, b = sa["a"], sa["b"]
+        for sb in segments[i + 1:]:
+            if sa["page"] != sb["page"] or not _collinear(a, b, sb["a"], sb["b"], tolerance):
                 continue
-            segments.extend(_line_segments(evidence.get("geometry", {}),
-                                            evidence["evidence_id"], page["page"]))
+            ta = sorted((_project_parameter(sb["a"], a, b), _project_parameter(sb["b"], a, b)))
+            lo, hi = max(0.0, ta[0]), min(1.0, ta[1])
+            overlap_length = max(0.0, hi - lo) * math.dist(a, b)
+            if overlap_length <= 1e-9:
+                continue
+            # Add the exact projected overlap boundaries to A.
+            for t in (lo, hi):
+                cuts[sa["id"]].append((t, _point_at(a, b, t)))
+            # And the reciprocal boundaries to B.
+            c, d = sb["a"], sb["b"]
+            tb = sorted((_project_parameter(a, c, d), _project_parameter(b, c, d)))
+            blo, bhi = max(0.0, tb[0]), min(1.0, tb[1])
+            for t in (blo, bhi):
+                cuts[sb["id"]].append((t, _point_at(c, d, t)))
+            overlaps.append([sa["id"], sb["id"]])
 
-    # Nodes are exact/tolerance-bucketed endpoints only. This deliberately
-    # leaves endpoint-to-interior T contacts and crossings disconnected.
-    nodes = {}
+    pieces = []
     for seg in segments:
-        for side in ("a", "b"):
-            p = seg[side]
-            key = (seg["page"], *_key(p, tolerance))
-            nodes.setdefault(key, {"node_id": "n-" + hashlib.sha256(
-                f"{seg['page']}:{key[1]}:{key[2]}".encode()).hexdigest()[:16],
-                "page": seg["page"], "point": p, "segment_refs": []})
-            nodes[key]["segment_refs"].append(seg["id"])
+        ordered = sorted(cuts[seg["id"]], key=lambda item: item[0])
+        compact = []
+        for t, point in ordered:
+            if not compact or abs(t - compact[-1][0]) > 1e-10:
+                compact.append((t, point))
+        for index, ((_, a), (_, b)) in enumerate(zip(compact, compact[1:])):
+            if math.dist(a, b) > 1e-8:
+                pieces.append({
+                    "id": f"{seg['id']}:p{index}", "source_segment_id": seg["id"],
+                    "page": seg["page"], "a": list(a), "b": list(b),
+                    "evidence_id": seg["evidence_id"],
+                })
+    return pieces, overlaps
 
-    parent = {key: key for key in nodes}
+
+def _canonicalize_endpoints(pieces, tolerance):
+    """Cluster endpoints with a spatial hash; return canonical nodes and edges."""
+    points = []
+    for piece in pieces:
+        points.append((piece["page"], tuple(piece["a"]), piece["id"], "a"))
+        points.append((piece["page"], tuple(piece["b"]), piece["id"], "b"))
+    points.sort(key=lambda item: (item[0], item[1][0], item[1][1], item[2], item[3]))
+
+    parent = list(range(len(points)))
+
     def find(x):
         while parent[x] != x:
             parent[x] = parent[parent[x]]
             x = parent[x]
         return x
+
     def union(a, b):
         ra, rb = find(a), find(b)
         if ra != rb:
-            parent[rb] = ra
+            # Stable representative independent of input traversal.
+            parent[max(ra, rb)] = min(ra, rb)
 
-    # Every drawn segment joins its own two endpoints.
-    for seg in segments:
-        union((seg["page"], *_key(seg["a"], tolerance)),
-              (seg["page"], *_key(seg["b"], tolerance)))
+    buckets = defaultdict(list)
+    for i, (page, point, _, _) in enumerate(points):
+        gx, gy = math.floor(point[0] / tolerance), math.floor(point[1] / tolerance)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for j in buckets[(page, gx + dx, gy + dy)]:
+                    if math.dist(point, points[j][1]) <= tolerance:
+                        union(i, j)
+        buckets[(page, gx, gy)].append(i)
 
-    # Merge endpoint nodes within tolerance; don't merge across pages.
-    keys = list(nodes)
-    for i, ka in enumerate(keys):
-        pa = nodes[ka]["point"]
-        for kb in keys[i+1:]:
-            if ka[0] == kb[0] and math.dist(pa, nodes[kb]["point"]) <= tolerance:
-                union(ka, kb)
+    groups = defaultdict(list)
+    for i, item in enumerate(points):
+        groups[find(i)].append((i, item))
 
-    # Record collinear overlaps as segment-level relations. Do not merge
-    # distant endpoint nodes: doing so would invent a geometric junction.
-    overlap_pairs = []
-    for i, sa in enumerate(segments):
-        for sb in segments[i+1:]:
-            if sa["page"] != sb["page"]:
-                continue
-            eps = tolerance * max(math.dist(sa["a"], sa["b"]), math.dist(sb["a"], sb["b"]), 1.0)
-            if abs(_cross(sa["a"], sa["b"], sb["a"])) <= eps and abs(_cross(sa["a"], sa["b"], sb["b"])) <= eps:
-                if (_on_segment(sa["a"], sb["a"], sb["b"], tolerance) or
-                    _on_segment(sa["b"], sb["a"], sb["b"], tolerance) or
-                    _on_segment(sb["a"], sa["a"], sa["b"], tolerance) or
-                    _on_segment(sb["b"], sa["a"], sa["b"], tolerance)):
-                    overlap_pairs.append([sa["id"], sb["id"]])
+    node_by_endpoint = {}
+    nodes = []
+    for members in groups.values():
+        page = members[0][1][0]
+        representative = min((m[1][1] for m in members), key=lambda p: (p[0], p[1]))
+        node_id = "n-" + hashlib.sha256(
+            f"{page}:{representative[0].hex()}:{representative[1].hex()}".encode()
+        ).hexdigest()[:16]
+        refs = sorted({m[1][2] for m in members})
+        nodes.append({"node_id": node_id, "page": page,
+                      "point": [representative[0], representative[1]],
+                      "segment_refs": refs})
+        for i, _ in members:
+            node_by_endpoint[i] = node_id
 
-    components = {}
-    for key, node in nodes.items():
-        root = find(key)
-        components.setdefault(root, []).append(node["node_id"])
+    endpoint_index = {}
+    for i, (_, _, piece_id, side) in enumerate(points):
+        endpoint_index[(piece_id, side)] = node_by_endpoint[i]
+
     edges = []
-    for seg in segments:
-        ka = (seg["page"], *_key(seg["a"], tolerance))
-        kb = (seg["page"], *_key(seg["b"], tolerance))
-        edges.append({"edge_id": seg["id"], "page": seg["page"],
-                      "from": nodes[ka]["node_id"], "to": nodes[kb]["node_id"],
-                      "source_evidence": seg["evidence_id"],
-                      "authority": "OBSERVED_VECTOR_LINE_SEGMENT"})
+    for piece in pieces:
+        edges.append({
+            "edge_id": piece["id"], "page": piece["page"],
+            "from": endpoint_index[(piece["id"], "a")],
+            "to": endpoint_index[(piece["id"], "b")],
+            "source_segment_id": piece["source_segment_id"],
+            "source_evidence": piece["evidence_id"],
+            "authority": "OBSERVED_VECTOR_LINE_SEGMENT",
+        })
+    nodes.sort(key=lambda node: node["node_id"])
+    edges.sort(key=lambda edge: edge["edge_id"])
+    return nodes, edges
+
+
+def _components(nodes, edges):
+    adjacency = {node["node_id"]: set() for node in nodes}
+    for edge in edges:
+        adjacency[edge["from"]].add(edge["to"])
+        adjacency[edge["to"]].add(edge["from"])
+    remaining = set(adjacency)
+    result = []
+    while remaining:
+        start = min(remaining)
+        stack, found = [start], set()
+        while stack:
+            current = stack.pop()
+            if current in found:
+                continue
+            found.add(current)
+            stack.extend(adjacency[current] - found)
+        remaining -= found
+        result.append({"node_ids": sorted(found)})
+    return sorted(result, key=lambda item: item["node_ids"])
+
+
+def build(ir, tolerance=0.05):
+    if not math.isfinite(tolerance) or tolerance <= 0:
+        raise ValueError("tolerance must be finite and positive")
+    segments = []
+    for page in ir.get("pages", []):
+        for evidence in page.get("evidence", []):
+            if evidence.get("origin") != "normalized_svg":
+                continue
+            segments.extend(_line_segments(
+                evidence.get("geometry", {}), evidence["evidence_id"], page["page"]
+            ))
+
+    pieces, overlap_pairs = _split_collinear_overlaps(segments, tolerance)
+    nodes, edges = _canonicalize_endpoints(pieces, tolerance)
+    # Graph invariants are checked before emitting a candidate graph.
+    node_ids = {node["node_id"] for node in nodes}
+    if any(edge["from"] not in node_ids or edge["to"] not in node_ids for edge in edges):
+        raise AssertionError("edge references a non-canonical/missing node")
     return {
-        "schema": "pdf-schematic-connectivity-candidates/v1",
+        "schema": "pdf-schematic-connectivity-candidates/v2",
         "status": "BLOCKED_SYMBOL_PIN_AND_JUNCTION_AUTHORITY_MISSING",
         "tolerance_pdf_points": tolerance,
         "segment_count": len(segments),
+        "split_edge_count": len(edges),
         "node_count": len(nodes),
         "edge_count": len(edges),
-        "components": [{"node_ids": sorted(v)} for v in components.values()],
-        "collinear_overlap_pairs": overlap_pairs,
-        "nodes": list(nodes.values()),
+        "components": _components(nodes, edges),
+        "collinear_overlap_pairs": sorted(overlap_pairs),
+        "nodes": nodes,
         "edges": edges,
         "unknown_reasons": [
             "SYMBOL_PINS_NOT_RESOLVED",
@@ -155,11 +238,13 @@ def build(ir, tolerance=0.05):
         ],
         "policy": {
             "endpoint_contact_connects": True,
-            "collinear_overlap_connects": "RECORDED_AS_SEGMENT_RELATION_NOT_MERGED_INTO_NODE_GRAPH",
-            "endpoint_to_interior_contact_connects": False,
+            "collinear_overlap_connects": True,
+            "endpoint_to_interior_contact_connects": "ONLY_WHEN_COLLINEAR_OVERLAP",
+            "non_collinear_t_junction_connects": False,
             "crossing_connects": False,
             "visual_proximity_is_not_connectivity": True,
             "pin_assignment": "NONE",
+            "electrical_net_assignment": "NONE",
         },
     }
 
@@ -175,8 +260,8 @@ def main():
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({k: result[k] for k in (
-        "schema", "status", "segment_count", "node_count", "edge_count",
-        "unknown_reasons")}, indent=2))
+        "schema", "status", "segment_count", "split_edge_count", "node_count",
+        "edge_count", "unknown_reasons")}, indent=2))
 
 
 if __name__ == "__main__":
