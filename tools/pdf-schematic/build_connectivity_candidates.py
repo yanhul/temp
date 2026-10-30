@@ -103,19 +103,20 @@ def build(ir, tolerance=0.05):
             if ka[0] == kb[0] and math.dist(pa, nodes[kb]["point"]) <= tolerance:
                 union(ka, kb)
 
-    # Collinear overlap is positive evidence of a shared drawn conductor.
-    for i, a in enumerate(segments):
-        for b in segments[i+1:]:
-            if a["page"] != b["page"]:
+    # Record collinear overlaps as segment-level relations. Do not merge
+    # distant endpoint nodes: doing so would invent a geometric junction.
+    overlap_pairs = []
+    for i, sa in enumerate(segments):
+        for sb in segments[i+1:]:
+            if sa["page"] != sb["page"]:
                 continue
-            eps = tolerance * max(math.dist(a["a"], a["b"]), math.dist(b["a"], b["b"]), 1.0)
-            if abs(_cross(a["a"], a["b"], b["a"])) <= eps and abs(_cross(a["a"], a["b"], b["b"])) <= eps:
-                if (_on_segment(a["a"], b["a"], b["b"], tolerance) or
-                    _on_segment(a["b"], b["a"], b["b"], tolerance) or
-                    _on_segment(b["a"], a["a"], a["b"], tolerance) or
-                    _on_segment(b["b"], a["a"], a["b"], tolerance)):
-                    union((a["page"], *_key(a["a"], tolerance)),
-                          (b["page"], *_key(b["a"], tolerance)))
+            eps = tolerance * max(math.dist(sa["a"], sa["b"]), math.dist(sb["a"], sb["b"]), 1.0)
+            if abs(_cross(sa["a"], sa["b"], sb["a"])) <= eps and abs(_cross(sa["a"], sa["b"], sb["b"])) <= eps:
+                if (_on_segment(sa["a"], sb["a"], sb["b"], tolerance) or
+                    _on_segment(sa["b"], sb["a"], sb["b"], tolerance) or
+                    _on_segment(sb["a"], sa["a"], sa["b"], tolerance) or
+                    _on_segment(sb["b"], sa["a"], sa["b"], tolerance)):
+                    overlap_pairs.append([sa["id"], sb["id"]])
 
     components = {}
     for key, node in nodes.items():
@@ -136,7 +137,7 @@ def build(ir, tolerance=0.05):
         "segment_count": len(segments),
         "node_count": len(nodes),
         "edge_count": len(edges),
-        "components": [{"node_ids": sorted(v)} for v in components.values()],
+        "components": [{"node_ids": sorted(v)} for v in components.values()],\n        "collinear_overlap_pairs": overlap_pairs,
         "nodes": list(nodes.values()),
         "edges": edges,
         "unknown_reasons": [
@@ -148,7 +149,7 @@ def build(ir, tolerance=0.05):
         ],
         "policy": {
             "endpoint_contact_connects": True,
-            "collinear_overlap_connects": True,
+            "collinear_overlap_connects": "RECORDED_AS_SEGMENT_RELATION_NOT_MERGED_INTO_NODE_GRAPH",
             "endpoint_to_interior_contact_connects": False,
             "crossing_connects": False,
             "visual_proximity_is_not_connectivity": True,
