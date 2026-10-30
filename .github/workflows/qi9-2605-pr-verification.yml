@@ -100,13 +100,13 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Download and verify PR schematic evidence
-        if: always()
+        if: success()()
         uses: actions/download-artifact@v4
         with:
           name: qi9-2605-pr-schematic-evidence
           path: work-2605/pr-schematic-evidence-roundtrip
       - name: Verify PR schematic artifact lineage and hashes
-        if: always()
+        if: success()()
         shell: bash
         run: |
           set -euo pipefail
