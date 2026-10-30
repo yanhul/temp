@@ -182,7 +182,7 @@ jobs:
       - name: Normalize SVG geometry
         shell: bash
         run: |
-          python -m pytest -q tests/test_pdf_svg_geometry.py tests/test_pdf_normalized_ir.py tests/test_pdf_connectivity_candidates.py
+          python -m pytest -q tests/test_pdf_svg_geometry.py tests/test_pdf_normalized_ir.py tests/test_pdf_connectivity_candidates.py tests/test_converted_kicad_netlist_ir.py
           mkdir -p work/normalized-svg
           for svg in work/svg-evidence/page*.svg; do
             [ -f "$svg" ] || continue
