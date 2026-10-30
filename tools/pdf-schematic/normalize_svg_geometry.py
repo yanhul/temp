@@ -12,8 +12,8 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-_NUM = re.compile(r"[-+]?(?:\\d*\\.)?\\d+(?:[eE][-+]?\\d+)?")
-_CMD = re.compile(r"[AaCcHhLlMmQqSsTtVvZz]|[-+]?(?:\\d*\\.)?\\d+(?:[eE][-+]?\\d+)?")
+_NUM = re.compile(r"[-+]?(?:\d*\.)?\d+(?:[eE][-+]?\d+)?")
+_CMD = re.compile(r"[AaCcHhLlMmQqSsTtVvZz]|[-+]?(?:\d*\.)?\d+(?:[eE][-+]?\d+)?")
 _ID = "{http://www.w3.org/XML/1998/namespace}id"
 
 def local(tag):
@@ -26,7 +26,7 @@ def mmul(a, b):
 
 def parse_transform(value):
     m=(1.,0.,0.,1.,0.,0.)
-    for name,args in re.findall(r"([A-Za-z]+)\\s*\\(([^)]*)\\)", value or ""):
+    for name,args in re.findall(r"([A-Za-z]+)\s*\(([^)]*)\)", value or ""):
         v=[float(x) for x in _NUM.findall(args)]
         n=name.lower()
         if n=="matrix" and len(v)==6: t=tuple(v)
@@ -82,7 +82,7 @@ def _index(root):
 def normalize_svg(path):
     root=ET.parse(path).getroot(); ids=_index(root); records=[]; issues=[]
     supported={"path","line","polyline","polygon","rect","circle","ellipse"}
-    def visit(el,parent,stack,depth=0):
+    def visit(el,parent,stack,depth=0,from_use=False):
         if depth>32: issues.append({"kind":"use_depth_limit"}); return
         tag=local(el.tag); m=mmul(parent,parse_transform(el.get("transform","")))
         if tag=="use":
@@ -91,7 +91,7 @@ def normalize_svg(path):
             if target is None: issues.append({"kind":"unresolved_use","href":href}); return
             if id(target) in stack: issues.append({"kind":"cyclic_use","href":href}); return
             tx=float(el.get("x","0")); ty=float(el.get("y","0"))
-            visit(target,mmul(m,(1,0,0,1,tx,ty)),stack|{id(target)},depth+1); return
+            visit(target,mmul(m,(1,0,0,1,tx,ty)),stack|{id(target)},depth+1,True); return
         if tag in supported:
             base={"tag":tag,"transform":list(m),"source_id":el.get("id")}
             try:
@@ -109,7 +109,7 @@ def normalize_svg(path):
                     base["geometry_transform_resolved"]=True
                 records.append(base)
             except Exception as exc: issues.append({"kind":"geometry_parse_error","tag":tag,"id":el.get("id"),"error":str(exc)})
-        for child in list(el): visit(child,m,stack,depth)
+        for child in list(el): visit(child,m,stack,depth,from_use)
     visit(root,(1,0,0,1,0,0),set())
     return {"schema":"pdf-schematic-normalized-geometry/v1","source":str(path),
             "element_count":len(records),"issue_count":len(issues),"elements":records,"issues":issues,
@@ -119,6 +119,6 @@ if __name__=="__main__":
     import argparse,json
     ap=argparse.ArgumentParser(); ap.add_argument("svg"); ap.add_argument("--out",required=True)
     a=ap.parse_args(); data=normalize_svg(a.svg)
-    Path(a.out).write_text(json.dumps(data,indent=2)+"\\n",encoding="utf-8")
+    Path(a.out).write_text(json.dumps(data,indent=2)+"\n",encoding="utf-8")
     print(json.dumps({k:data[k] for k in ("schema","element_count","issue_count","policy")}))
     if data["issue_count"]: raise SystemExit(2)
