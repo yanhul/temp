@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Normalize SVG geometry for schematic reconstruction.
+
+This module deliberately does NOT infer electrical connectivity. It resolves
+SVG transforms and <use> references, expands path commands into geometric
+segments, and emits stable evidence records. Unsupported/malformed geometry is
+retained as an explicit issue rather than silently discarded.
+"""
+from __future__ import annotations
+import math, re
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass, asdict
+from pathlib import Path
+
+_NUM = re.compile(r"[-+]?(?:\\d*\\.)?\\d+(?:[eE][-+]?\\d+)?")
+_CMD = re.compile(r"[AaCcHhLlMmQqSsTtVvZz]|[-+]?(?:\\d*\\.)?\\d+(?:[eE][-+]?\\d+)?")
+_ID = "{http://www.w3.org/XML/1998/namespace}id"
+
+def local(tag):
+    return tag.rsplit("}", 1)[-1]
+
+def mmul(a, b):
+    return (a[0]*b[0]+a[2]*b[1], a[1]*b[0]+a[3]*b[1],
+            a[0]*b[2]+a[2]*b[3], a[1]*b[2]+a[3]*b[3],
+            a[0]*b[4]+a[2]*b[5]+a[4], a[1]*b[4]+a[3]*b[5])
+
+def parse_transform(value):
+    m=(1.,0.,0.,1.,0.,0.)
+    for name,args in re.findall(r"([A-Za-z]+)\\s*\\(([^)]*)\\)", value or ""):
+        v=[float(x) for x in _NUM.findall(args)]
+        n=name.lower()
+        if n=="matrix" and len(v)==6: t=tuple(v)
+        elif n=="translate" and len(v) in (1,2): t=(1,0,0,1,v[0],v[1] if len(v)>1 else 0)
+        elif n=="scale" and len(v) in (1,2): t=(v[0],0,0,v[1] if len(v)>1 else v[0],0,0)
+        elif n=="rotate" and len(v) in (1,3):
+            a=math.radians(v[0]); c,s=math.cos(a),math.sin(a); t=(c,s,-s,c,0,0)
+            if len(v)==3:
+                x,y=v[1:]; t=mmul((1,0,0,1,x,y),mmul(t,(1,0,0,1,-x,-y)))
+        elif n=="skewx" and len(v)==1: t=(1,0,math.tan(math.radians(v[0])),1,0,0)
+        elif n=="skewy" and len(v)==1: t=(1,math.tan(math.radians(v[0])),0,1,0,0)
+        else: continue
+        m=mmul(m,t)
+    return m
+
+def point(m,x,y):
+    return (m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5])
+
+def path_segments(d):
+    tok=_CMD.findall(d or "")
+    i=0; cmd=None; x=y=sx=sy=0.; out=[]; prev_c=None; prev_q=None
+    arity={"M":2,"L":2,"H":1,"V":1,"C":6,"S":4,"Q":4,"T":2,"A":7,"Z":0}
+    while i<len(tok):
+        if tok[i].isalpha(): cmd=tok[i]; i+=1
+        if cmd is None: raise ValueError("path data starts without command")
+        up=cmd.upper(); rel=cmd.islower(); n=arity[up]
+        if up=="Z":
+            out.append(("L",(x,y),(sx,sy))); x,y=sx,sy; prev_c=prev_q=None; cmd=None; continue
+        if i+n>len(tok) or any(t.isalpha() for t in tok[i:i+n]): raise ValueError("incomplete path command "+cmd)
+        v=list(map(float,tok[i:i+n])); i+=n
+        def xy(a,b): return (x+a,y+b) if rel else (a,b)
+        if up=="M":
+            x,y=xy(*v); sx,sy=x,y; cmd="l" if rel else "L"; prev_c=prev_q=None; continue
+        if up=="L": p=xy(*v); out.append(("L",(x,y),p)); x,y=p
+        elif up=="H": nx=x+v[0] if rel else v[0]; out.append(("L",(x,y),(nx,y))); x=nx
+        elif up=="V": ny=y+v[0] if rel else v[0]; out.append(("L",(x,y),(x,ny))); y=ny
+        elif up in ("C","S"):
+            if up=="C": c1=xy(v[0],v[1]); c2=xy(v[2],v[3]); p=xy(v[4],v[5])
+            else: c1=(2*x-prev_c[0],2*y-prev_c[1]) if prev_c else (x,y); c2=xy(v[0],v[1]); p=xy(v[2],v[3])
+            out.append(("C",(x,y),c1,c2,p)); x,y=p; prev_c=c2; prev_q=None; continue
+        elif up in ("Q","T"):
+            if up=="Q": c=xy(v[0],v[1]); p=xy(v[2],v[3])
+            else: c=(2*x-prev_q[0],2*y-prev_q[1]) if prev_q else (x,y); p=xy(v[0],v[1])
+            out.append(("Q",(x,y),c,p)); x,y=p; prev_q=c; prev_c=None; continue
+        elif up=="A":
+            p=xy(v[5],v[6]); out.append(("A",(x,y),tuple(v[:5]),p)); x,y=p
+        prev_c=prev_q=None
+    return out
+
+def _index(root):
+    return {e.get("id") or e.get(_ID):e for e in root.iter() if e.get("id") or e.get(_ID)}
+
+def normalize_svg(path):
+    root=ET.parse(path).getroot(); ids=_index(root); records=[]; issues=[]
+    supported={"path","line","polyline","polygon","rect","circle","ellipse"}
+    def visit(el,parent,stack,depth=0):
+        if depth>32: issues.append({"kind":"use_depth_limit"}); return
+        tag=local(el.tag); m=mmul(parent,parse_transform(el.get("transform","")))
+        if tag=="use":
+            href=el.get("href") or el.get("{http://www.w3.org/1999/xlink}href") or ""
+            target=ids.get(href.lstrip("#"))
+            if target is None: issues.append({"kind":"unresolved_use","href":href}); return
+            if id(target) in stack: issues.append({"kind":"cyclic_use","href":href}); return
+            tx=float(el.get("x","0")); ty=float(el.get("y","0"))
+            visit(target,mmul(m,(1,0,0,1,tx,ty)),stack|{id(target)},depth+1); return
+        if tag in supported:
+            base={"tag":tag,"transform":list(m),"source_id":el.get("id")}
+            try:
+                if tag=="path":
+                    segs=path_segments(el.get("d",""))
+                    base["segments"]=[{"type":s[0],"points":[point(m,*p) if isinstance(p,tuple) and len(p)==2 else p for p in s[1:]]} for s in segs]
+                elif tag=="line": base["segments"]=[{"type":"L","points":[point(m,float(el.get("x1",0)),float(el.get("y1",0))),point(m,float(el.get("x2",0)),float(el.get("y2",0)))]}]
+                elif tag in ("polyline","polygon"):
+                    vals=[float(x) for x in _NUM.findall(el.get("points",""))]
+                    pts=[point(m,vals[i],vals[i+1]) for i in range(0,len(vals)-1,2)]
+                    base["points"]=pts
+                    if tag=="polygon" and len(pts)>2: base["points"].append(pts[0])
+                else:
+                    base["attributes"]={k:el.get(k) for k in ("x","y","width","height","cx","cy","r","rx","ry")}
+                    base["geometry_transform_resolved"]=True
+                records.append(base)
+            except Exception as exc: issues.append({"kind":"geometry_parse_error","tag":tag,"id":el.get("id"),"error":str(exc)})
+        for child in list(el): visit(child,m,stack,depth)
+    visit(root,(1,0,0,1,0,0),set())
+    return {"schema":"pdf-schematic-normalized-geometry/v1","source":str(path),
+            "element_count":len(records),"issue_count":len(issues),"elements":records,"issues":issues,
+            "policy":{"connectivity_inferred":False,"unsupported_geometry_is_not_silently_dropped":True}}
+
+if __name__=="__main__":
+    import argparse,json
+    ap=argparse.ArgumentParser(); ap.add_argument("svg"); ap.add_argument("--out",required=True)
+    a=ap.parse_args(); data=normalize_svg(a.svg)
+    Path(a.out).write_text(json.dumps(data,indent=2)+"\\n",encoding="utf-8")
+    print(json.dumps({k:data[k] for k in ("schema","element_count","issue_count","policy")}))
+    if data["issue_count"]: raise SystemExit(2)
