@@ -7,7 +7,7 @@ segments, and emits stable evidence records. Unsupported/malformed geometry is
 retained as an explicit issue rather than silently discarded.
 """
 from __future__ import annotations
-import math, re
+import hashlib, math, re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -93,7 +93,7 @@ def _index(root):
 
 def normalize_svg(path):
     root=ET.parse(path).getroot(); ids=_index(root); records=[]; issues=[]
-    supported={"path","line","polyline","polygon","rect","circle","ellipse","text","tspan"}
+    supported={"path","line","polyline","polygon","rect","circle","ellipse","text","tspan","image"}
     containers={"svg","g","defs","symbol","clipPath","mask","pattern","marker","title","desc","metadata","style"}
     def visit(el,parent,stack,depth=0,from_use=False):
         if depth>32: issues.append({"kind":"use_depth_limit"}); return
@@ -131,6 +131,21 @@ def normalize_svg(path):
                 elif tag in ("text","tspan"):
                     x=float(el.get("x","0")); y=float(el.get("y","0"))
                     base["text"]={"value":"".join(el.itertext()),"anchor":point(m,x,y)}
+                elif tag=="image":
+                    href=(el.get("href") or
+                          el.get("{http://www.w3.org/1999/xlink}href") or "")
+                    x,y,w,h=(float(el.get(k,"0")) for k in ("x","y","width","height"))
+                    if not href or w<=0 or h<=0:
+                        raise ValueError("image requires href and positive width/height")
+                    base["geometry"]={"kind":"transformed_image_viewport","points":[
+                        point(m,x,y),point(m,x+w,y),point(m,x+w,y+h),point(m,x,y+h)]}
+                    base["image"]={
+                        "reference_kind":"data_uri" if href.startswith("data:") else "external_reference",
+                        "reference_sha256":hashlib.sha256(href.encode("utf-8")).hexdigest(),
+                        "external_reference":href if not href.startswith("data:") else None,
+                        "preserve_aspect_ratio":el.get("preserveAspectRatio","xMidYMid meet"),
+                        "payload_decoded":False
+                    }
                 records.append(base)
             except Exception as exc: issues.append({"kind":"geometry_parse_error","tag":tag,"id":el.get("id"),"error":str(exc)})
         elif tag not in containers and tag not in {"use"}:
