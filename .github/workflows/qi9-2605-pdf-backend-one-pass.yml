@@ -4,12 +4,18 @@ on:
   push:
     paths:
       - 'audit-input-2605/QI9-2605-A01.SchDoc'
-      - '[QI9-2605-A01] Module ADC.pdf'
+      - '[[]QI9-2605-A01[]] Module ADC.pdf'
       - '.github/workflows/qi9-2605-pdf-backend-one-pass.yml'
+      - 'tools/pdf-schematic/**'
+      - 'tests/test_pdf_connectivity_candidates.py'
+      - 'tests/test_converted_kicad_netlist_ir.py'
   pull_request:
     paths:
       - 'audit-input-2605/QI9-2605-A01.SchDoc'
       - '.github/workflows/qi9-2605-pdf-backend-one-pass.yml'
+      - 'tools/pdf-schematic/**'
+      - 'tests/test_pdf_connectivity_candidates.py'
+      - 'tests/test_converted_kicad_netlist_ir.py'
   workflow_dispatch:
 
 permissions:
@@ -21,6 +27,13 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and run graph/netlist authority regressions
+        run: |
+          python -m pip install pytest
+          python -m pytest -q tests/test_pdf_connectivity_candidates.py tests/test_converted_kicad_netlist_ir.py
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.x'
@@ -88,6 +101,50 @@ jobs:
           if counts["symbol"] == 0 or counts["wire"] == 0:
               raise SystemExit("BLOCKED: schematic lacks symbols or wires; inspect converter output.")
           PY
+      - name: Resolve converted symbol, pin, net and explicit junction evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/native-netlist
+          mapfile -t schematics < <(find work/kicad -maxdepth 1 -type f -name '*.kicad_sch' -size +999c | sort)
+          test "${#schematics[@]}" -eq 1
+          if ! command -v kicad-cli >/dev/null 2>&1; then
+            python - <<'PY'
+            import json
+            from pathlib import Path
+            Path("work/native-netlist/netlist-resolution-status.json").write_text(
+                json.dumps({
+                    "schema": "qi9-converted-netlist-resolution-status/v1",
+                    "status": "BLOCKED_KICAD_CLI_NOT_INSTALLED",
+                    "symbol_count": 0,
+                    "resolved_pin_membership_count": 0,
+                    "net_count": 0,
+                    "explicit_junction_object_count": 0,
+                    "electrical_resolution_authority": False,
+                    "reason": "kicad-cli is unavailable on this runner; no converted netlist was exported"
+                }, indent=2) + "\\n", encoding="utf-8"
+            )
+            PY
+            exit 0
+          fi
+          kicad-cli sch export netlist --format kicadxml -o work/native-netlist/netlist.xml "${schematics[0]}"
+          python tools/pdf-schematic/import_converted_kicad_netlist.py             --netlist work/native-netlist/netlist.xml             --source-schdoc audit-input-2605/QI9-2605-A01.SchDoc             --converted-kicad-sch "${schematics[0]}"             --out work/native-netlist/converted-netlist-ir.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          ir = json.loads(Path("work/native-netlist/converted-netlist-ir.json").read_text(encoding="utf-8"))
+          status = {
+              "schema": "qi9-converted-netlist-resolution-status/v1",
+              "status": ir["status"],
+              **ir["counts"],
+              "electrical_resolution_authority": False,
+              "native_altium_equivalence_verified": False,
+              "unknown_reasons": ir["unknown_reasons"]
+          }
+          Path("work/native-netlist/netlist-resolution-status.json").write_text(
+              json.dumps(status, indent=2) + "\\n", encoding="utf-8"
+          )
+          PY
       - name: Assemble compact native KiCad conversion evidence
         if: always()
         shell: bash
@@ -113,7 +170,11 @@ jobs:
           source = Path(conversion.get("source", ""))
           if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest() != conversion.get("source_sha256"):
               raise SystemExit("BLOCKED: conversion manifest source hash does not match checked-out SchDoc")
-          allowed = {"conversion_manifest.json", outputs[0].name}
+          allowed = {"conversion_manifest.json", outputs[0].name, "netlist-resolution-status.json"}
+          if (root.parent / "native-netlist/converted-netlist-ir.json").is_file():
+              shutil.copy2(root.parent / "native-netlist/converted-netlist-ir.json", root / "converted-netlist-ir.json")
+              allowed.add("converted-netlist-ir.json")
+          shutil.copy2(root.parent / "native-netlist/netlist-resolution-status.json", root / "netlist-resolution-status.json")
           if {p.name for p in root.iterdir() if p.is_file()} != allowed:
               raise SystemExit("BLOCKED: unexpected native conversion evidence files")
           files = {}
@@ -184,7 +245,10 @@ jobs:
               if manifest.get(key) != value:
                   raise SystemExit(f"BLOCKED: native KiCad artifact lineage/schema mismatch: {key}")
           files = manifest.get("files", {})
-          if len(files) != 2 or "conversion_manifest.json" not in files or len([n for n in files if n.endswith(".kicad_sch")]) != 1:
+          required = {"conversion_manifest.json", "netlist-resolution-status.json"}
+          schematics = [n for n in files if n.endswith(".kicad_sch")]
+          optional = {"converted-netlist-ir.json"}
+          if len(schematics) != 1 or not required.issubset(files) or set(files) - required - set(schematics) - optional:
               raise SystemExit("BLOCKED: native KiCad artifact file set mismatch")
           actual = {p.name for p in root.iterdir() if p.is_file()} - {"evidence-manifest.json"}
           if actual != set(files):
