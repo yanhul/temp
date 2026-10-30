@@ -149,6 +149,7 @@ jobs:
           Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(summary) + "\n", encoding="utf-8")
           PY
       - name: Upload required native KiCad conversion evidence
+        id: upload_native_kicad_evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -156,6 +157,18 @@ jobs:
           path: work/evidence/
           if-no-files-found: error
           retention-days: 3
+      - name: Report native KiCad evidence storage outcome
+        if: always()
+        env:
+          UPLOAD_OUTCOME: ${{ steps.upload_native_kicad_evidence.outcome }}
+        shell: bash
+        run: |
+          if [ "$UPLOAD_OUTCOME" = "success" ]; then
+            echo "### Native KiCad evidence storage: UPLOADED" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Native KiCad evidence storage: BLOCKED" >> "$GITHUB_STEP_SUMMARY"
+            echo "Required native KiCad artifact upload failed; conversion output is not considered archived." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Download and verify native KiCad conversion evidence
         if: success()
         uses: actions/download-artifact@v4
