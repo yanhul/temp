@@ -96,7 +96,7 @@ jobs:
               f"- Commit: `{manifest['commit_sha']}`\n"
               f"- Run: `{manifest['workflow_run_id']}` (attempt `{manifest['workflow_run_attempt']}`)\n"
               f"- Design status: **{receipt.get('status')}**\n"
-              "- Receipt and SHA-256 manifest attached as a required artifact.\n",
+              "- Receipt and SHA-256 manifest prepared; archive status is reported by the evidence-storage step.\n",
               encoding="utf-8"
           )
           PY
