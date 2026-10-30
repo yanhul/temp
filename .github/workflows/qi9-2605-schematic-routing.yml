@@ -67,6 +67,7 @@ jobs:
       - name: Upload schematic-only evidence
         if: always()
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: qi9-2605-schematic-gate
           path: work-2605/schematic
@@ -206,6 +207,7 @@ jobs:
       - name: Upload PDF backend outputs
         if: always()
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: qi9-2605-pdf-backend-one-pass
           path: work/
@@ -325,6 +327,7 @@ jobs:
       - name: Upload native KiCad schematic
         if: always()
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: qi9-2605-native-kicad-schematic
           path: work-native/
