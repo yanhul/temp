@@ -1,4 +1,5 @@
 name: qi9-native-workflow-diagnostic
+run-name: Validate native workflow syntax and path filters
 
 on:
   push:
