@@ -157,26 +157,23 @@ jobs:
           path: work/evidence/
           if-no-files-found: error
           retention-days: 3
-      - name: Report native KiCad evidence storage outcome
-        if: always()
-        env:
-          UPLOAD_OUTCOME: ${{ steps.upload_native_kicad_evidence.outcome }}
+      - name: Report native KiCad evidence storage success
+        if: steps.upload_native_kicad_evidence.outcome == 'success'
         shell: bash
         run: |
-          if [ "$UPLOAD_OUTCOME" = "success" ]; then
-            echo "### Native KiCad evidence storage: UPLOADED" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "### Native KiCad evidence storage: BLOCKED" >> "$GITHUB_STEP_SUMMARY"
-            echo "Required native KiCad artifact upload failed; conversion output is not considered archived." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          echo "### Native KiCad evidence storage: UPLOADED" >> "$GITHUB_STEP_SUMMARY"
+      - name: Report native KiCad evidence storage blocked
+        if: steps.upload_native_kicad_evidence.outcome != 'success'
+        shell: bash
+        run: |
+          echo "### Native KiCad evidence storage: BLOCKED" >> "$GITHUB_STEP_SUMMARY"
+          echo "Required native KiCad artifact upload failed; conversion output is not considered archived." >> "$GITHUB_STEP_SUMMARY"
       - name: Download and verify native KiCad conversion evidence
-        if: success()
         uses: actions/download-artifact@v4
         with:
           name: qi9-2605-native-kicad-schematic
           path: work/evidence-roundtrip
       - name: Verify native KiCad artifact lineage and hashes
-        if: success()
         shell: bash
         run: |
           set -euo pipefail
