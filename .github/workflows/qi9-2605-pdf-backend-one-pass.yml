@@ -4,7 +4,7 @@ on:
   push:
     paths:
       - 'audit-input-2605/QI9-2605-A01.SchDoc'
-      - '\\[QI9-2605-A01\\] Module ADC.pdf'
+      - '\[QI9-2605-A01\] Module ADC.pdf'
       - '.github/workflows/qi9-2605-pdf-backend-one-pass.yml'
       - 'tools/pdf-schematic/**'
       - 'tests/test_pdf_connectivity_candidates.py'
