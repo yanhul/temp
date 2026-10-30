@@ -118,16 +118,98 @@ jobs:
           graph=json.loads(Path("work/ir/connectivity_candidates.json").read_text(encoding="utf-8"))
           summary={"schema":d["schema"],"status":d["status"],"page_count":d["page_count"],"primitive_count":d["primitive_count"],"symbol_count":d["symbol_count"],"resolved_pin_count":d["resolved_pin_count"],"connectivity_edge_count":d["connectivity_edge_count"],"candidate_segments":graph["segment_count"],"candidate_nodes":graph["node_count"],"candidate_edges":graph["edge_count"],"collinear_overlap_pairs":len(graph["collinear_overlap_pairs"]),"graph_status":graph["status"],"unknown_reasons":d["unknown_reasons"]}
           print(json.dumps(summary,indent=2))
-          Path("work/ir/run-summary.json").write_text(json.dumps(summary,indent=2)+"\\n",encoding="utf-8")
+          Path("work/ir/run-summary.json").write_text(json.dumps(summary,indent=2)+"\n",encoding="utf-8")
           if d["status"] != "BLOCKED_SYMBOL_PIN_CONNECTIVITY_UNRESOLVED":
               raise SystemExit("Unexpected status: IR must not claim electrical PASS without symbol/pin resolver and independent golden-netlist comparison")
           PY
-      - name: Upload PDF IR evidence
-        if: always()
+      - name: Assemble compact, auditable PDF IR evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/evidence
+          test -s work/ir/run-summary.json
+          test -s work/ir/normalized_schematic_ir.json
+          test -s work/ir/connectivity_candidates.json
+          cp work/ir/run-summary.json work/evidence/
+          cp work/ir/normalized_schematic_ir.json work/evidence/
+          cp work/ir/connectivity_candidates.json work/evidence/
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path("work/evidence")
+          files = {}
+          for p in sorted(root.iterdir()):
+              if p.is_file():
+                  files[p.name] = {
+                      "bytes": p.stat().st_size,
+                      "sha256": hashlib.sha256(p.read_bytes()).hexdigest()
+                  }
+          manifest = {
+              "schema": "qi9-pdf-ir-evidence-manifest/v1",
+              "repository": os.environ.get("GITHUB_REPOSITORY"),
+              "commit_sha": os.environ.get("GITHUB_SHA"),
+              "workflow": os.environ.get("GITHUB_WORKFLOW"),
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "files": files,
+              "excluded_intermediates": ["SVG pages", "normalized SVG JSON", "raw PDF primitives"],
+              "electrical_status": "BLOCKED_SYMBOL_PIN_CONNECTIVITY_UNRESOLVED"
+          }
+          (root / "evidence-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          summary = json.loads((root / "run-summary.json").read_text(encoding="utf-8"))
+          lines = [
+              "## QI9 PDF vector IR evidence",
+              "",
+              f"- Commit: `{manifest['commit_sha']}`",
+              f"- Run: `{manifest['workflow_run_id']}` (attempt `{manifest['workflow_run_attempt']}`)",
+              f"- IR status: **{summary['status']}**",
+              f"- Page / primitive / symbol counts: {summary['page_count']} / {summary['primitive_count']} / {summary['symbol_count']}",
+              f"- Resolved pins / connectivity edges: {summary['resolved_pin_count']} / {summary['connectivity_edge_count']}",
+              "- Electrical result: **BLOCKED**; no electrical PASS is claimed.",
+              "",
+              "Evidence files and SHA-256:",
+          ]
+          for name, meta in files.items():
+              lines.append(f"- `{name}` — {meta['bytes']} bytes — `{meta['sha256']}`")
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+      - name: Upload required compact PDF IR evidence
+        id: upload_pdf_ir
         uses: actions/upload-artifact@v4
-        continue-on-error: true
         with:
-          name: qi9-2605-pdf-normalized-ir
-          path: work/ir/run-summary.json
-          if-no-files-found: warn
-          retention-days: 1
+          name: qi9-2605-pdf-ir-evidence
+          path: work/evidence/
+          if-no-files-found: error
+          retention-days: 3
+      - name: Download and verify uploaded PDF IR evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: qi9-2605-pdf-ir-evidence
+          path: work/evidence-roundtrip
+      - name: Verify artifact round-trip hashes and lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path("work/evidence-roundtrip")
+          manifest = json.loads((root / "evidence-manifest.json").read_text(encoding="utf-8"))
+          if manifest.get("repository") != os.environ.get("GITHUB_REPOSITORY"):
+              raise SystemExit("BLOCKED: artifact repository lineage mismatch")
+          if manifest.get("commit_sha") != os.environ.get("GITHUB_SHA"):
+              raise SystemExit("BLOCKED: artifact commit lineage mismatch")
+          if manifest.get("workflow_run_id") != int(os.environ["GITHUB_RUN_ID"]):
+              raise SystemExit("BLOCKED: artifact run lineage mismatch")
+          for name, expected in manifest.get("files", {}).items():
+              p = root / name
+              if not p.is_file():
+                  raise SystemExit(f"BLOCKED: uploaded evidence missing: {name}")
+              actual = hashlib.sha256(p.read_bytes()).hexdigest()
+              if p.stat().st_size != expected["bytes"] or actual != expected["sha256"]:
+                  raise SystemExit(f"BLOCKED: uploaded evidence hash/size mismatch: {name}")
+          required = {"run-summary.json", "normalized_schematic_ir.json", "connectivity_candidates.json"}
+          if set(manifest.get("files", {})) != required:
+              raise SystemExit("BLOCKED: evidence manifest file set is not the approved minimal set")
+          print("PDF_IR_ARTIFACT_UPLOAD_AND_ROUNDTRIP_SHA256_VERIFIED")
+          PY
