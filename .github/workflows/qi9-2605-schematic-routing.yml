@@ -93,7 +93,7 @@ jobs:
       - name: Normalize SVG geometry
         shell: bash
         run: |
-          python -m pytest -q tests/test_pdf_svg_geometry.py tests/test_pdf_normalized_ir.py
+          python -m pytest -q tests/test_pdf_svg_geometry.py tests/test_pdf_normalized_ir.py tests/test_pdf_connectivity_candidates.py
           mkdir -p work/normalized-svg
           for svg in work/svg-evidence/page*.svg; do
             [ -f "$svg" ] || continue
@@ -105,6 +105,8 @@ jobs:
         run: python tools/pdf-schematic/extract_primitives.py "[QI9-2605-A01] Module ADC.pdf" --out work/pdf-primitives/primitives.json
       - name: Build provenance-preserving Normalized Schematic IR
         run: python tools/pdf-schematic/build_normalized_ir.py --svg-dir work/normalized-svg --primitives work/pdf-primitives/primitives.json --out work/ir/normalized_schematic_ir.json
+      - name: Build conservative vector connectivity candidates
+        run: python tools/pdf-schematic/build_connectivity_candidates.py --ir work/ir/normalized_schematic_ir.json --out work/ir/connectivity_candidates.json
       - name: Enforce electrical-resolution boundary
         shell: bash
         run: |
@@ -113,7 +115,10 @@ jobs:
           from pathlib import Path
           p=Path("work/ir/normalized_schematic_ir.json")
           d=json.loads(p.read_text(encoding="utf-8"))
-          print(json.dumps({"schema":d["schema"],"status":d["status"],"page_count":d["page_count"],"primitive_count":d["primitive_count"],"symbol_count":d["symbol_count"],"resolved_pin_count":d["resolved_pin_count"],"connectivity_edge_count":d["connectivity_edge_count"],"unknown_reasons":d["unknown_reasons"]},indent=2))
+          graph=json.loads(Path("work/ir/connectivity_candidates.json").read_text(encoding="utf-8"))
+          summary={"schema":d["schema"],"status":d["status"],"page_count":d["page_count"],"primitive_count":d["primitive_count"],"symbol_count":d["symbol_count"],"resolved_pin_count":d["resolved_pin_count"],"connectivity_edge_count":d["connectivity_edge_count"],"candidate_segments":graph["segment_count"],"candidate_nodes":graph["node_count"],"candidate_edges":graph["edge_count"],"collinear_overlap_pairs":len(graph["collinear_overlap_pairs"]),"graph_status":graph["status"],"unknown_reasons":d["unknown_reasons"]}
+          print(json.dumps(summary,indent=2))
+          Path("work/ir/run-summary.json").write_text(json.dumps(summary,indent=2)+"\\n",encoding="utf-8")
           if d["status"] != "BLOCKED_SYMBOL_PIN_CONNECTIVITY_UNRESOLVED":
               raise SystemExit("Unexpected status: IR must not claim electrical PASS without symbol/pin resolver and independent golden-netlist comparison")
           PY
