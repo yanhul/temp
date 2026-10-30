@@ -101,3 +101,35 @@ def test_invalid_tolerance_is_rejected():
     import pytest
     with pytest.raises(ValueError):
         mod.build(make_ir([]), tolerance=0)
+
+
+
+def test_nested_collinear_segments_are_connected_without_pairwise_expansion():
+    result = mod.build(make_ir([
+        line([0, 0], [100, 0]),
+        line([10, 0], [90, 0]),
+        line([20, 0], [80, 0]),
+        line([30, 0], [70, 0]),
+    ]))
+    assert len(result["components"]) == 1
+    assert result["edge_count"] <= 3 * result["segment_count"]
+
+
+def test_parallel_lines_outside_endpoint_tolerance_are_not_joined():
+    result = mod.build(make_ir([
+        line([0, 0], [10, 0]),
+        line([0, 1], [10, 1]),
+    ]), tolerance=0.05)
+    assert len(result["components"]) == 2
+
+
+def test_endpoints_on_different_pages_never_join():
+    result = {
+        "pages": [
+            {"page": 1, "evidence": [{"origin": "normalized_svg", "evidence_id": "p1",
+             "geometry": line([0, 0], [10, 0])}]},
+            {"page": 2, "evidence": [{"origin": "normalized_svg", "evidence_id": "p2",
+             "geometry": line([10, 0], [20, 0])}]},
+        ]
+    }
+    assert len(mod.build(result)["components"]) == 2
