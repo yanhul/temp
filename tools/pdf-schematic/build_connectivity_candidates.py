@@ -142,7 +142,8 @@ def build(ir, tolerance=0.05):
         "segment_count": len(segments),
         "node_count": len(nodes),
         "edge_count": len(edges),
-        "components": [{"node_ids": sorted(v)} for v in components.values()],\n        "collinear_overlap_pairs": overlap_pairs,
+        "components": [{"node_ids": sorted(v)} for v in components.values()],
+        "collinear_overlap_pairs": overlap_pairs,
         "nodes": list(nodes.values()),
         "edges": edges,
         "unknown_reasons": [
