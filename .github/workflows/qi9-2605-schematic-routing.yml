@@ -109,13 +109,13 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Download and verify schematic evidence artifact
-        if: always()
+        if: success()()
         uses: actions/download-artifact@v4
         with:
           name: qi9-2605-schematic-gate
           path: work-2605/schematic-evidence-roundtrip
       - name: Verify schematic evidence artifact hashes
-        if: always()
+        if: success()()
         shell: bash
         run: |
           set -euo pipefail
