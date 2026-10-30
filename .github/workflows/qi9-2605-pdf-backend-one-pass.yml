@@ -115,7 +115,10 @@ jobs:
           python - <<'PY'
           import hashlib, importlib.util, json
           from pathlib import Path
-          schematic = Path("work/kicad") / "QI9-2605-A01.kicad_sch"
+          schematic_candidates = sorted(Path("work/kicad").glob("*.kicad_sch"))
+          if len(schematic_candidates) != 1:
+              raise SystemExit("BLOCKED: expected exactly one converted KiCad schematic for junction evidence")
+          schematic = schematic_candidates[0]
           ir_path = Path("work/native-netlist/converted-netlist-ir.json")
           if ir_path.is_file():
               ir = json.loads(ir_path.read_text(encoding="utf-8"))
