@@ -95,6 +95,11 @@ def build(ir, tolerance=0.05):
         if ra != rb:
             parent[rb] = ra
 
+    # Every drawn segment joins its own two endpoints.
+    for seg in segments:
+        union((seg["page"], *_key(seg["a"], tolerance)),
+              (seg["page"], *_key(seg["b"], tolerance)))
+
     # Merge endpoint nodes within tolerance; don't merge across pages.
     keys = list(nodes)
     for i, ka in enumerate(keys):
