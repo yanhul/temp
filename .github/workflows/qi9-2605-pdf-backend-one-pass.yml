@@ -88,11 +88,103 @@ jobs:
           if counts["symbol"] == 0 or counts["wire"] == 0:
               raise SystemExit("BLOCKED: schematic lacks symbols or wires; inspect converter output.")
           PY
-      - name: Upload KiCad schematic and conversion evidence
+      - name: Assemble compact native KiCad conversion evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s work/evidence/conversion_manifest.json
+          mapfile -t outputs < <(find work/kicad -maxdepth 1 -type f -name '*.kicad_sch' -size +999c | sort)
+          test "${#outputs[@]}" -eq 1
+          cp "${outputs[0]}" work/evidence/
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path("work/evidence")
+          outputs = sorted(root.glob("*.kicad_sch"))
+          if len(outputs) != 1:
+              raise SystemExit("BLOCKED: expected exactly one converted .kicad_sch")
+          allowed = {"conversion_manifest.json", outputs[0].name}
+          if {p.name for p in root.iterdir() if p.is_file()} != allowed:
+              raise SystemExit("BLOCKED: unexpected native conversion evidence files")
+          files = {}
+          for name in sorted(allowed):
+              p = root / name
+              if not p.is_file() or p.stat().st_size == 0:
+                  raise SystemExit(f"BLOCKED: missing/empty evidence file: {name}")
+              files[name] = {"bytes": p.stat().st_size, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
+          manifest = {
+              "schema": "qi9-native-kicad-conversion-evidence/v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "commit_sha": os.environ["GITHUB_SHA"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "files": files,
+              "verification_status": "CONVERTED_UNVERIFIED",
+              "electrical_connectivity_verified": False
+          }
+          (root / "evidence-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          summary = [
+              "## QI9 native SchDoc → KiCad conversion evidence",
+              "",
+              f"- Commit: `{manifest['commit_sha']}`",
+              f"- Run: `{manifest['workflow_run_id']}` (attempt `{manifest['workflow_run_attempt']}`)",
+              "- Conversion: **CONVERTED_UNVERIFIED**",
+              "- Electrical connectivity: **NOT VERIFIED**",
+              "",
+              "Files and SHA-256:"
+          ]
+          for name, meta in files.items():
+              summary.append(f"- `{name}` — {meta['bytes']} bytes — `{meta['sha256']}`")
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(summary) + "\n", encoding="utf-8")
+          PY
+      - name: Upload required native KiCad conversion evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: qi9-2605-native-kicad-schematic
           path: work/evidence/
-          if-no-files-found: warn
-          retention-days: 1
+          if-no-files-found: error
+          retention-days: 3
+      - name: Download and verify native KiCad conversion evidence
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          name: qi9-2605-native-kicad-schematic
+          path: work/evidence-roundtrip
+      - name: Verify native KiCad artifact lineage and hashes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path("work/evidence-roundtrip")
+          manifest = json.loads((root / "evidence-manifest.json").read_text(encoding="utf-8"))
+          expected_lineage = {
+              "schema": "qi9-native-kicad-conversion-evidence/v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "commit_sha": os.environ["GITHUB_SHA"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+          }
+          for key, value in expected_lineage.items():
+              if manifest.get(key) != value:
+                  raise SystemExit(f"BLOCKED: native KiCad artifact lineage/schema mismatch: {key}")
+          files = manifest.get("files", {})
+          if len(files) != 2 or "conversion_manifest.json" not in files or len([n for n in files if n.endswith(".kicad_sch")]) != 1:
+              raise SystemExit("BLOCKED: native KiCad artifact file set mismatch")
+          actual = {p.name for p in root.iterdir() if p.is_file()} - {"evidence-manifest.json"}
+          if actual != set(files):
+              raise SystemExit("BLOCKED: unexpected or missing native KiCad artifact files")
+          for name, expected in files.items():
+              p = root / name
+              if not p.is_file() or p.stat().st_size != expected["bytes"]:
+                  raise SystemExit(f"BLOCKED: native KiCad evidence missing/size mismatch: {name}")
+              if hashlib.sha256(p.read_bytes()).hexdigest() != expected["sha256"]:
+                  raise SystemExit(f"BLOCKED: native KiCad evidence hash mismatch: {name}")
+          print("NATIVE_KICAD_ARTIFACT_UPLOAD_ROUNDTRIP_LINEAGE_SHA256_VERIFIED")
+          PY
