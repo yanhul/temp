@@ -54,11 +54,102 @@ jobs:
               print("SCHEMATIC_E2E_CONFORMANCE_PASS; DESIGN_STATUS=BLOCKED")
               print(json.dumps(receipt.get("evidence", {}).get("required_unknown_findings", []), sort_keys=True))
           PY
-      - name: Upload QI9-2605 schematic evidence
+      - name: Assemble required PR schematic receipt evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s work-2605/schematic/phase_receipt.json
+          mkdir -p work-2605/pr-schematic-evidence
+          cp work-2605/schematic/phase_receipt.json work-2605/pr-schematic-evidence/
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path("work-2605/pr-schematic-evidence")
+          p = root / "phase_receipt.json"
+          manifest = {
+              "schema": "qi9-pr-schematic-evidence-manifest/v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "commit_sha": os.environ["GITHUB_SHA"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "files": {"phase_receipt.json": {
+                  "bytes": p.stat().st_size,
+                  "sha256": hashlib.sha256(p.read_bytes()).hexdigest()
+              }}
+          }
+          (root / "evidence-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          receipt = json.loads(p.read_text(encoding="utf-8"))
+          summary = [
+              "## QI9 PR schematic receipt evidence",
+              "",
+              f"- Commit: `{manifest['commit_sha']}`",
+              f"- Run: `{manifest['workflow_run_id']}` (attempt `{manifest['workflow_run_attempt']}`)",
+              f"- Design status: **{receipt.get('status')}**",
+              "- Receipt is evidence only; BLOCKED design status is not converted into PASS."
+          ]
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(summary) + "\n", encoding="utf-8")
+          PY
+      - name: Upload required PR schematic evidence
+        id: upload_pr_schematic_evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: qi9-2605-pr-schematic-evidence
-          path: work-2605/schematic
+          path: work-2605/pr-schematic-evidence/
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 3
+      - name: Report PR schematic evidence storage outcome
+        if: always()
+        env:
+          UPLOAD_OUTCOME: ${{ steps.upload_pr_schematic_evidence.outcome }}
+        shell: bash
+        run: |
+          if [ "$UPLOAD_OUTCOME" = "success" ]; then
+            echo "### PR schematic evidence storage: UPLOADED" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### PR schematic evidence storage: BLOCKED" >> "$GITHUB_STEP_SUMMARY"
+            echo "Required PR schematic artifact upload failed; the receipt is not considered archived." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Download and verify PR schematic evidence
+        if: success()
+        uses: actions/download-artifact@v4
+        with:
+          name: qi9-2605-pr-schematic-evidence
+          path: work-2605/pr-schematic-evidence-roundtrip
+      - name: Verify PR schematic artifact lineage and hashes
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path("work-2605/pr-schematic-evidence-roundtrip")
+          manifest = json.loads((root / "evidence-manifest.json").read_text(encoding="utf-8"))
+          expected_lineage = {
+              "schema": "qi9-pr-schematic-evidence-manifest/v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "commit_sha": os.environ["GITHUB_SHA"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+          }
+          for key, value in expected_lineage.items():
+              if manifest.get(key) != value:
+                  raise SystemExit(f"BLOCKED: PR schematic artifact lineage/schema mismatch: {key}")
+          required = {"phase_receipt.json"}
+          if set(manifest.get("files", {})) != required:
+              raise SystemExit("BLOCKED: PR schematic artifact manifest file set mismatch")
+          actual = {p.name for p in root.iterdir() if p.is_file()} - {"evidence-manifest.json"}
+          if actual != required:
+              raise SystemExit("BLOCKED: unexpected or missing PR schematic artifact files")
+          for name, expected in manifest["files"].items():
+              p = root / name
+              if not p.is_file() or p.stat().st_size != expected["bytes"]:
+                  raise SystemExit(f"BLOCKED: PR schematic evidence missing/size mismatch: {name}")
+              if hashlib.sha256(p.read_bytes()).hexdigest() != expected["sha256"]:
+                  raise SystemExit(f"BLOCKED: PR schematic evidence hash mismatch: {name}")
+          print("PR_SCHEMATIC_ARTIFACT_UPLOAD_ROUNDTRIP_LINEAGE_SHA256_VERIFIED")
+          PY

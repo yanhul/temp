@@ -6,6 +6,7 @@ on:
     paths:
       - 'audit-input-2605/**'
       - 'tools/altium-audit/**'
+      - 'tools/pdf-schematic/**'
       - 'altium-audit-2605.config.json'
       - '.github/workflows/qi9-2605-schematic-routing.yml'
   pull_request:
@@ -14,6 +15,7 @@ on:
       - 'tools/altium-audit/**'
       - 'altium-audit-2605.config.json'
       - 'altium-audit-2605.placement-authority.json'
+      - 'tools/pdf-schematic/**'
       - 'tests/**'
       - '.github/workflows/qi9-2605-schematic-routing.yml'
   workflow_dispatch:
@@ -62,17 +64,107 @@ jobs:
               print("SCHEMATIC_GATE_CONFORMANCE_PASS; DESIGN_STATUS=BLOCKED")
               print(json.dumps(receipt.get("evidence", {}).get("required_unknown_findings", []), sort_keys=True))
           PY
-      - name: Upload schematic-only evidence
+      - name: Assemble schematic phase receipt evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s work-2605/schematic/phase_receipt.json
+          mkdir -p work-2605/schematic-evidence
+          cp work-2605/schematic/phase_receipt.json work-2605/schematic-evidence/
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path("work-2605/schematic-evidence")
+          p = root / "phase_receipt.json"
+          manifest = {
+              "schema": "qi9-schematic-phase-evidence-manifest/v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "commit_sha": os.environ["GITHUB_SHA"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "files": {"phase_receipt.json": {
+                  "bytes": p.stat().st_size,
+                  "sha256": hashlib.sha256(p.read_bytes()).hexdigest()
+              }}
+          }
+          (root / "evidence-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          receipt = json.loads(p.read_text(encoding="utf-8"))
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(
+              "## QI9 schematic phase evidence\n\n"
+              f"- Commit: `{manifest['commit_sha']}`\n"
+              f"- Run: `{manifest['workflow_run_id']}` (attempt `{manifest['workflow_run_attempt']}`)\n"
+              f"- Design status: **{receipt.get('status')}**\n"
+              "- Receipt and SHA-256 manifest prepared; archive status is reported by the evidence-storage step.\n",
+              encoding="utf-8"
+          )
+          PY
+      - name: Upload required schematic phase evidence
+        id: upload_schematic_evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: qi9-2605-schematic-gate
-          path: work-2605/schematic
+          path: work-2605/schematic-evidence/
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 3
+      - name: Report schematic evidence storage outcome
+        if: always()
+        env:
+          UPLOAD_OUTCOME: ${{ steps.upload_schematic_evidence.outcome }}
+        shell: bash
+        run: |
+          if [ "$UPLOAD_OUTCOME" = "success" ]; then
+            echo "### Evidence storage: UPLOADED" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Evidence storage: BLOCKED" >> "$GITHUB_STEP_SUMMARY"
+            echo "Required artifact upload failed; the receipt is not considered archived." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Download and verify schematic evidence artifact
+        if: success()
+        uses: actions/download-artifact@v4
+        with:
+          name: qi9-2605-schematic-gate
+          path: work-2605/schematic-evidence-roundtrip
+      - name: Verify schematic evidence artifact hashes
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path("work-2605/schematic-evidence-roundtrip")
+          manifest = json.loads((root / "evidence-manifest.json").read_text(encoding="utf-8"))
+          expected_lineage = {
+              "schema": "qi9-schematic-phase-evidence-manifest/v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "commit_sha": os.environ["GITHUB_SHA"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+          }
+          for key, value in expected_lineage.items():
+              if manifest.get(key) != value:
+                  raise SystemExit(f"BLOCKED: schematic artifact lineage/schema mismatch: {key}")
+          required = {"phase_receipt.json"}
+          if set(manifest.get("files", {})) != required:
+              raise SystemExit("BLOCKED: schematic evidence manifest file set mismatch")
+          actual_files = {p.name for p in root.iterdir() if p.is_file()} - {"evidence-manifest.json"}
+          if actual_files != required:
+              raise SystemExit("BLOCKED: unexpected or missing schematic artifact files")
+          for name, expected in manifest["files"].items():
+              p = root / name
+              if not p.is_file() or p.stat().st_size != expected["bytes"]:
+                  raise SystemExit(f"BLOCKED: schematic evidence missing/size mismatch: {name}")
+              if hashlib.sha256(p.read_bytes()).hexdigest() != expected["sha256"]:
+                  raise SystemExit(f"BLOCKED: schematic evidence hash mismatch: {name}")
+          print("SCHEMATIC_ARTIFACT_UPLOAD_AND_ROUNDTRIP_SHA256_LINEAGE_VERIFIED")
+          PY
 
 
-  pdf-backend-one-pass:
+  pdf-vector-ir:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -80,51 +172,156 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install specialist PDF schematic backend
-        run: python -m pip install 'git+https://github.com/sphrd/SchematicNetlist.git'
-      - name: Backend health check
-        run: schematic-netlist doctor
-      - name: Analyze uploaded QI9 PDF
+      - name: Install deterministic PDF/SVG intake dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
+          python -m pip install pymupdf pytest
+      - name: Export vector PDF pages to SVG evidence
+        run: python tools/pdf-schematic/export_svg_evidence.py "[QI9-2605-A01] Module ADC.pdf" --out work/svg-evidence
+      - name: Normalize SVG geometry
         shell: bash
         run: |
-          mkdir -p work/pdf-backend
-          set +e
-          schematic-netlist analyze "[QI9-2605-A01] Module ADC.pdf" -o work/pdf-backend --no-excel --no-spice --no-cache > work/backend.stdout.txt 2> work/backend.stderr.txt
-          rc=$?
-          set -e
-          printf '%s\\n' "$rc" > work/backend.exit_code
-          exit "$rc"
-      - name: Build truthful run manifest
-        if: always()
+          python -m pytest -q tests/test_pdf_svg_geometry.py tests/test_pdf_normalized_ir.py tests/test_pdf_connectivity_candidates.py tests/test_converted_kicad_netlist_ir.py
+          mkdir -p work/normalized-svg
+          for svg in work/svg-evidence/page*.svg; do
+            [ -f "$svg" ] || continue
+            name="$(basename "$svg" .svg)"
+            python tools/pdf-schematic/normalize_svg_geometry.py "$svg" --out "work/normalized-svg/$name.json"
+          done
+          test "$(find work/normalized-svg -name '*.json' | wc -l)" -eq 16
+      - name: Extract PDF text and vector primitives
+        run: python tools/pdf-schematic/extract_primitives.py "[QI9-2605-A01] Module ADC.pdf" --out work/pdf-primitives/primitives.json
+      - name: Build provenance-preserving Normalized Schematic IR
+        run: python tools/pdf-schematic/build_normalized_ir.py --svg-dir work/normalized-svg --primitives work/pdf-primitives/primitives.json --out work/ir/normalized_schematic_ir.json
+      - name: Build conservative vector connectivity candidates
+        run: python tools/pdf-schematic/build_connectivity_candidates.py --ir work/ir/normalized_schematic_ir.json --out work/ir/connectivity_candidates.json
+      - name: Enforce electrical-resolution boundary
+        shell: bash
         run: |
-          mkdir -p work
           python - <<'PY'
           import json
           from pathlib import Path
-          root = Path("work")
-          try:
-              rc = int((root / "backend.exit_code").read_text().strip())
-          except Exception:
-              rc = None
-          outputs = [{"path": str(p), "bytes": p.stat().st_size} for p in sorted(root.rglob("*")) if p.is_file() and p.name != "run_manifest.json"]
-          manifest = {
-              "schema": "qi9-pdf-backend-run/v1",
-              "input": "[QI9-2605-A01] Module ADC.pdf",
-              "backend": "SchematicNetlist",
-              "backend_exit_code": rc,
-              "status": "EXTRACTED_UNVERIFIED" if rc == 0 else "BLOCKED_BACKEND_FAILURE",
-              "kicad_schematic_generated": False,
-              "netlist_connectivity_independently_verified": False,
-              "outputs": outputs,
-          }
-          (root / "run_manifest.json").write_text(json.dumps(manifest, indent=2) + "\\n")
-          print(json.dumps(manifest, indent=2))
+          p=Path("work/ir/normalized_schematic_ir.json")
+          d=json.loads(p.read_text(encoding="utf-8"))
+          graph=json.loads(Path("work/ir/connectivity_candidates.json").read_text(encoding="utf-8"))
+          summary={"schema":d["schema"],"status":d["status"],"page_count":d["page_count"],"primitive_count":d["primitive_count"],"symbol_count":d["symbol_count"],"resolved_pin_count":d["resolved_pin_count"],"connectivity_edge_count":d["connectivity_edge_count"],"candidate_segments":graph["segment_count"],"candidate_nodes":graph["node_count"],"candidate_edges":graph["edge_count"],"collinear_overlap_pairs":len(graph["collinear_overlap_pairs"]),"graph_status":graph["status"],"unknown_reasons":d["unknown_reasons"]}
+          print(json.dumps(summary,indent=2))
+          Path("work/ir/run-summary.json").write_text(json.dumps(summary,indent=2)+"\n",encoding="utf-8")
+          if d["status"] != "BLOCKED_SYMBOL_PIN_CONNECTIVITY_UNRESOLVED":
+              raise SystemExit("Unexpected status: IR must not claim electrical PASS without symbol/pin resolver and independent golden-netlist comparison")
           PY
-      - name: Upload PDF backend outputs
-        if: always()
+      - name: Assemble compact, auditable PDF IR evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/evidence
+          test -s work/ir/run-summary.json
+          test -s work/ir/normalized_schematic_ir.json
+          test -s work/ir/connectivity_candidates.json
+          cp work/ir/run-summary.json work/evidence/
+          cp work/ir/normalized_schematic_ir.json work/evidence/
+          cp work/ir/connectivity_candidates.json work/evidence/
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path("work/evidence")
+          files = {}
+          for p in sorted(root.iterdir()):
+              if p.is_file():
+                  files[p.name] = {
+                      "bytes": p.stat().st_size,
+                      "sha256": hashlib.sha256(p.read_bytes()).hexdigest()
+                  }
+          manifest = {
+              "schema": "qi9-pdf-ir-evidence-manifest/v1",
+              "repository": os.environ.get("GITHUB_REPOSITORY"),
+              "commit_sha": os.environ.get("GITHUB_SHA"),
+              "workflow": os.environ.get("GITHUB_WORKFLOW"),
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "files": files,
+              "excluded_intermediates": ["SVG pages", "normalized SVG JSON", "raw PDF primitives"],
+              "electrical_status": "BLOCKED_SYMBOL_PIN_CONNECTIVITY_UNRESOLVED"
+          }
+          (root / "evidence-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          summary = json.loads((root / "run-summary.json").read_text(encoding="utf-8"))
+          lines = [
+              "## QI9 PDF vector IR evidence",
+              "",
+              f"- Commit: `{manifest['commit_sha']}`",
+              f"- Run: `{manifest['workflow_run_id']}` (attempt `{manifest['workflow_run_attempt']}`)",
+              f"- IR status: **{summary['status']}**",
+              f"- Page / primitive / symbol counts: {summary['page_count']} / {summary['primitive_count']} / {summary['symbol_count']}",
+              f"- Resolved pins / connectivity edges: {summary['resolved_pin_count']} / {summary['connectivity_edge_count']}",
+              "- Electrical result: **BLOCKED**; no electrical PASS is claimed.",
+              "",
+              "Evidence files and SHA-256:",
+          ]
+          for name, meta in files.items():
+              lines.append(f"- `{name}` — {meta['bytes']} bytes — `{meta['sha256']}`")
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+      - name: Upload required compact PDF IR evidence
+        id: upload_pdf_ir
         uses: actions/upload-artifact@v4
         with:
-          name: qi9-2605-pdf-backend-one-pass
-          path: work/
-          if-no-files-found: warn
-          retention-days: 90
+          name: qi9-2605-pdf-ir-evidence
+          path: work/evidence/
+          if-no-files-found: error
+          retention-days: 3
+      - name: Report PDF IR evidence storage outcome
+        if: always()
+        env:
+          UPLOAD_OUTCOME: ${{ steps.upload_pdf_ir.outcome }}
+        shell: bash
+        run: |
+          if [ "$UPLOAD_OUTCOME" = "success" ]; then
+            echo "### PDF IR evidence storage: UPLOADED" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### PDF IR evidence storage: BLOCKED" >> "$GITHUB_STEP_SUMMARY"
+            echo "Required PDF IR artifact upload failed; manifest and log are not substitutes for the artifact." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Download and verify uploaded PDF IR evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: qi9-2605-pdf-ir-evidence
+          path: work/evidence-roundtrip
+      - name: Verify artifact round-trip hashes and lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path("work/evidence-roundtrip")
+          manifest = json.loads((root / "evidence-manifest.json").read_text(encoding="utf-8"))
+          expected_lineage = {
+              "schema": "qi9-pdf-ir-evidence-manifest/v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "commit_sha": os.environ["GITHUB_SHA"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+          }
+          for key, value in expected_lineage.items():
+              if manifest.get(key) != value:
+                  raise SystemExit(f"BLOCKED: PDF IR artifact lineage/schema mismatch: {key}")
+          required = {"run-summary.json", "normalized_schematic_ir.json", "connectivity_candidates.json"}
+          if set(manifest.get("files", {})) != required:
+              raise SystemExit("BLOCKED: evidence manifest file set is not the approved minimal set")
+          actual_files = {p.name for p in root.iterdir() if p.is_file()} - {"evidence-manifest.json"}
+          if actual_files != required:
+              raise SystemExit("BLOCKED: unexpected or missing PDF IR artifact files")
+          for name, expected in manifest.get("files", {}).items():
+              p = root / name
+              if not p.is_file():
+                  raise SystemExit(f"BLOCKED: uploaded evidence missing: {name}")
+              actual = hashlib.sha256(p.read_bytes()).hexdigest()
+              if p.stat().st_size != expected["bytes"] or actual != expected["sha256"]:
+                  raise SystemExit(f"BLOCKED: uploaded evidence hash/size mismatch: {name}")
+          required = {"run-summary.json", "normalized_schematic_ir.json", "connectivity_candidates.json"}
+          if set(manifest.get("files", {})) != required:
+              raise SystemExit("BLOCKED: evidence manifest file set is not the approved minimal set")
+          print("PDF_IR_ARTIFACT_UPLOAD_AND_ROUNDTRIP_SHA256_VERIFIED")
+          PY

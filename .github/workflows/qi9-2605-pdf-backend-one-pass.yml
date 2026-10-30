@@ -1,73 +1,298 @@
-name: qi9-2605-pdf-backend-one-pass
+name: qi9-2605-native-schematic-to-kicad
 
 on:
   push:
     paths:
-      - '[QI9-2605-A01] Module ADC.pdf'
+      - 'audit-input-2605/QI9-2605-A01.SchDoc'
+      - '\[QI9-2605-A01\] Module ADC.pdf'
       - '.github/workflows/qi9-2605-pdf-backend-one-pass.yml'
+      - 'tools/pdf-schematic/**'
+      - 'tests/test_pdf_connectivity_candidates.py'
+      - 'tests/test_converted_kicad_netlist_ir.py'
+  pull_request:
+    paths:
+      - 'audit-input-2605/QI9-2605-A01.SchDoc'
+      - '.github/workflows/qi9-2605-pdf-backend-one-pass.yml'
+      - 'tools/pdf-schematic/**'
+      - 'tests/test_pdf_connectivity_candidates.py'
+      - 'tests/test_converted_kicad_netlist_ir.py'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  pdf-backend:
+  native-schdoc-to-kicad:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install specialist PDF schematic backend
-        run: python -m pip install 'git+https://github.com/sphrd/SchematicNetlist.git'
-      - name: Backend health check
-        run: schematic-netlist doctor
-      - name: Analyze the uploaded QI9 PDF
-        id: analyze
+      - name: Install and run graph/netlist authority regressions
+        run: |
+          python -m pip install pytest
+          python -m pytest -q tests/test_pdf_connectivity_candidates.py tests/test_converted_kicad_netlist_ir.py
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Confirm authoritative 2605 source exists
         shell: bash
         run: |
-          set +e
-          schematic-netlist analyze "[QI9-2605-A01] Module ADC.pdf" -o work/pdf-backend --no-excel --no-spice --no-cache > work/backend.stdout.txt 2> work/backend.stderr.txt
-          rc=$?
-          set -e
-          printf '%s\n' "$rc" > work/backend.exit_code
-          exit "$rc"
-      - name: Build truthful run manifest
+          test -s 'audit-input-2605/QI9-2605-A01.SchDoc'
+          sha256sum 'audit-input-2605/QI9-2605-A01.SchDoc'
+      - name: Convert native Altium SchDoc with existing Go converter
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/kicad work/svg work/evidence work/logs
+          go run github.com/rveen/golib/formats/altium/cmd/schconv@latest -kicad -out work/kicad 'audit-input-2605/QI9-2605-A01.SchDoc' 2>&1 | tee work/logs/kicad-conversion.log
+      - name: Render source schematic to SVG for visual audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          go run github.com/rveen/golib/formats/altium/cmd/schconv@latest -svg -out work/svg 'audit-input-2605/QI9-2605-A01.SchDoc' 2>&1 | tee work/logs/svg-conversion.log
+      - name: Validate generated schematic structure and record counts
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json, re, hashlib
+          out = Path("work/kicad")
+          files = sorted(out.glob("*.kicad_sch"))
+          if len(files) != 1 or files[0].stat().st_size < 1000:
+              raise SystemExit(f"BLOCKED: expected one nontrivial .kicad_sch; found {[(p.name,p.stat().st_size) for p in files]}")
+          p = files[0]
+          data = p.read_text(encoding="utf-8", errors="replace")
+          # Basic syntax sanity only; not a substitute for KiCad ERC/connectivity verification.
+          depth = 0
+          quoted = escaped = False
+          for ch in data:
+              if quoted:
+                  if escaped: escaped = False
+                  elif ch == "\\": escaped = True
+                  elif ch == '"': quoted = False
+                  continue
+              if ch == '"': quoted = True
+              elif ch == '(': depth += 1
+              elif ch == ')':
+                  depth -= 1
+                  if depth < 0: raise SystemExit("BLOCKED: unbalanced closing parenthesis")
+          if quoted or depth != 0:
+              raise SystemExit(f"BLOCKED: unbalanced KiCad S-expression (depth={depth}, quoted={quoted})")
+          counts = {k: len(re.findall(r"\(" + k + r"(?=\s|\))", data)) for k in ["symbol", "wire", "label", "global_label", "junction", "no_connect", "sheet"]}
+          manifest = {
+            "schema": "qi9-native-schdoc-to-kicad/v1",
+            "source": "audit-input-2605/QI9-2605-A01.SchDoc",
+            "source_sha256": hashlib.sha256(Path("audit-input-2605/QI9-2605-A01.SchDoc").read_bytes()).hexdigest(),
+            "output": str(p),
+            "output_bytes": p.stat().st_size,
+            "output_sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
+            "counts": counts,
+            "sexpr_balanced": True,
+            "kicad_cli_erc_run": False,
+            "connectivity_equivalence_verified": False,
+            "status": "CONVERTED_UNVERIFIED"
+          }
+          Path("work/evidence/conversion_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          print(json.dumps(manifest, indent=2))
+          if counts["symbol"] == 0 or counts["wire"] == 0:
+              raise SystemExit("BLOCKED: schematic lacks symbols or wires; inspect converter output.")
+          PY
+      - name: Resolve converted symbol, pin, net and explicit junction evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/native-netlist
+          mapfile -t schematics < <(find work/kicad -maxdepth 1 -type f -name '*.kicad_sch' -size +999c | sort)
+          test "${#schematics[@]}" -eq 1
+          if command -v kicad-cli >/dev/null 2>&1; then
+            kicad-cli sch export netlist --format kicadxml -o work/native-netlist/netlist.xml "${schematics[0]}"
+            python tools/pdf-schematic/import_converted_kicad_netlist.py --netlist work/native-netlist/netlist.xml --source-schdoc audit-input-2605/QI9-2605-A01.SchDoc --converted-kicad-sch "${schematics[0]}" --out work/native-netlist/converted-netlist-ir.json
+          fi
+          python - <<'PY'
+          import hashlib, importlib.util, json
+          from pathlib import Path
+          schematic_candidates = sorted(Path("work/kicad").glob("*.kicad_sch"))
+          if len(schematic_candidates) != 1:
+              raise SystemExit("BLOCKED: expected exactly one converted KiCad schematic for junction evidence")
+          schematic = schematic_candidates[0]
+          ir_path = Path("work/native-netlist/converted-netlist-ir.json")
+          if ir_path.is_file():
+              ir = json.loads(ir_path.read_text(encoding="utf-8"))
+              status = {
+                  "schema": "qi9-converted-netlist-resolution-status/v1",
+                  "status": ir["status"],
+                  **ir["counts"],
+                  "junction_evidence": ir["junction_evidence"],
+                  "electrical_resolution_authority": False,
+                  "native_altium_equivalence_verified": False,
+                  "unknown_reasons": ir["unknown_reasons"]
+              }
+          else:
+              spec = importlib.util.spec_from_file_location(
+                  "converted_netlist", "tools/pdf-schematic/import_converted_kicad_netlist.py"
+              )
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              junctions = module.extract_explicit_junctions(schematic)
+              status = {
+                  "schema": "qi9-converted-netlist-resolution-status/v1",
+                  "status": "BLOCKED_KICAD_CLI_NOT_INSTALLED",
+                  "symbol_count": 0,
+                  "resolved_pin_membership_count": 0,
+                  "net_count": 0,
+                  "explicit_junction_object_count": len(junctions),
+                  "junction_evidence": junctions,
+                  "electrical_resolution_authority": False,
+                  "native_altium_equivalence_verified": False,
+                  "unknown_reasons": [
+                      "KICAD_CLI_NOT_INSTALLED_NETLIST_NOT_EXPORTED",
+                      "CONVERTED_SYMBOL_PIN_NET_MEMBERSHIP_NOT_RESOLVED",
+                      "NATIVE_ALTIUM_EQUIVALENCE_NOT_VERIFIED"
+                  ]
+              }
+          status["converted_kicad_sch_sha256"] = hashlib.sha256(schematic.read_bytes()).hexdigest()
+          Path("work/native-netlist/netlist-resolution-status.json").write_text(
+              json.dumps(status, indent=2) + "\n", encoding="utf-8"
+          )
+          print(json.dumps({
+              "status": status["status"],
+              "symbol_count": status["symbol_count"],
+              "resolved_pin_membership_count": status["resolved_pin_membership_count"],
+              "net_count": status["net_count"],
+              "explicit_junction_object_count": status["explicit_junction_object_count"],
+              "native_altium_equivalence_verified": status["native_altium_equivalence_verified"]
+          }, indent=2))
+          PY
+      - name: Assemble compact native KiCad conversion evidence
         if: always()
         shell: bash
         run: |
-          mkdir -p work
+          set -euo pipefail
+          test -s work/evidence/conversion_manifest.json
+          mapfile -t outputs < <(find work/kicad -maxdepth 1 -type f -name '*.kicad_sch' -size +999c | sort)
+          test "${#outputs[@]}" -eq 1
+          cp "${outputs[0]}" work/evidence/
           python - <<'PY'
-          import json, os, subprocess
+          import hashlib, json, os, shutil
           from pathlib import Path
-          root = Path("work")
-          outputs = []
-          for p in sorted(root.rglob("*")):
-              if p.is_file() and p.name != "run_manifest.json":
-                  outputs.append({"path": str(p), "bytes": p.stat().st_size})
-          try:
-              rc = int((root / "backend.exit_code").read_text().strip())
-          except Exception:
-              rc = None
+          root = Path("work/evidence")
+          outputs = sorted(root.glob("*.kicad_sch"))
+          if len(outputs) != 1:
+              raise SystemExit("BLOCKED: expected exactly one converted .kicad_sch")
+          conversion = json.loads((root / "conversion_manifest.json").read_text(encoding="utf-8"))
+          output_bytes = outputs[0].read_bytes()
+          if conversion.get("output_bytes") != len(output_bytes):
+              raise SystemExit("BLOCKED: conversion manifest output size does not match .kicad_sch")
+          if conversion.get("output_sha256") != hashlib.sha256(output_bytes).hexdigest():
+              raise SystemExit("BLOCKED: conversion manifest output hash does not match .kicad_sch")
+          source = Path(conversion.get("source", ""))
+          if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest() != conversion.get("source_sha256"):
+              raise SystemExit("BLOCKED: conversion manifest source hash does not match checked-out SchDoc")
+          allowed = {"conversion_manifest.json", outputs[0].name, "netlist-resolution-status.json"}
+          if (root.parent / "native-netlist/converted-netlist-ir.json").is_file():
+              shutil.copy2(root.parent / "native-netlist/converted-netlist-ir.json", root / "converted-netlist-ir.json")
+              allowed.add("converted-netlist-ir.json")
+          shutil.copy2(root.parent / "native-netlist/netlist-resolution-status.json", root / "netlist-resolution-status.json")
+          if {p.name for p in root.iterdir() if p.is_file()} != allowed:
+              raise SystemExit("BLOCKED: unexpected native conversion evidence files")
+          files = {}
+          for name in sorted(allowed):
+              p = root / name
+              if not p.is_file() or p.stat().st_size == 0:
+                  raise SystemExit(f"BLOCKED: missing/empty evidence file: {name}")
+              files[name] = {"bytes": p.stat().st_size, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
+          netlist_status = json.loads((root / "netlist-resolution-status.json").read_text(encoding="utf-8"))
           manifest = {
-              "schema": "qi9-pdf-backend-run/v1",
-              "input": "[QI9-2605-A01] Module ADC.pdf",
-              "backend": "SchematicNetlist",
-              "backend_exit_code": rc,
-              "status": "EXTRACTED_UNVERIFIED" if rc == 0 else "BLOCKED_BACKEND_FAILURE",
-              "kicad_schematic_generated": False,
-              "netlist_connectivity_independently_verified": False,
-              "outputs": outputs,
+              "schema": "qi9-native-kicad-conversion-evidence/v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "commit_sha": os.environ["GITHUB_SHA"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "files": files,
+              "verification_status": "CONVERTED_UNVERIFIED",
+              "electrical_connectivity_verified": False,
+              "netlist_resolution_status": netlist_status.get("status"),
+              "native_altium_equivalence_verified": False
           }
-          (root / "run_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-          print(json.dumps(manifest, indent=2))
+          (root / "evidence-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          summary = [
+              "## QI9 native SchDoc → KiCad conversion evidence",
+              "",
+              f"- Commit: `{manifest['commit_sha']}`",
+              f"- Run: `{manifest['workflow_run_id']}` (attempt `{manifest['workflow_run_attempt']}`)",
+              "- Conversion: **CONVERTED_UNVERIFIED**",
+              "- Electrical connectivity: **NOT VERIFIED**",
+              f"- Converted netlist resolution: **{netlist_status.get('status')}**",
+              f"- Symbols / pin memberships / nets / explicit junctions: {netlist_status.get('symbol_count', 0)} / {netlist_status.get('resolved_pin_membership_count', 0)} / {netlist_status.get('net_count', 0)} / {netlist_status.get('explicit_junction_object_count', 0)}",
+              "- Native Altium equivalence: **NOT VERIFIED**",
+              "- Artifact archival is not claimed unless upload and round-trip verification succeed.",
+              "",
+              "Files and SHA-256:"
+          ]
+          for name, meta in files.items():
+              summary.append(f"- `{name}` — {meta['bytes']} bytes — `{meta['sha256']}`")
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(summary) + "\n", encoding="utf-8")
           PY
-      - name: Upload backend outputs and logs
+      - name: Upload required native KiCad conversion evidence
+        id: upload_native_kicad_evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: qi9-2605-pdf-backend-one-pass
-          path: work/
-          if-no-files-found: warn
-          retention-days: 90
+          name: qi9-2605-native-kicad-schematic
+          path: work/evidence/
+          if-no-files-found: error
+          retention-days: 3
+      - name: Download and verify native KiCad conversion evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: qi9-2605-native-kicad-schematic
+          path: work/evidence-roundtrip
+      - name: Verify native KiCad artifact lineage and hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path("work/evidence-roundtrip")
+          manifest = json.loads((root / "evidence-manifest.json").read_text(encoding="utf-8"))
+          expected_lineage = {
+              "schema": "qi9-native-kicad-conversion-evidence/v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "commit_sha": os.environ["GITHUB_SHA"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+          }
+          for key, value in expected_lineage.items():
+              if manifest.get(key) != value:
+                  raise SystemExit(f"BLOCKED: native KiCad artifact lineage/schema mismatch: {key}")
+          files = manifest.get("files", {})
+          required = {"conversion_manifest.json", "netlist-resolution-status.json"}
+          schematics = [n for n in files if n.endswith(".kicad_sch")]
+          optional = {"converted-netlist-ir.json"}
+          if len(schematics) != 1 or not required.issubset(files) or set(files) - required - set(schematics) - optional:
+              raise SystemExit("BLOCKED: native KiCad artifact file set mismatch")
+          actual = {p.name for p in root.iterdir() if p.is_file()} - {"evidence-manifest.json"}
+          if actual != set(files):
+              raise SystemExit("BLOCKED: unexpected or missing native KiCad artifact files")
+          for name, expected in files.items():
+              p = root / name
+              if not p.is_file() or p.stat().st_size != expected["bytes"]:
+                  raise SystemExit(f"BLOCKED: native KiCad evidence missing/size mismatch: {name}")
+              if hashlib.sha256(p.read_bytes()).hexdigest() != expected["sha256"]:
+                  raise SystemExit(f"BLOCKED: native KiCad evidence hash mismatch: {name}")
+          conversion = json.loads((root / "conversion_manifest.json").read_text(encoding="utf-8"))
+          schematic_name = next(n for n in files if n.endswith(".kicad_sch"))
+          schematic_bytes = (root / schematic_name).read_bytes()
+          if conversion.get("output_bytes") != len(schematic_bytes) or conversion.get("output_sha256") != hashlib.sha256(schematic_bytes).hexdigest():
+              raise SystemExit("BLOCKED: round-tripped .kicad_sch does not match conversion manifest")
+          if manifest.get("verification_status") != "CONVERTED_UNVERIFIED" or manifest.get("electrical_connectivity_verified") is not False:
+              raise SystemExit("BLOCKED: native conversion status overclaims electrical verification")
+          print("NATIVE_KICAD_ARTIFACT_UPLOAD_ROUNDTRIP_LINEAGE_SHA256_VERIFIED")
+          PY
