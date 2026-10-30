@@ -4,7 +4,7 @@ on:
   push:
     paths:
       - 'audit-input-2605/QI9-2605-A01.SchDoc'
-      - '[[]QI9-2605-A01[]] Module ADC.pdf'
+      - '\\[QI9-2605-A01\\] Module ADC.pdf'
       - '.github/workflows/qi9-2605-pdf-backend-one-pass.yml'
       - 'tools/pdf-schematic/**'
       - 'tests/test_pdf_connectivity_candidates.py'
@@ -109,22 +109,7 @@ jobs:
           mapfile -t schematics < <(find work/kicad -maxdepth 1 -type f -name '*.kicad_sch' -size +999c | sort)
           test "${#schematics[@]}" -eq 1
           if ! command -v kicad-cli >/dev/null 2>&1; then
-            python - <<'PY'
-            import json
-            from pathlib import Path
-            Path("work/native-netlist/netlist-resolution-status.json").write_text(
-                json.dumps({
-                    "schema": "qi9-converted-netlist-resolution-status/v1",
-                    "status": "BLOCKED_KICAD_CLI_NOT_INSTALLED",
-                    "symbol_count": 0,
-                    "resolved_pin_membership_count": 0,
-                    "net_count": 0,
-                    "explicit_junction_object_count": 0,
-                    "electrical_resolution_authority": False,
-                    "reason": "kicad-cli is unavailable on this runner; no converted netlist was exported"
-                }, indent=2) + "\\n", encoding="utf-8"
-            )
-            PY
+            printf '%s\\n' '{"schema":"qi9-converted-netlist-resolution-status/v1","status":"BLOCKED_KICAD_CLI_NOT_INSTALLED","symbol_count":0,"resolved_pin_membership_count":0,"net_count":0,"explicit_junction_object_count":0,"electrical_resolution_authority":false,"reason":"kicad-cli is unavailable on this runner; no converted netlist was exported"}' > work/native-netlist/netlist-resolution-status.json
             exit 0
           fi
           kicad-cli sch export netlist --format kicadxml -o work/native-netlist/netlist.xml "${schematics[0]}"
