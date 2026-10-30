@@ -168,6 +168,7 @@ jobs:
               if not p.is_file() or p.stat().st_size == 0:
                   raise SystemExit(f"BLOCKED: missing/empty evidence file: {name}")
               files[name] = {"bytes": p.stat().st_size, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
+          netlist_status = json.loads((root / "netlist-resolution-status.json").read_text(encoding="utf-8"))
           manifest = {
               "schema": "qi9-native-kicad-conversion-evidence/v1",
               "repository": os.environ["GITHUB_REPOSITORY"],
@@ -177,7 +178,9 @@ jobs:
               "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
               "files": files,
               "verification_status": "CONVERTED_UNVERIFIED",
-              "electrical_connectivity_verified": False
+              "electrical_connectivity_verified": False,
+              "netlist_resolution_status": netlist_status.get("status"),
+              "native_altium_equivalence_verified": False
           }
           (root / "evidence-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
           summary = [
@@ -187,6 +190,9 @@ jobs:
               f"- Run: `{manifest['workflow_run_id']}` (attempt `{manifest['workflow_run_attempt']}`)",
               "- Conversion: **CONVERTED_UNVERIFIED**",
               "- Electrical connectivity: **NOT VERIFIED**",
+              f"- Converted netlist resolution: **{netlist_status.get('status')}**",
+              f"- Symbols / pin memberships / nets / explicit junctions: {netlist_status.get('symbol_count', 0)} / {netlist_status.get('resolved_pin_membership_count', 0)} / {netlist_status.get('net_count', 0)} / {netlist_status.get('explicit_junction_object_count', 0)}",
+              "- Native Altium equivalence: **NOT VERIFIED**",
               "- Artifact archival is not claimed unless upload and round-trip verification succeed.",
               "",
               "Files and SHA-256:"
