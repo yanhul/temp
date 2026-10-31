@@ -1,0 +1,75 @@
+name: Cleanup verified duplicate Actions artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run only lists the two allowlisted artifacts; delete removes them"
+        required: true
+        type: choice
+        options:
+          - dry-run
+          - delete
+        default: dry-run
+      confirm:
+        description: "For deletion, enter exactly DELETE_VERIFIED_DUPLICATES"
+        required: false
+        type: string
+
+permissions:
+  actions: write
+
+concurrency:
+  group: verified-artifact-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect and optionally delete exact duplicate artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$MODE" != "dry-run" && "$MODE" != "delete" ]]; then
+            echo "::error::Unsupported mode"
+            exit 1
+          fi
+
+          if [[ "$MODE" == "delete" && "$CONFIRM" != "DELETE_VERIFIED_DUPLICATES" ]]; then
+            echo "::error::Deletion requires the exact confirmation phrase"
+            exit 1
+          fi
+
+          # Fixed allowlist: do not accept arbitrary artifact IDs from workflow inputs.
+          declare -a IDS=("12881718335" "12881321837")
+          declare -a EXPECTED_SIZES=("39239390" "39239390")
+
+          for i in "${!IDS[@]}"; do
+            id="${IDS[$i]}"
+            expected_size="${EXPECTED_SIZES[$i]}"
+            metadata="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/$id")"
+            name="$(jq -r '.name // empty' <<< "$metadata")"
+            size="$(jq -r '.size_in_bytes // empty' <<< "$metadata")"
+            expired="$(jq -r '.expired // false' <<< "$metadata")"
+
+            if [[ "$name" != "altium-audit-kit-e2e" || "$size" != "$expected_size" || "$expired" == "true" ]]; then
+              echo "::error::Artifact $id metadata did not match the audited allowlist (name=$name size=$size expired=$expired)"
+              exit 1
+            fi
+
+            echo "VERIFIED id=$id name=$name size_bytes=$size"
+            if [[ "$MODE" == "delete" ]]; then
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/$id"
+              echo "DELETE_ACCEPTED id=$id (GitHub REST returned success)"
+            else
+              echo "DRY_RUN id=$id (no deletion performed)"
+            fi
+          done
+
+          echo "RESULT mode=$MODE checked=${#IDS[@]}"
