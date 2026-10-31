@@ -80,5 +80,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: altium-audit-kit-e2e
+          retention-days: 3
           path: work
           if-no-files-found: error

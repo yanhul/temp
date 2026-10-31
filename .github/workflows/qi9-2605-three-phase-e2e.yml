@@ -43,6 +43,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: qi9-2605-e2e-schematic
+          retention-days: 3
           path: e2e/schematic
       - name: Unlock placement only after schematic PASS
         if: ${{ always() }}
@@ -96,6 +97,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: qi9-2605-e2e-placement
+          retention-days: 3
           path: e2e/placement
       - name: Unlock routing only after placement PASS
         if: ${{ always() }}
@@ -149,6 +151,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: qi9-2605-e2e-routing
+          retention-days: 3
           path: e2e/routing
 
   strict_terminal_gate:

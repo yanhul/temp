@@ -85,6 +85,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: altium-audit-terminal-evidence
+          retention-days: 3
           path: work/auditkit/
 
       - name: Enforce terminal status
