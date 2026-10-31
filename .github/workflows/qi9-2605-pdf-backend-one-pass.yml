@@ -68,6 +68,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: qi9-2605-pdf-backend-one-pass
+          retention-days: 3
           path: work/
           if-no-files-found: warn
           retention-days: 90
