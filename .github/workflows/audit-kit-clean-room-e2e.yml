@@ -104,4 +104,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: audit-kit-clean-room-e2e
+          retention-days: 3
           path: work/audit/
