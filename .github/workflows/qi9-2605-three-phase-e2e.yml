@@ -163,19 +163,16 @@ jobs:
         continue-on-error: true
         with:
           name: qi9-2605-e2e-schematic
-          retention-days: 3
           path: e2e/schematic
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
           name: qi9-2605-e2e-placement
-          retention-days: 3
           path: e2e/placement
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
           name: qi9-2605-e2e-routing
-          retention-days: 3
           path: e2e/routing
       - name: Require PASS at every phase and classify upstream skips
         shell: bash
