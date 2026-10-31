@@ -828,6 +828,36 @@ def main():
             f"Parser load failed: {type(exc).__name__}: {exc}","FACT")
         write_outputs(out, {"status":"BLOCKED","gates":{"G0_INTAKE":"UNKNOWN","G1_PARSE":"BLOCKED"},"findings":findings})
         return 2
+    # Preserve parser-native evidence so a CI artifact can be independently
+    # inspected when semantic checks produce suspicious pin/net findings.
+    # This is diagnostic output only; it never upgrades a gate or authorizes edits.
+    try:
+        parser_sources = []
+        for source_path in [*schs, *pcbs, *prjs]:
+            if source_path and source_path.is_file():
+                parser_sources.append({
+                    "path": source_path.name,
+                    "size_bytes": source_path.stat().st_size,
+                    "sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(),
+                })
+        (out / "parser-source-manifest.json").write_text(
+            json.dumps({"schema": "altium-parser-source-manifest.v1",
+                        "parse_basis": parse_basis, "sources": parser_sources},
+                       indent=2, ensure_ascii=False), encoding="utf-8")
+        (out / "parser-payload.json").write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False, default=repr),
+            encoding="utf-8")
+        (out / "parser-netlist.json").write_text(
+            json.dumps(netlist if netlist is not None else
+                       {"authoritative": False, "nets": [],
+                        "reason": "No compiled project netlist available"},
+                       indent=2, ensure_ascii=False, default=repr),
+            encoding="utf-8")
+    except Exception as exc:
+        add(findings, "G1-PARSER-DIAGNOSTIC-EXPORT", "HIGH", "parse", "WARN",
+            f"Could not persist parser-native diagnostic payload: {type(exc).__name__}: {exc}",
+            "FACT")
+
     # Parser load success is not parser-contract success. Validate the canonical
     # compiled model and its net terminal references before any semantic consumer.
     parse_contract_ok = False

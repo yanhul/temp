@@ -118,7 +118,8 @@ def _pins(netlist,ref):
                 out[str(t.get("pin"))]={
                     "name":_text(t.get("pin_name")),
                     "net":_text(n.get("name")),
-                    "type":_text(t.get("pin_type"))
+                    "type":_text(t.get("pin_type")),
+                    "resolution_diagnostics": list(t.get("resolution_diagnostics") or [])
                 }
     return out
 
@@ -322,6 +323,7 @@ def run(components,netlist,add,identity_overrides=None,skip_hcpl=False):
                 "pin": str(pin.get("pin")),
                 "pin_name": pin.get("pin_name"),
                 "pin_type": pin.get("electrical_type"),
+                "resolution_diagnostics": list(pin.get("resolution_diagnostics") or []),
             })
     canonical_netlist["nets"] = [
         {"name": name, "terminals": terms} for name, terms in sorted(nets_by_name.items())
@@ -410,10 +412,14 @@ def run(components,netlist,add,identity_overrides=None,skip_hcpl=False):
         # Unlike HCPL-3120, pins 6/7 are NOT duplicate VO pins.
         if _norm(i.get("value")) == "HCPL0600" or _norm(i.get("library")) == "HCPL0600":
             p4, p5, p6, p7, p8 = (pins.get(x) for x in ("4","5","6","7","8"))
-            if p4 and p4.get("net"):
+            if p4 and p4.get("net") and "logical_pin_unresolved" not in (p4.get("resolution_diagnostics") or []):
                 add("G2-HCPL-NC-PIN4-CONNECTED-"+ref,"BLOCKER","schematic","FAIL",
                     "HCPL-0600 pin 4 is NC but is connected to net %r." % p4.get("net"),
                     "VERIFIED",ref)
+            elif p4 and p4.get("net"):
+                add("G2-HCPL-NC-PIN4-UNRESOLVED-"+ref,"INFO","schematic","UNKNOWN",
+                    "Parser reports a net for pin 4, but logical pin resolution is unresolved; this is not sufficient evidence to assert an NC-pin violation.",
+                    "FACT",ref)
             if p5 and p8 and p5.get("net") and p8.get("net") and _norm(p5.get("net")) == _norm(p8.get("net")):
                 add("G2-HCPL-SUPPLY-GND-SHORT-"+ref,"BLOCKER","schematic","FAIL",
                     "HCPL-0600 pin 5 (GND) and pin 8 (VCC) are shorted on net %r." % p5.get("net"),

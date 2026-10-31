@@ -163,7 +163,8 @@ def resolve_declared_vs_compiled(
             declared_matches += 1
         if cp == actual:
             compiled_matches += 1
-        if (dp == "NC" and cp == "NC" and obs.get("net")):
+        unresolved = "logical_pin_unresolved" in (obs.get("resolution_diagnostics") or [])
+        if (dp == "NC" and cp == "NC" and obs.get("net") and not unresolved):
             connected_nc_pins.append({"pin": str(pin), "net": obs.get("net")})
         evidence.append({
             "pin": str(pin),
