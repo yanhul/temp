@@ -1,0 +1,2 @@
+GitHub Git write-path diagnostic.
+Created only to verify branch creation, file upload/commit, and read-back. No workflow should run for this branch.
