@@ -2,13 +2,6 @@ name: audit-kit-clean-room-e2e
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "tools/altium-audit/**"
-      - ".github/workflows/audit-kit-clean-room-e2e.yml"
-      - "altium-audit.config.json"
-      - "b64parts/**"
-      - "*.zip"
 
 jobs:
   audit-kit-e2e:
