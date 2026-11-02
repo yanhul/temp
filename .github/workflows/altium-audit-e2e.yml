@@ -2,13 +2,6 @@ name: altium-audit-e2e
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/workflows/altium-audit-e2e.yml"
-      - "tools/altium-audit/**"
-      - "altium-audit.config.json"
-      - "b64parts/**"
-      - "*.zip"
 
 jobs:
   audit:
