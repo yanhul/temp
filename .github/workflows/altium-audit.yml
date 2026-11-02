@@ -1,13 +1,6 @@
 name: altium-audit
 
 on:
-  push:
-    paths:
-      - "b64parts/**"
-      - "*.zip"
-      - "altium-audit.config.json"
-      - ".github/workflows/altium-audit.yml"
-      - "tools/altium-audit/**"
   workflow_dispatch:
 
 jobs:
