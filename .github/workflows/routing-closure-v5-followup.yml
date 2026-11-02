@@ -1,9 +1,6 @@
 name: routing-closure-v5-followup
 
 on:
-  workflow_run:
-    workflows: ["altium-audit-kit-e2e"]
-    types: [completed]
   workflow_dispatch:
 
 jobs:
