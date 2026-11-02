@@ -1,10 +1,6 @@
 name: qi9-2605-pdf-backend-one-pass
 
 on:
-  push:
-    paths:
-      - '[QI9-2605-A01] Module ADC.pdf'
-      - '.github/workflows/qi9-2605-pdf-backend-one-pass.yml'
   workflow_dispatch:
 
 permissions:
