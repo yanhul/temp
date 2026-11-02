@@ -67,4 +67,3 @@ jobs:
           retention-days: 3
           path: work/
           if-no-files-found: warn
-          retention-days: 90
