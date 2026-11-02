@@ -54,4 +54,3 @@ jobs:
           retention-days: 3
           path: work-2605/schematic
           if-no-files-found: error
-          retention-days: 90
