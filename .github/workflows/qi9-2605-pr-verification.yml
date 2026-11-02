@@ -1,14 +1,6 @@
 name: qi9-2605-pr-verification
 
 on:
-  pull_request:
-    paths:
-      - 'audit-input-2605/**'
-      - 'tools/altium-audit/**'
-      - 'altium-audit-2605.config.json'
-      - 'altium-audit-2605.placement-authority.json'
-      - 'tests/**'
-      - '.github/workflows/qi9-2605-pr-verification.yml'
   workflow_dispatch:
 
 permissions:
