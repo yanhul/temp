@@ -1,0 +1,3 @@
+GitHub Contents API upload probe
+Created: 2026-11-03
+Purpose: verify repository write path without triggering Actions.
