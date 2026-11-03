@@ -1,0 +1,23 @@
+name: upload-probe
+on:
+  push:
+    branches:
+      - diagnostics/upload-probe-20261103
+    paths:
+      - diagnostics/upload-probe-20261103.txt
+permissions:
+  contents: read
+jobs:
+  artifact-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify probe file
+        run: test -s diagnostics/upload-probe-20261103.txt
+      - name: Upload tiny probe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: upload-probe-20261103
+          path: diagnostics/upload-probe-20261103.txt
+          retention-days: 1
+          if-no-files-found: error
